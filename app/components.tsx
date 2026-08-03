@@ -551,7 +551,6 @@ export function StockSearch({
           onChange(event.target.value);
           setOpen(true);
         }}
-        onFocus={() => setOpen(true)}
         onBlur={() => window.setTimeout(() => setOpen(false), 120)}
         placeholder={placeholder}
         aria-label="股票代码或名称"
