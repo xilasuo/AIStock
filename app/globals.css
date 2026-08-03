@@ -282,7 +282,7 @@ svg { display: block; }
 }
 
 .source-status i {
-  background: #52c69d;
+  background: var(--green);
   border-radius: 50%;
   height: 7px;
   width: 7px;
@@ -1511,7 +1511,7 @@ svg { display: block; }
   align-items: center;
   background: var(--accent);
   border-radius: 9px;
-  color: #f8fafc;
+  color: #ffffff;
   display: flex;
   flex: 0 0 auto;
   font-size: var(--fs-xs);
@@ -2662,8 +2662,8 @@ svg { display: block; }
 }
 
 .assistant-bubble__tag.tag-warn {
-  background: color-mix(in srgb, #d97706 14%, transparent);
-  color: #b45309;
+  background: color-mix(in srgb, var(--amber) 14%, transparent);
+  color: var(--amber);
 }
 
 .assistant-bubble__text {
@@ -2697,8 +2697,8 @@ svg { display: block; }
 
 /* 错误气泡：左边加红色细条 */
 .assistant-bubble.has-error .assistant-bubble__body {
-  border-color: color-mix(in srgb, #d97706 40%, var(--line));
-  box-shadow: inset 3px 0 0 #d97706;
+  border-color: color-mix(in srgb, var(--red) 40%, var(--line));
+  box-shadow: inset 3px 0 0 var(--red);
 }
 
 /* 打字指示器三点 */
@@ -2786,18 +2786,18 @@ svg { display: block; }
   border-left-color: var(--accent);
 }
 .assistant-section--conclusion.tone-act {
-  background: color-mix(in srgb, #16a34a 9%, var(--surface));
-  border-color: color-mix(in srgb, #16a34a 45%, var(--line));
-  border-left-color: #16a34a;
+  background: color-mix(in srgb, var(--green) 9%, var(--surface));
+  border-color: color-mix(in srgb, var(--green) 45%, var(--line));
+  border-left-color: var(--green);
 }
 .assistant-section--conclusion.tone-warn {
-  background: color-mix(in srgb, #d97706 10%, var(--surface));
-  border-color: color-mix(in srgb, #d97706 45%, var(--line));
-  border-left-color: #d97706;
+  background: color-mix(in srgb, var(--amber) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--amber) 45%, var(--line));
+  border-left-color: var(--amber);
 }
 .assistant-section--basis { border-left-color: var(--accent); }
-.assistant-section--risk { border-left-color: #d97706; }
-.assistant-section--next { border-left-color: #2563eb; }
+.assistant-section--risk { border-left-color: var(--amber); }
+.assistant-section--next { border-left-color: var(--accent); }
 
 .assistant-section__head {
   align-items: center;
@@ -2830,8 +2830,8 @@ svg { display: block; }
   padding: 1px 7px;
   flex: 0 0 auto;
 }
-.assistant-section__badge.tone-act { background: color-mix(in srgb, #16a34a 18%, transparent); color: #15803d; }
-.assistant-section__badge.tone-warn { background: color-mix(in srgb, #d97706 18%, transparent); color: #b45309; }
+.assistant-section__badge.tone-act { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
+.assistant-section__badge.tone-warn { background: color-mix(in srgb, var(--amber) 18%, transparent); color: var(--amber); }
 .assistant-section__badge.tone-neutral { background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--muted); }
 
 .assistant-section__chevron { color: var(--muted); flex: 0 0 auto; transition: transform 0.18s ease; }
@@ -2904,7 +2904,7 @@ svg { display: block; }
   gap: 3px;
   padding: 3px 8px;
 }
-.assistant-clear:hover { border-color: #d97706; color: #b45309; }
+.assistant-clear:hover { border-color: var(--amber); color: var(--amber); }
 
 /* 输入框左侧语音按钮 */
 .assistant-mic {
@@ -2926,13 +2926,13 @@ svg { display: block; }
 }
 .assistant-mic.is-listening {
   animation: assistant-mic-pulse 1.1s ease-in-out infinite;
-  background: color-mix(in srgb, #dc2626 14%, var(--surface));
-  border-color: #dc2626;
-  color: #dc2626;
+  background: color-mix(in srgb, var(--red) 14%, var(--surface));
+  border-color: var(--red);
+  color: var(--red);
 }
 @keyframes assistant-mic-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.45); }
-  50%      { box-shadow: 0 0 0 6px rgba(220, 38, 38, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(194, 67, 79, 0.45); }
+  50%      { box-shadow: 0 0 0 6px rgba(194, 67, 79, 0); }
 }
 
 /* 移动端：复制按钮更紧凑，语音按钮方形优先 */
@@ -4560,7 +4560,7 @@ svg { display: block; }
   align-items: center;
   background: var(--accent);
   border-radius: 9px;
-  color: #f8fafc;
+  color: #ffffff;
   display: flex;
   font-size: var(--fs-base);
   font-weight: 800;
