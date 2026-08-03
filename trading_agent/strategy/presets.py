@@ -206,6 +206,76 @@ STRATEGY_PRESETS: dict[str, dict] = {
             "use_breakout_filter": False,
         },
     },
+    # —— 新增激进策略（补全高收益打法空白）——
+    "first_limit_up": {
+        "label": "首板启动",
+        "risk": "激进",
+        "desc": "激进：低位首板启动，长期横盘后突破 + 中等换手 + 适度估值约束，赔率高、位置低，比连板更安全。",
+        "overrides": {
+            "w_momentum": 0.35, "w_trend": 0.25, "w_liquidity": 0.20,
+            "w_value": 0.10, "w_rsi": 0.05, "w_macd": 0.05,
+            "w_size": 0.00, "w_quality": 0.00, "w_fund_flow": 0.00,
+            "momentum_window": 10, "min_turnover_pct": 2.5,
+            "use_breakout_filter": True, "breakout_window": 30,  # 长期横盘后突破启动
+            "max_pe_ttm": 200, "max_pb": 10, "top_n": 5,
+            "st_filter": "exclude_st",
+        },
+    },
+    "high_volatility_play": {
+        "label": "高波动弹性",
+        "risk": "激进",
+        "desc": "激进：高波动 + 高换手 + 短周期突破，捕捉事件驱动型机会（业绩/政策/重组），弹性最大。",
+        "overrides": {
+            "w_momentum": 0.38, "w_liquidity": 0.27, "w_trend": 0.20,
+            "w_rsi": 0.08, "w_macd": 0.07, "w_value": 0.00,
+            "w_size": 0.00, "w_quality": 0.00, "w_fund_flow": 0.00,
+            "momentum_window": 10, "min_turnover_pct": 3.5,
+            "use_breakout_filter": True, "breakout_window": 15,
+            "max_pe_ttm": 10000, "max_pb": 1000, "top_n": 4,
+            "st_filter": "exclude_st",
+        },
+    },
+    "divergence_reversal": {
+        "label": "量价背离反转",
+        "risk": "激进",
+        "desc": "激进：价格新低但 RSI/MACD 背离回升 = 主力吸筹，比超跌反弹更精确的高胜率抄底。",
+        "overrides": {
+            "w_rsi": 0.35, "w_macd": 0.30, "w_momentum": 0.20,
+            "w_trend": 0.10, "w_liquidity": 0.05, "w_value": 0.00,
+            "w_size": 0.00, "w_quality": 0.00, "w_fund_flow": 0.00,
+            "momentum_window": 15, "min_turnover_pct": 1.0,
+            "use_breakout_filter": False,
+            "max_pe_ttm": 300, "max_pb": 20, "top_n": 5,
+            "st_filter": "exclude_st",
+        },
+    },
+    "northbound_resonance": {
+        "label": "北向共振",
+        "risk": "激进",
+        "desc": "激进：主力资金净流入 + 动量 + 趋势三因子共振，有资金驱动也有价格确认，比纯游资更可持续（需 fund_flow 数据）。",
+        "overrides": {
+            "w_fund_flow": 0.40, "w_momentum": 0.25, "w_trend": 0.20,
+            "w_liquidity": 0.10, "w_value": 0.05, "w_quality": 0.00,
+            "w_size": 0.00, "w_rsi": 0.00, "w_macd": 0.00,
+            "momentum_window": 20, "min_turnover_pct": 1.0,
+            "max_pe_ttm": 1000, "max_pb": 50, "top_n": 5,
+            "st_filter": "exclude_st",
+        },
+    },
+    "limit_up_streak": {
+        "label": "连板龙头",
+        "risk": "激进",
+        "desc": "激进(最高风险)：超短周期强动量 + 极高换手 + 短周期连续突破，近似连板龙头打法，弹性与风险均最高。",
+        "overrides": {
+            "w_momentum": 0.45, "w_liquidity": 0.30, "w_trend": 0.15,
+            "w_macd": 0.10, "w_value": 0.00, "w_size": 0.00, "w_quality": 0.00,
+            "w_fund_flow": 0.10, "w_rsi": 0.00,
+            "momentum_window": 5, "min_turnover_pct": 4.0,
+            "use_breakout_filter": True, "breakout_window": 5,
+            "max_pe_ttm": 10000, "max_pb": 1000, "top_n": 3,
+            "st_filter": "exclude_st",
+        },
+    },
 }
 
 
