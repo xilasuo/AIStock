@@ -566,8 +566,10 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
 
   useEffect(() => {
     const firstCheck = window.setTimeout(checkAlerts, 0);
-    // 周期轮询：对持仓/关注/提醒统一刷新行情（带 TTL 判定），同时保证提醒判断基于最新价。
-    // 轮询间隔与 QUOTE_TTL_MS 一致，确保每次轮询时 TTL 已过期、必然触发刷新。
+    // 周期轮询：对持仓/关注/提醒统一刷新行情（带 TTL 判定），同时检查止损/止盈是否触发。
+    // 注意：必须在每次轮询里调用 checkAlerts()，否则提醒只在页面加载时检查一次、
+    // 之后价格触达也不再提醒（历史遗漏，已修复）。轮询间隔与 QUOTE_TTL_MS 一致，
+    // 确保每次轮询时 TTL 已过期、行情必然刷新，提醒判断基于最新价。
     const timer = window.setInterval(() => {
       const symbols = new Set([
         ...portfolio.positions.map((position) => position.symbol),
@@ -577,6 +579,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       for (const symbol of symbols) {
         if (quoteStale(symbol)) refreshQuote(symbol);
       }
+      checkAlerts();
     }, QUOTE_TTL_MS);
     return () => {
       window.clearTimeout(firstCheck);

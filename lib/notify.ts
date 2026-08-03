@@ -1,10 +1,10 @@
 /**
  * 主动提醒推送（Proactive alert notifications）
  *
- * 原有 alertRules 只在页面打开时被动检查（每 5 分钟轮询）。这里补齐"到了就推送"
- * 的主动闭环：由 Cloudflare Cron Trigger（或外部定时器）触发，拉取实时价、判断
- * 止盈/止损是否触发，触发后通过 Webhook（企业微信 / 飞书 / Slack / Bark）推送，
- * 并标记 triggeredAt 避免重复提醒。
+ * 前端在线时每 5 分钟轮询检查止损/止盈并即时提醒（页面内）；这里补齐"到了就推送"
+ * 的主动闭环，用于用户离线兜底：由 Cloudflare Cron Trigger（或外部定时器）触发，
+ * 拉取实时价、判断止盈/止损是否触发，触发后通过 Webhook（企业微信 / 飞书 / Slack / Bark）
+ * 推送，并标记 triggeredAt 避免重复提醒。
  *
  * 对标：交易软件的"价格提醒推送"。
  */

@@ -44,6 +44,14 @@ const worker = {
     return handler.fetch(request, env, ctx);
   },
 
+  /**
+   * 提醒主动推送（离线兜底）：
+   * 由 Cloudflare Cron Trigger 触发（需在 CF 侧配置，建议每 5 或 15 分钟一次）。
+   * 分工：
+   *  - 用户在线：前端每 5 分钟轮询并即时检查止损/止盈（页面内提醒），本 handler 不冲突。
+   *  - 用户离线：本 handler 拉实时价、触达后经 Webhook 推送（企微/飞书/Slack/Bark）。
+   * 粒度：15 分钟偏粗（止损/止盈价格敏感），建议收紧到 5 分钟；改后需在 CF 控制台同步。
+   */
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     try {
       const { drizzle } = await import("drizzle-orm/d1");
