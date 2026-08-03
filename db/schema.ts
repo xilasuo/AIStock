@@ -157,6 +157,7 @@ export const tradingPreferences = sqliteTable("trading_preferences", {
   maxPositionPercent: real("max_position_percent").notNull().default(70),
   enforceStopLoss: integer("enforce_stop_loss", { mode: "boolean" }).notNull().default(true),
   disciplineNote: text("discipline_note").notNull().default(""),
+  stealthMode: integer("stealth_mode", { mode: "boolean" }).notNull().default(false),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 

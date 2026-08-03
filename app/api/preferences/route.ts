@@ -47,6 +47,7 @@ export async function PUT(request: NextRequest) {
           maxPositionPercent: next.maxPositionPercent,
           enforceStopLoss: next.enforceStopLoss,
           disciplineNote: next.disciplineNote,
+          stealthMode: next.stealthMode,
           updatedAt,
         },
       });

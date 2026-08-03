@@ -13,6 +13,7 @@ export type TradingPreferences = {
   maxPositionPercent: number;
   enforceStopLoss: boolean;
   disciplineNote: string;
+  stealthMode: boolean;
 };
 
 export const RISK_PRESETS: Record<RiskProfile, Omit<TradingPreferences, "disciplineNote">> = {
@@ -24,6 +25,7 @@ export const RISK_PRESETS: Record<RiskProfile, Omit<TradingPreferences, "discipl
 export const DEFAULT_PREFERENCES: TradingPreferences = {
   ...RISK_PRESETS["平衡"],
   disciplineNote: "",
+  stealthMode: false,
 };
 
 export const RISK_PROFILE_LABELS: RiskProfile[] = ["保守", "平衡", "激进"];
@@ -46,6 +48,7 @@ export function normalizePreferences(row: Partial<TradingPreferences> | undefine
     maxPositionPercent: clampPercent(row.maxPositionPercent, preset.maxPositionPercent),
     enforceStopLoss: Boolean(row.enforceStopLoss),
     disciplineNote: typeof row.disciplineNote === "string" ? row.disciplineNote.slice(0, 500) : "",
+    stealthMode: Boolean(row.stealthMode),
   };
 }
 

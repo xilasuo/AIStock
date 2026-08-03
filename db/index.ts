@@ -202,6 +202,9 @@ export async function ensureSchema() {
     await addColumnIfMissing("trade_records", "updated_at", "updated_at TEXT");
     await db.prepare("UPDATE trade_records SET updated_at = created_at WHERE updated_at IS NULL").run();
 
+    // 隐身模式开关（办公室低存在感配色）
+    await addColumnIfMissing("trading_preferences", "stealth_mode", "stealth_mode INTEGER NOT NULL DEFAULT 0");
+
     // ---- 多用户隔离迁移 ----
     // 1) 给所有用户数据表加 user_id 列（老表兼容，默认 0 表示尚未归属）
     for (const table of [

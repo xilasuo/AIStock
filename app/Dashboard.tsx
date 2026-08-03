@@ -472,6 +472,27 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     return () => window.clearTimeout(timer);
   }, [loadData]);
 
+  // 隐身模式：根据偏好给根节点挂 class，CSS 变量切换低存在感配色
+  useEffect(() => {
+    const root = document.documentElement;
+    if (preferences?.stealthMode) root.classList.add("stealth");
+    else root.classList.remove("stealth");
+  }, [preferences?.stealthMode]);
+
+  // 老板键：按 Esc 在隐身模式间快速切换（办公室摸鱼防暴露）
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && preferences) {
+        e.preventDefault();
+        const next = { ...preferences, stealthMode: !preferences.stealthMode };
+        setPreferences(next);
+        void savePreferences(next);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [preferences, savePreferences]);
+
   const fetchAnalysis = useCallback(async (stockQuery: string, showResult = true, force = false) => {
     if (showResult) {
       setAnalyzing(true);
@@ -4655,6 +4676,7 @@ function PreferencesSettings({ preferences, onSave }: { preferences: TradingPref
   const [maxPositionPercent, setMaxPositionPercent] = useState(String(initial.maxPositionPercent));
   const [enforceStopLoss, setEnforceStopLoss] = useState(initial.enforceStopLoss);
   const [disciplineNote, setDisciplineNote] = useState(initial.disciplineNote);
+  const [stealthMode, setStealthMode] = useState(initial.stealthMode);
   const [saving, setSaving] = useState(false);
 
   function applyProfile(profile: RiskProfile) {
@@ -4676,6 +4698,7 @@ function PreferencesSettings({ preferences, onSave }: { preferences: TradingPref
         maxPositionPercent: Number(maxPositionPercent) || 0,
         enforceStopLoss,
         disciplineNote,
+        stealthMode,
       });
     } finally {
       setSaving(false);
@@ -4730,6 +4753,13 @@ function PreferencesSettings({ preferences, onSave }: { preferences: TradingPref
           value={disciplineNote}
           onChange={(e) => setDisciplineNote(e.target.value)}
         />
+      </div>
+      <div className="form-group checkbox">
+        <label>
+          <input type="checkbox" checked={stealthMode} onChange={(e) => setStealthMode(e.target.checked)} />
+          隐身模式（办公室低存在感配色）
+        </label>
+        <Hint>开启后界面转为中性灰暗色调，涨跌红绿降饱和，整体像普通后台系统；按 Esc 可随时一键切换。</Hint>
       </div>
       <div className="form-actions">
         <Button variant="primary" disabled={saving} onClick={() => void save()}>
