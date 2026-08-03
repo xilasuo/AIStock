@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseBrokerCsv, prepareTradeInput } from "../lib/trade-import.ts";
+import { buildMaxLossAlerts, parseBrokerCsv, prepareTradeInput } from "../lib/trade-import.ts";
 
 test("解析东方财富风格交割单", () => {
   const csv = [
@@ -53,4 +53,35 @@ test("prepareTradeInput 拒绝未来日期", () => {
   const future = "2099-01-01";
   const result = prepareTradeInput({ symbol: "600000", name: "浦发银行", side: "买入", price: 10.5, quantity: 100, tradeDate: future, reason: "券商导入" });
   assert.equal(result.error, "交易日期不能晚于今天");
+});
+
+test("buildMaxLossAlerts 用技术面止损位（stopLoss）生成止损与止盈", () => {
+  // 买入价 10 元，技术面止损 9.5（支撑位），无 maxLoss
+  const alerts = buildMaxLossAlerts({
+    symbol: "600000",
+    name: "浦发银行",
+    currentPriceMillis: 10000,
+    maxLossTenThousandths: 0,
+    stopLoss: 9.5,
+  });
+  assert.equal(alerts.length, 3);
+  const stop = alerts.find((a) => a.type === "止损")!;
+  assert.equal(stop.targetTenThousandths, 95000, "止损价用技术面支撑位 9.5 元");
+  // 止盈一 = 10 + 1.5×(10-9.5) = 10.75
+  const tp1 = alerts.find((a) => a.type === "止盈一")!;
+  assert.equal(tp1.targetTenThousandths, 107500, "止盈一按 1.5R（基于技术面止损距离）");
+});
+
+test("buildMaxLossAlerts 无 stopLoss 时回退按 maxLoss 反推止损", () => {
+  // 买入价 10 元，每股亏损 0.5 → 止损 9.5；止盈一 = 10+1.5×0.5 = 10.75
+  const alerts = buildMaxLossAlerts({
+    symbol: "600000",
+    name: "浦发银行",
+    currentPriceMillis: 10000,
+    maxLossTenThousandths: 5000,
+  });
+  const stop = alerts.find((a) => a.type === "止损")!;
+  assert.equal(stop.targetTenThousandths, 95000, "无技术面止损时按 maxLoss 反推止损价");
+  const tp1 = alerts.find((a) => a.type === "止盈一")!;
+  assert.equal(tp1.targetTenThousandths, 107500, "止盈一按 1.5R");
 });

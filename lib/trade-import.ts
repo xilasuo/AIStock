@@ -122,23 +122,32 @@ export type MaxLossAlert = {
 
 /** 买入且设置了最大亏损线时，自动建立 3 条价格提醒（止损 / 止盈一 / 止盈二）。
  * 与手动录入 /api/trades 共用，保证两种录入方式预警行为一致。
- * 单位约定：currentPriceMillis 为现价（毫，×1000）；maxLossTenThousandths 为
- * 每股最大亏损（万分位，×10000，即 元×10000），与调用方 riskPerShareTenThousandths 一致。 */
+ * 支持两种止损来源：
+ *  - 传入 stopLoss（止损价，元）：直接用技术面止损位（如支撑位）做止损，止盈按
+ *    它与买入价的距离（1R）及倍率推算。优先用于"采用技术面建议"。
+ *  - 否则按 maxLossTenThousandths（每股最大亏损，万分位）反推止损价，止盈按
+ *    1.5R / 2.5R 倍风险推算。单位约定与调用方 riskPerShareTenThousandths 一致。 */
 export function buildMaxLossAlerts(params: {
   symbol: string;
   name: string;
   currentPriceMillis: number;
   maxLossTenThousandths: number;
+  /** 可选：直接指定止损价（元），来自技术面（如支撑位），优先于 maxLoss 反推 */
+  stopLoss?: number;
 }): MaxLossAlert[] {
-  const { symbol, name, currentPriceMillis, maxLossTenThousandths } = params;
+  const { symbol, name, currentPriceMillis, maxLossTenThousandths, stopLoss } = params;
   const priceYuan = currentPriceMillis / 1000;
   const lossYuan = maxLossTenThousandths / 10000;
-  const stop = priceYuan - lossYuan; // 止损价（最大亏损触发）
+  // 技术面止损优先：有明确止损价就用它，否则用最大亏损反推
+  const stop = stopLoss !== undefined && Number.isFinite(stopLoss) && stopLoss > 0 && stopLoss < priceYuan
+    ? stopLoss
+    : priceYuan - lossYuan;
+  const stopDistance = priceYuan - stop; // 每股风险距离（R）
   // 倍率需与录入弹窗「留空则按 1.5R / 2.5R 推算」的说明保持一致。
-  const takeProfit1 = priceYuan + TAKE_PROFIT_1_R * lossYuan;
-  const takeProfit2 = priceYuan + TAKE_PROFIT_2_R * lossYuan;
+  const takeProfit1 = priceYuan + TAKE_PROFIT_1_R * stopDistance;
+  const takeProfit2 = priceYuan + TAKE_PROFIT_2_R * stopDistance;
   return [
-    { symbol, name, direction: "below", type: "止损", targetTenThousandths: Math.max(0, Math.round(stop * 10000)), note: "止损线（最大亏损触发）" },
+    { symbol, name, direction: "below", type: "止损", targetTenThousandths: Math.max(0, Math.round(stop * 10000)), note: stopLoss !== undefined && stopLoss > 0 && stopLoss < priceYuan ? "止损线（技术面支撑位）" : "止损线（最大亏损触发）" },
     { symbol, name, direction: "above", type: "止盈一", targetTenThousandths: Math.round(takeProfit1 * 10000), note: `止盈目标一（${TAKE_PROFIT_1_R} 倍风险）` },
     { symbol, name, direction: "above", type: "止盈二", targetTenThousandths: Math.round(takeProfit2 * 10000), note: `止盈目标二（${TAKE_PROFIT_2_R} 倍风险）` },
   ];

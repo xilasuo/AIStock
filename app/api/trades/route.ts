@@ -52,6 +52,11 @@ export async function POST(request: Request) {
     const otherReason = String(payload.otherReason ?? "").trim();
     const maxLossCents = rawMaxLoss === null ? null : toCents(rawMaxLoss);
     const feeCents = toCents(rawFee);
+    // 可选：技术面止损价（元），来自分析支撑位，优先于 maxLoss 反推止损
+    const stopLossNumber = Number(payload.stopLoss);
+    const stopLoss = payload.stopLoss !== undefined && payload.stopLoss !== null && payload.stopLoss !== "" && Number.isFinite(stopLossNumber) && stopLossNumber > 0
+      ? stopLossNumber
+      : undefined;
 
     if (!isStockCode(symbol) || !name || name.length > 30) {
       return Response.json({ error: "股票代码或名称不正确" }, { status: 400 });
@@ -97,6 +102,9 @@ export async function POST(request: Request) {
     ) {
       return Response.json({ error: "最大亏损必须小于本次买入金额" }, { status: 400 });
     }
+    if (side === "买入" && stopLoss !== undefined && stopLoss >= rawPrice) {
+      return Response.json({ error: "止损价必须低于买入价" }, { status: 400 });
+    }
 
     await ensureSchema();
     const db = getDb();
@@ -140,12 +148,14 @@ export async function POST(request: Request) {
       createdAt: shanghaiIso(),
     };
     let trade;
-    if (side === "买入" && riskPerShareTenThousandths !== null) {
+    // 有每股风险（maxLoss）或技术面止损价（stopLoss）时，自动生成止损/止盈提醒
+    if (side === "买入" && (riskPerShareTenThousandths !== null || stopLoss !== undefined)) {
       const baseAlerts = buildMaxLossAlerts({
         symbol,
         name,
         currentPriceMillis: priceMillis,
-        maxLossTenThousandths: riskPerShareTenThousandths,
+        maxLossTenThousandths: riskPerShareTenThousandths ?? 0,
+        stopLoss,
       });
       // 用户可手动指定止盈价（元），覆盖系统自动推算的止盈一/止盈二
       const takeProfit1Number = Number(payload.takeProfit1);

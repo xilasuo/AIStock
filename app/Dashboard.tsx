@@ -57,6 +57,7 @@ import {
   X,
   ChevronUp,
   RotateCw,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -84,6 +85,7 @@ import {
 } from "../lib/preferences";
 import type { AssistantContext } from "../lib/assistant";
 import { formatDateShanghai, formatDateTimeShanghai } from "../lib/time";
+import { readCache, writeCache, removeCache } from "../lib/client-cache";
 
 type View = "home" | "watchlist" | "trades" | "settings" | "analytics" | "analysis" | "scan" | "writeback";
 type TradeMode = "buy" | "sell";
@@ -333,8 +335,10 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   });
   const [query, setQuery] = useState("");
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
-  const [recentAnalyses, setRecentAnalyses] = useState<Analysis[]>([]);
-  const [quotes, setQuotes] = useState<Record<string, Analysis>>({});
+  // 最近分析与行情快照从 localStorage 恢复，刷新页面时避免首屏空白；
+  // 行情快照 TTL 较短（10 分钟），过期数据会在后续轮询中被自动覆盖。
+  const [recentAnalyses, setRecentAnalyses] = useState<Analysis[]>(() => readCache<Analysis[]>("recent") ?? []);
+  const [quotes, setQuotes] = useState<Record<string, Analysis>>(() => readCache<Record<string, Analysis>>("quotes", "quote") ?? {});
   const [trades, setTrades] = useState<Trade[]>([]);
   const [watchlist, setWatchlist] = useState<WatchItem[]>([]);
   const [alerts, setAlerts] = useState<AlertRule[]>([]);
@@ -354,6 +358,10 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   const [error, setError] = useState("");
   const notified = useRef(new Set<number>());
   const pendingQuotes = useRef(new Set<string>());
+  /** 每个 symbol 最近一次拉取行情的时间戳，用于 TTL 判断是否需要刷新 */
+  const quoteFetchedAt = useRef<Record<string, number>>({});
+  /** 行情刷新 TTL：超过该时长即视为过期，进入轮询时会重新拉取 */
+  const QUOTE_TTL_MS = 5 * 60 * 1000;
   /** 选股榜单点击"分析"时暂存的行数据，fetchAnalysis 消费后清空 */
   const pendingScreenerContext = useRef<import("./StrategyScanView").ScanSelected | null>(null);
 
@@ -466,14 +474,23 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
           ...(screenerCtx ? { screenerContext: screenerCtx } : {}),
         }),
       });
-      setQuotes((current) => ({ ...current, [result.stock.code]: result }));
+      quoteFetchedAt.current[result.stock.code] = Date.now();
+      setQuotes((current) => {
+        const next = { ...current, [result.stock.code]: result };
+        writeCache("quotes", next);
+        return next;
+      });
       if (showResult) {
         setAnalysis(result);
         setQuery(result.stock.code);
-        setRecentAnalyses((current) => [
-          result,
-          ...current.filter((item) => item.stock.code !== result.stock.code),
-        ].slice(0, 6));
+        setRecentAnalyses((current) => {
+          const next = [
+            result,
+            ...current.filter((item) => item.stock.code !== result.stock.code),
+          ].slice(0, 6);
+          writeCache("recent", next);
+          return next;
+        });
         if (result.historyWarning) flash(result.historyWarning);
       }
       return result;
@@ -489,12 +506,19 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     }
   }, [flash]);
 
+  /** 判断某 symbol 的行情是否需要刷新（缺失或已过期） */
+  const quoteStale = useCallback((symbol: string) => {
+    const fetchedAt = quoteFetchedAt.current[symbol];
+    return !fetchedAt || Date.now() - fetchedAt > QUOTE_TTL_MS;
+  }, []);
+
   const refreshQuote = useCallback((symbol: string) => {
     if (pendingQuotes.current.has(symbol)) return;
     pendingQuotes.current.add(symbol);
     void fetchAnalysis(symbol, false).finally(() => pendingQuotes.current.delete(symbol));
   }, [fetchAnalysis]);
 
+  // 首屏与每次状态变化后：为缺失或已过期的持仓/关注/提醒行情发起拉取
   useEffect(() => {
     const symbols = new Set([
       ...portfolio.positions.map((position) => position.symbol),
@@ -503,11 +527,11 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     ]);
     const timer = window.setTimeout(() => {
       for (const symbol of symbols) {
-        if (!quotes[symbol]) refreshQuote(symbol);
+        if (quoteStale(symbol)) refreshQuote(symbol);
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [alerts, portfolio.positions, watchlist, quotes, refreshQuote]);
+  }, [alerts, portfolio.positions, watchlist, quotes, quoteStale, refreshQuote]);
 
   const markAlertTriggered = useCallback(async (alert: AlertRule, current: number, target: number) => {
     const message = `${alert.name}已触发${alert.type}提醒：当前${price(current)}，目标${price(target)}`;
@@ -542,16 +566,23 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
 
   useEffect(() => {
     const firstCheck = window.setTimeout(checkAlerts, 0);
+    // 周期轮询：对持仓/关注/提醒统一刷新行情（带 TTL 判定），同时保证提醒判断基于最新价。
+    // 轮询间隔与 QUOTE_TTL_MS 一致，确保每次轮询时 TTL 已过期、必然触发刷新。
     const timer = window.setInterval(() => {
-      for (const symbol of new Set(alerts.filter((item) => item.enabled).map((item) => item.symbol))) {
-        refreshQuote(symbol);
+      const symbols = new Set([
+        ...portfolio.positions.map((position) => position.symbol),
+        ...alerts.filter((item) => item.enabled).map((item) => item.symbol),
+        ...watchlist.map((item) => item.symbol),
+      ]);
+      for (const symbol of symbols) {
+        if (quoteStale(symbol)) refreshQuote(symbol);
       }
-    }, 300_000);
+    }, QUOTE_TTL_MS);
     return () => {
       window.clearTimeout(firstCheck);
       window.clearInterval(timer);
     };
-  }, [alerts, checkAlerts, refreshQuote]);
+  }, [alerts, checkAlerts, portfolio.positions, quoteStale, refreshQuote, watchlist]);
 
   async function analyzeStock(event?: React.FormEvent) {
     event?.preventDefault();
@@ -613,6 +644,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       otherReason: String(data.get("otherReason") || ""),
       maxLoss: Number(data.get("maxLoss") || 0),
       fee: Number(data.get("fee") || 0),
+      stopLoss: data.get("stopLoss") ? Number(data.get("stopLoss")) : undefined,
       takeProfit1: data.get("takeProfit1") ? Number(data.get("takeProfit1")) : undefined,
       takeProfit2: data.get("takeProfit2") ? Number(data.get("takeProfit2")) : undefined,
     };
@@ -925,6 +957,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
           mode={tradeMode}
           stock={currentTradeStock}
           positions={portfolio.positions}
+          analysisQuote={tradeMode === "buy" ? analysis?.quote ?? null : null}
           onClose={() => setTradeMode(null)}
           onSubmit={saveTrade}
         />
@@ -953,7 +986,12 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
           <section className="modal watch-confirm" role="alertdialog" aria-modal="true" aria-labelledby="logout-confirm-title">
             <header><div><span className="eyebrow">确认操作</span><h2 id="logout-confirm-title">退出登录？</h2></div><IconButton label="关闭" onClick={() => setConfirming(null)}>×</IconButton></header>
             <p>退出后需要重新登录才能使用。确定要退出吗？</p>
-            <div className="modal-actions"><Button variant="ghost" type="button" onClick={() => setConfirming(null)}>取消</Button><Button variant="danger" type="button" onClick={() => { window.location.href = signOutUrl; }}>确认退出</Button></div>
+            <div className="modal-actions"><Button variant="ghost" type="button" onClick={() => setConfirming(null)}>取消</Button><Button variant="danger" type="button" onClick={() => {
+              // 退出登录时清空本地行情/最近分析缓存，避免不同账号间数据残留
+              removeCache("quotes");
+              removeCache("recent");
+              window.location.href = signOutUrl;
+            }}>确认退出</Button></div>
           </section>
         </div>
       )}
@@ -3867,20 +3905,35 @@ function CapitalSettings({ initialCapitalCents, capitalFlows, onSave, onAddFlow,
   );
 }
 
-function TradeModal({ mode, stock, positions, onClose, onSubmit }: {
+function TradeModal({ mode, stock, positions, analysisQuote, onClose, onSubmit }: {
   mode: TradeMode;
   stock: { code?: string; symbol?: string; name: string } | null;
   positions: ReturnType<typeof calculatePortfolio>["positions"];
+  /** 买入时当前分析的技术位（支撑位 / 1R / 2R 目标），用于"采用技术面建议" */
+  analysisQuote: { support?: number; target1?: number; target2?: number } | null;
   onClose: () => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
 }) {
   const firstInput = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const stopLossRef = useRef<HTMLInputElement>(null);
+  const takeProfit1Ref = useRef<HTMLInputElement>(null);
+  const takeProfit2Ref = useRef<HTMLInputElement>(null);
+  const maxLossRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const [selectedReason, setSelectedReason] = useState("");
   const defaultPosition = mode === "sell" ? positions[0] : null;
   const symbol = stock?.code ?? stock?.symbol ?? defaultPosition?.symbol ?? "";
   const name = stock?.name ?? defaultPosition?.name ?? "";
+
+  // 一键采用技术面建议：把支撑位填止损、1R/2R 填止盈，并清空 maxLoss（改用技术面止损位）
+  function applyTechSuggestion() {
+    if (!analysisQuote) return;
+    if (analysisQuote.support != null && stopLossRef.current) stopLossRef.current.value = String(analysisQuote.support);
+    if (analysisQuote.target1 != null && takeProfit1Ref.current) takeProfit1Ref.current.value = String(analysisQuote.target1);
+    if (analysisQuote.target2 != null && takeProfit2Ref.current) takeProfit2Ref.current.value = String(analysisQuote.target2);
+    if (maxLossRef.current) maxLossRef.current.value = "";
+  }
 
   useEffect(() => {
     firstInput.current?.focus();
@@ -3915,14 +3968,33 @@ function TradeModal({ mode, stock, positions, onClose, onSubmit }: {
             <Field label="总费用（可选）"><Input name="fee" type="number" min="0" step="0.01" defaultValue="0" /></Field>
             {mode === "buy" && (
               <>
+                {analysisQuote && (analysisQuote.support != null || analysisQuote.target1 != null || analysisQuote.target2 != null) && (
+                  <div className="tech-suggestion">
+                    <div className="tech-suggestion__head">
+                      <span><Zap size={13} /> 技术面自动建议</span>
+                      <button type="button" className="tech-suggestion__apply" onClick={applyTechSuggestion}>
+                        一键采用
+                      </button>
+                    </div>
+                    <div className="tech-suggestion__row">
+                      <span>止损参考（支撑位）</span><strong>{analysisQuote.support != null ? price(analysisQuote.support) : "缺失"}</strong>
+                      <span>止盈参考一（1R）</span><strong>{analysisQuote.target1 != null ? price(analysisQuote.target1) : "缺失"}</strong>
+                      <span>止盈参考二（2R）</span><strong>{analysisQuote.target2 != null ? price(analysisQuote.target2) : "缺失"}</strong>
+                    </div>
+                    <p className="tech-suggestion__note">来自该股当前分析的支撑位与 1R/2R 目标，点"一键采用"填入下方；可再手动改。</p>
+                  </div>
+                )}
+                <Field label="止损价（元，可选）" help="留空时按下方「最多接受亏损」反推；也可点上方「技术面建议」用支撑位自动填入，系统据此设止损并算止盈。">
+                  <Input ref={stopLossRef} name="stopLoss" type="number" min="0" step="any" placeholder="技术面支撑位或自定" />
+                </Field>
                 <Field label="最多接受亏损（元）" help={`如果判断错了，这笔交易最多愿意亏多少钱？请填你能实际执行的金额。系统会用「成本价 − 最多接受亏损 ÷ 股数」生成止损价，并按 ${TAKE_PROFIT_1_R}/${TAKE_PROFIT_2_R} 倍风险自动生成止盈一、止盈二。`}>
-                  <Input name="maxLoss" type="number" min="0" step="0.01" placeholder="例如 500" />
+                  <Input ref={maxLossRef} name="maxLoss" type="number" min="0" step="0.01" placeholder="例如 500" />
                 </Field>
                 <Field label="止盈价一（元，可选）" help={`留空则按 ${TAKE_PROFIT_1_R} 倍风险自动推算；填写后覆盖系统推算。`}>
-                  <Input name="takeProfit1" type="number" min="0" step="any" placeholder={`留空则按 ${TAKE_PROFIT_1_R}R 推算`} />
+                  <Input ref={takeProfit1Ref} name="takeProfit1" type="number" min="0" step="any" placeholder={`留空则按 ${TAKE_PROFIT_1_R}R 推算`} />
                 </Field>
                 <Field label="止盈价二（元，可选）" help={`留空则按 ${TAKE_PROFIT_2_R} 倍风险自动推算；填写后覆盖系统推算。`}>
-                  <Input name="takeProfit2" type="number" min="0" step="any" placeholder={`留空则按 ${TAKE_PROFIT_2_R}R 推算`} />
+                  <Input ref={takeProfit2Ref} name="takeProfit2" type="number" min="0" step="any" placeholder={`留空则按 ${TAKE_PROFIT_2_R}R 推算`} />
                 </Field>
               </>
             )}

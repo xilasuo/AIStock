@@ -4211,6 +4211,56 @@ svg { display: block; }
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+/* 买入弹窗：技术面自动建议（止损/止盈参考） */
+.tech-suggestion {
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  grid-column: 1 / -1;
+  padding: 12px 14px;
+}
+
+.tech-suggestion__head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.tech-suggestion__head span {
+  align-items: center;
+  color: var(--accent-ink);
+  display: inline-flex;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  gap: 6px;
+}
+
+.tech-suggestion__apply {
+  background: var(--accent);
+  border: 0;
+  border-radius: 6px;
+  color: var(--accent-ink-contrast, #fff);
+  cursor: pointer;
+  font-size: var(--fs-xs);
+  padding: 5px 12px;
+  transition: opacity var(--dur-fast) var(--ease-standard);
+}
+
+.tech-suggestion__apply:hover { opacity: 0.85; }
+
+.tech-suggestion__row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+
+.tech-suggestion__row span { color: var(--text-muted); font-size: var(--fs-xs); }
+.tech-suggestion__row strong { color: var(--text); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+
+.tech-suggestion__note { color: var(--text-muted); font-size: var(--fs-2xs); margin: 8px 0 0; }
+
 .modal label {
   color: var(--text-soft);
   display: block;
