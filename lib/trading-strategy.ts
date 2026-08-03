@@ -42,9 +42,10 @@ function summarizeContext(ctx: AssistantContext): string {
   if (ctx.stock.instrumentType === "etf") lines.push("品种：ETF/指数基金（不提供个股买卖建议，策略侧重定投与节奏）");
   const q = ctx.quote;
   lines.push(`现价：${q.price.toFixed(3)}元，涨跌幅：${q.changePercent.toFixed(2)}%；20日均线：${q.ma20.toFixed(3)}元`);
-  lines.push(`支撑位：${q.support.toFixed(3)}元，阻力位：${q.resistance.toFixed(3)}元，近期波动（年化）：约${q.volatility.toFixed(1)}%`);
+  lines.push(`走势结构：现价相对20日均线${q.price >= q.ma20 ? "之上（短线偏强）" : "之下（短线偏弱）"}；支撑位：${q.support.toFixed(3)}元，阻力位：${q.resistance.toFixed(3)}元，价格距阻力${q.resistance > 0 ? ((q.resistance - q.price) / q.price * 100).toFixed(1) + "%" : "缺失"}，近期波动（年化）：约${q.volatility.toFixed(1)}%`);
   const f = ctx.financials;
-  lines.push(`基本面：营收增长=${f.revenueGrowth ?? "数据缺失"}；利润增长=${f.profitGrowth ?? "数据缺失"}；负债率=${f.debtRatio ?? "数据缺失"}；PE=${f.pe ?? "数据缺失"}；PB=${f.pb ?? "数据缺失"}；ROE=${f.roe ?? "数据缺失"}`);
+  const financialsMissing = f.revenueGrowth == null && f.profitGrowth == null && f.debtRatio == null && f.pe == null && f.pb == null && f.roe == null;
+  lines.push(`基本面：营收增长=${f.revenueGrowth ?? "数据缺失"}；利润增长=${f.profitGrowth ?? "数据缺失"}；负债率=${f.debtRatio ?? "数据缺失"}；PE=${f.pe ?? "数据缺失"}；PB=${f.pb ?? "数据缺失"}；ROE=${f.roe ?? "数据缺失"}${financialsMissing ? "（基本面几乎全部缺失，本次判断以技术面为主）" : ""}`);
   if (ctx.summary) lines.push(`一句话总结：${ctx.summary}`);
   lines.push(`风险点：${(ctx.risks || []).length ? ctx.risks.join("；") : "无明确列示"}`);
   lines.push(`还需核验：${(ctx.missingInformation || []).length ? ctx.missingInformation.join("；") : "无"}`);
@@ -78,6 +79,7 @@ function buildTraderSystemPrompt(prefs: TradingPreferences, context: AssistantCo
     "7. 若数据明显不足（如 pe=数据缺失且缺支撑阻力），直接给“暂时不能判断，先补全X再问”，不要硬凑买卖建议。",
     "8. 仓位建议必须展示计算：风险每股=max(当前价-支撑线,当前价×3%)；单笔可亏=总资产×max_loss_percent%；建议股数=单笔可亏÷风险每股，且≤可用现金、单股≤总资产×max_concentration_percent%；成数=建议金额÷总资产。数字只来自 context，缺失如实说明。",
     "9. 下方的【我的交易纪律与风险偏好】是硬约束，必须优先生效，不得再用固定的 2%/30% 规则；当 enforce_stop_loss=是 时，任何买入动作都必须先给出止损位，跌破即执行。",
+    "10. 【技术面为主，基本面按可得性降级】本系统基本面数据可能不全（营收/利润/负债率常缺），但 K线/成交量/MACD/RSI/KDJ/支撑阻力始终稳定可得。因此优先用走势结构（均线方向、价格与支撑阻力位置）、量能（放量突破/缩量回调/量价背离）、动能指标（MACD/RSI/KDJ）作为主要评判依据；基本面缺失时直接注明“基本面数据缺失，以下判断以技术面为主”，不要因某项财务缺失就拒绝技术判断，更不要编造财务数字。",
     "【反幻觉示例】用户问“茅台 PE 多少、能买吗”而 pe=数据缺失 → 正确回答：“数据缺失：本次没取到 PE，我不凭记忆补数。能不能买看你的仓位和计划，先把账户资金补全、设好止损再谈。”",
     "【我的交易纪律与风险偏好，必须优先遵守，替代任何固定百分比】",
     `risk_profile=${prefs.riskProfile}`,

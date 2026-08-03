@@ -245,7 +245,11 @@ export function buildFallbackAnswer(
   }
 
   if (/财务|业绩|估值|市盈率|市净率|ROE/i.test(question)) {
-    return `结论：现有财务数据只能用于初筛，不能单独证明公司被低估或高估。\n依据：营收变化${percent(financials.revenueGrowth)}，利润变化${percent(financials.profitGrowth)}，市盈率${financials.pe?.toFixed(2) ?? "暂无"}，市净率${financials.pb?.toFixed(2) ?? "暂无"}，ROE${percent(financials.roe)}。\n风险与缺口：财务口径、报告期和一次性损益仍需结合公告核验。\n下一步：优先查看最近一期定期报告及业绩说明。`;
+    const missing = financials.revenueGrowth === null && financials.profitGrowth === null && financials.pe == null && financials.pb == null && financials.roe == null;
+    if (missing) {
+      return `结论：本次没有取到该股的基本面数据（营收/利润/PE/PB/ROE 均缺失），无法做财务层面的判断。\n依据：可用数据只剩技术面——现价¥${quote.price.toFixed(3)}，相对20日均线¥${quote.ma20.toFixed(3)}处于${quote.price >= quote.ma20 ? "上方" : "下方"}，支撑¥${quote.support.toFixed(3)}、阻力¥${quote.resistance.toFixed(3)}${osc ? `；动能：${osc}` : ""}${volumeTip(context) ? `；${volumeTip(context)}` : ""}。\n风险与缺口：基本面缺失不等于不能交易，技术面仍可作为主要依据，但缺少估值/业绩锚点，长期持有的胜率难验证。\n下一步：先看技术面走势（是否站稳均线、量能是否配合），并结合仓位纪律决定操作；若你已掌握基本面，也可在对话里补充给我。`;
+    }
+    return `结论：现有财务数据只能用于初筛，不能单独证明公司被低估或高估。\n依据：营收变化${percent(financials.revenueGrowth)}，利润变化${percent(financials.profitGrowth)}，市盈率${financials.pe?.toFixed(2) ?? "暂无"}，市净率${financials.pb?.toFixed(2) ?? "暂无"}，ROE${percent(financials.roe)}。\n风险与缺口：财务口径、报告期和一次性损益仍需结合公告核验；若营收/利润/负债率缺失，说明该类数据来自境外源未能获取，以下判断需以技术面为主。\n下一步：优先查看最近一期定期报告及业绩说明，并结合技术面（均线/量能/支撑阻力）综合判断。`;
   }
 
   const vol = volumeTip(context);

@@ -186,9 +186,10 @@ def screen(cfg: config.AppConfig, codes: list[str], dp=None, top_n_override: int
         # 行业：优先行情快照提供的 sector，缺失回退静态映射（覆盖蓝筹池）。
         # 注意：静态表只覆盖有限蓝筹池，全市场扫描时大量个股回退为 '其他'，
         # 若直接归桶会让 max_per_sector 把所有"其他"票当成同一行业一刀切。
-        # 因此未知行业(code 级)各自独立，只让"真实行业"受分散约束。
+        # 因此未知行业在内部按代码各自独立，只让"真实行业"受分散约束；
+        # 对外展示仍保留"其他"，避免把股票代码误当成行业名称。
         _sector_raw = quote.get("sector") or sectors.industry_of(code)
-        _sector = code if (_sector_raw in (None, "", "其他")) else _sector_raw
+        _sector = "其他" if (_sector_raw in (None, "", "其他")) else _sector_raw
 
         rows.append({
             "code": code,
@@ -301,7 +302,8 @@ def screen(cfg: config.AppConfig, codes: list[str], dp=None, top_n_override: int
     selected: list[dict] = []
     sector_count: dict[str, int] = {}
     for r in rows:
-        sec = r["sector"]
+        # 未知行业在内部按代码各自独立，避免"其他"桶被一刀切
+        sec = r["sector"] if r["sector"] != "其他" else r["code"]
         if sector_count.get(sec, 0) < cap:
             selected.append(r)
             sector_count[sec] = sector_count.get(sec, 0) + 1

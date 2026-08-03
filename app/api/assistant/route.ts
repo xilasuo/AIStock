@@ -23,7 +23,7 @@ function summarizeContext(ctx: AssistantContext): string {
     `股票：${s.name}(${s.code})，类型=${s.instrumentType}，行业=${s.industry ?? "未知"}`,
     `行情时间：${q.marketTime ?? "未提供"}`,
     `当前价=${q.price}，涨跌幅=${q.changePercent.toFixed(2)}%，MA20=${q.ma20}`,
-    `风险观察线(支撑)=${q.support}，阻力=${q.resistance}，近20日平均波动=${q.volatility.toFixed(2)}%`,
+    `走势结构：现价相对MA20${q.price >= q.ma20 ? "之上（短线偏强）" : "之下（短线偏弱）"}；支撑=${q.support}，阻力=${q.resistance}，价格相对阻力距离=${q.resistance > 0 ? (((q.resistance - q.price) / q.price) * 100).toFixed(1) + "%" : "缺失"}，近20日平均波动=${q.volatility.toFixed(2)}%`,
     `财务：营收增长=${f.revenueGrowth ?? "数据缺失"}，利润增长=${f.profitGrowth ?? "数据缺失"}，负债率=${f.debtRatio ?? "数据缺失"}，PE=${f.pe ?? "数据缺失"}，PB=${f.pb ?? "数据缺失"}，ROE=${f.roe ?? "数据缺失"}`,
     `一句话结论：${ctx.summary}`,
     `已识别风险：${(ctx.risks ?? []).join("；") || "无"}`,
@@ -39,7 +39,17 @@ function summarizeContext(ctx: AssistantContext): string {
   const pf = ctx.portfolio;
   lines.push(`账户：总资产=${pf.totalAssets ?? "数据缺失"}，现金=${pf.cash ?? "数据缺失"}，总仓位=${pf.totalPositionPercent ?? "数据缺失"}%，账户总收益=${pf.totalProfitPercent ?? "数据缺失"}%`);
   if (ctx.volume) {
-    lines.push(`量能：当日成交量 ${ctx.volume.latest}，近5日均量 ${ctx.volume.ma5.toFixed(0)}、近20日均量 ${ctx.volume.ma20.toFixed(0)}，量比 ${ctx.volume.ratio === null ? "缺失" : ctx.volume.ratio.toFixed(2)}，量价背离 ${ctx.volume.divergence ?? "未知"}（近20日上涨放量 ${ctx.volume.upDaysWithVolume} 天、下跌放量 ${ctx.volume.downDaysWithVolume} 天）。`);
+    const divergenceNote =
+      ctx.volume.divergence === "顶背离"
+        ? "（价格高位但量能未同步放大，警惕追高）"
+        : ctx.volume.divergence === "底背离"
+          ? "（低位缩量、抛压衰竭迹象，关注止跌但勿直接抄底）"
+          : ctx.volume.ratio != null && ctx.volume.ratio >= 1.5
+            ? "（明显放量，配合价格方向判断突破可靠性）"
+            : ctx.volume.ratio != null && ctx.volume.ratio < 0.6
+              ? "（明显缩量，突破可信度低）"
+              : "";
+    lines.push(`量能：当日成交量 ${ctx.volume.latest}，近5日均量 ${ctx.volume.ma5.toFixed(0)}、近20日均量 ${ctx.volume.ma20.toFixed(0)}，量比 ${ctx.volume.ratio === null ? "缺失" : ctx.volume.ratio.toFixed(2)}，量价背离 ${ctx.volume.divergence ?? "未知"}（近20日上涨放量 ${ctx.volume.upDaysWithVolume} 天、下跌放量 ${ctx.volume.downDaysWithVolume} 天）${divergenceNote}。`);
   } else {
     lines.push("量能：数据缺失。");
   }
@@ -128,6 +138,7 @@ export async function POST(request: Request) {
               "5. 持仓建议是重点：根据当前价相对成本、支撑/阻力、该股占比与账户总仓位，明确给出加仓/持有/减仓/止损/止盈中哪一种，并说清触发条件。",
               "6. 回答固定四段：结论（直接亮明动作与倾向，干脆别铺垫）/ 依据（点出具体数字及其数据时间）/ 风险与缺口 / 下一步操作。",
               "7. 不超过500字，口语化、不啰嗦、少重复免责声明，把话说到点子上。",
+              "10. 【技术面为主，基本面按可得性降级】本系统基本面数据可能不全（营收/利润/负债率常缺），但 K线/成交量/MACD/RSI/KDJ/支撑阻力始终稳定可得。因此：优先用走势结构（均线多头/空头、价格与支撑阻力的位置）、量能（放量突破/缩量回调/量价背离）、动能指标（MACD金叉死叉、RSI超买超卖、KDJ）作为主要评判依据；基本面（PE/PB/ROE等）在缺失时直接注明“基本面数据缺失，以下判断以技术面为主”，不要因为某项财务数据缺失就拒绝给出技术判断，更不要编造财务数字。",
               "8. 仓位建议必须展示计算：风险每股=max(当前价-支撑线,当前价×3%)；单笔可亏=总资产×max_loss_percent%；建议股数=单笔可亏÷风险每股，且≤可用现金、单股≤总资产×max_concentration_percent%；成数=建议金额÷总资产。数字只来自 context，缺失如实说明。",
               "9. 下方的【我的交易纪律与风险偏好】是硬约束，必须优先生效，不得再用固定的 2%/30% 规则；当 enforce_stop_loss=是 时，任何买入动作都必须先给出止损位，跌破即执行。",
               "【反幻觉示例】用户问“茅台 PE 多少、能买吗”而 pe=数据缺失 → 正确回答：“数据缺失：本次没取到 PE，我不凭记忆补数。能不能买看你的仓位和计划，先把账户资金补全、设好止损再谈。”",
