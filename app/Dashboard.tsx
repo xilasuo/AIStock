@@ -230,8 +230,22 @@ type Analysis = {
 type Position = ReturnType<typeof calculatePortfolio>["positions"][number];
 
 type AssistantMessage = {
+  id?: string;
   role: "user" | "assistant";
   content: string;
+  mode?: "ai" | "fallback";
+  error?: boolean;
+  // 当某条 assistant 消息是失败占位时，保留用户原始问题以便点"重试"复用
+  pendingQuestion?: string;
+};
+
+let assistantMessageCounter = 0;
+const nextId = () => {
+  assistantMessageCounter += 1;
+  if (typeof globalThis !== "undefined" && "crypto" in globalThis && "randomUUID" in globalThis.crypto) {
+    return `${Date.now().toString(36)}-${globalThis.crypto.randomUUID().slice(0, 8)}`;
+  }
+  return `${Date.now().toString(36)}-${(assistantMessageCounter).toString(36)}`;
 };
 
 type Status = {
@@ -2217,6 +2231,13 @@ function SmartAssistant(
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [primed, setPrimed] = useState(false);
   const [assistantMode, setAssistantMode] = useState<"ai" | "fallback" | null>(null);
+  const messagesRef = useRef<HTMLDivElement | null>(null);
+
+  const scrollToBottom = useCallback((smooth = true) => {
+    const el = messagesRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+  }, []);
 
   // 进入分析页或切换股票时重置对话并给出引导语
   const stockCode = analysis?.stock.code ?? "";
@@ -2231,6 +2252,31 @@ function SmartAssistant(
     setPrimed(true);
   }, [stockCode, analysis, position]);
 
+  // 历史/提问长度变化时把消息列表滚到底
+  useEffect(() => {
+    scrollToBottom(false);
+  }, [messages, asking, scrollToBottom]);
+
+  // 监听移动端键盘弹起（visualViewport），让 sheet 高度跟随
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handle = () => {
+      const root = messagesRef.current?.closest(".smart-assistant") as HTMLElement | null;
+      if (!root) return;
+      const vv = window.visualViewport;
+      if (!vv) return;
+      const offset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      root.style.setProperty("--keyboard-inset", `${Math.round(offset)}px`);
+    };
+    handle();
+    window.visualViewport?.addEventListener("resize", handle);
+    window.visualViewport?.addEventListener("scroll", handle);
+    return () => {
+      window.visualViewport?.removeEventListener("resize", handle);
+      window.visualViewport?.removeEventListener("scroll", handle);
+    };
+  }, []);
+
   function buildContext() {
     return analysis
       ? buildAnalysisContext(analysis, position, portfolioInsights)
@@ -2241,7 +2287,8 @@ function SmartAssistant(
     const clean = text.trim();
     if (!clean || asking) return;
     const history = messages.slice(-8);
-    setMessages((current) => [...current, { role: "user", content: clean }]);
+    const userMessage = { role: "user" as const, content: clean, id: nextId() };
+    setMessages((current) => [...current, userMessage]);
     setQuestion("");
     setAsking(true);
     try {
@@ -2255,15 +2302,32 @@ function SmartAssistant(
         }),
       });
       setAssistantMode(result.mode);
-      setMessages((current) => [...current, { role: "assistant", content: result.answer }]);
+      setMessages((current) => [...current, {
+        role: "assistant",
+        content: result.answer,
+        id: nextId(),
+        mode: result.mode,
+      }]);
     } catch (error) {
       setMessages((current) => [...current, {
         role: "assistant",
         content: error instanceof Error ? error.message : "这次追问暂时没有回答，请稍后重试。",
+        id: nextId(),
+        error: true,
+        // 失败时把原问题挂到消息上，点"重试"就能重发
+        pendingQuestion: clean,
       }]);
     } finally {
       setAsking(false);
     }
+  }
+
+  function retry(messageId: string) {
+    const target = messages.find((m) => m.id === messageId);
+    if (!target?.pendingQuestion) return;
+    // 移除失败气泡，重新发起提问
+    setMessages((current) => current.filter((m) => m.id !== messageId));
+    void ask(target.pendingQuestion);
   }
 
   function submit(event: React.FormEvent) {
@@ -2297,22 +2361,71 @@ function SmartAssistant(
           </div>
         }
       />
-      <div className="assistant-messages" aria-live="polite">
-        {!primed && <div className="assistant-message assistant"><b>助手</b><p>正在准备…</p></div>}
-        {messages.map((message, index) => (
-          <div className={`assistant-message ${message.role}`} key={`${message.role}-${index}`}>
-            <b>{message.role === "assistant" ? "助手" : "我"}</b>
-            {message.role === "assistant" ? (
-              <MarkdownMessage content={message.content} />
-            ) : (
-              <p>{message.content}</p>
-            )}
+      <div className="assistant-messages" ref={messagesRef} aria-live="polite">
+        {!primed && (
+          <div className="assistant-bubble assistant">
+            <div className="assistant-bubble__avatar" aria-hidden>AI</div>
+            <div className="assistant-bubble__body">
+              <div className="assistant-bubble__name">助手</div>
+              <div className="assistant-bubble__text">正在准备…</div>
+            </div>
           </div>
-        ))}
-        {asking && <div className="assistant-message assistant"><b>助手</b><p>正在核对当前证据和对话上下文…</p></div>}
+        )}
+        {messages.map((message, index) => {
+          const role = message.role;
+          const isAssistant = role === "assistant";
+          return (
+            <div className={`assistant-bubble ${isAssistant ? "assistant" : "user"}${message.error ? " has-error" : ""}`} key={message.id ?? `${role}-${index}`}>
+              <div className="assistant-bubble__avatar" aria-hidden>{isAssistant ? "AI" : "我"}</div>
+              <div className="assistant-bubble__body">
+                <div className="assistant-bubble__name">
+                  {isAssistant ? "助手" : "我"}
+                  {isAssistant && message.mode === "fallback" && <span className="assistant-bubble__tag">规则</span>}
+                  {isAssistant && message.error && <span className="assistant-bubble__tag tag-warn">异常</span>}
+                </div>
+                {isAssistant ? (
+                  <MarkdownMessage content={message.content} />
+                ) : (
+                  <div className="assistant-bubble__text">{message.content}</div>
+                )}
+                {message.error && message.pendingQuestion && (
+                  <button
+                    type="button"
+                    className="assistant-bubble__retry"
+                    onClick={() => message.id && retry(message.id)}
+                    disabled={asking}
+                  >
+                    <RefreshCw size={12} /> 重试
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        {asking && (
+          <div className="assistant-bubble assistant is-typing">
+            <div className="assistant-bubble__avatar" aria-hidden>AI</div>
+            <div className="assistant-bubble__body">
+              <div className="assistant-bubble__name">助手</div>
+              <div className="assistant-bubble__typing" aria-label="正在思考">
+                <span /><span /><span />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
       <div className="assistant-prompts">
-        {prompts.map((prompt) => <button key={prompt} type="button" disabled={asking} onClick={() => void ask(prompt)}>{prompt}</button>)}
+        {prompts.map((prompt) => (
+          <button
+            key={prompt}
+            type="button"
+            className="assistant-prompt-chip"
+            disabled={asking}
+            onClick={() => void ask(prompt)}
+          >
+            {prompt}
+          </button>
+        ))}
       </div>
       <form className="assistant-form" onSubmit={submit}>
         <input
