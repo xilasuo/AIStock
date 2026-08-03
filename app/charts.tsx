@@ -101,3 +101,48 @@ export function DonutChart({
     </div>
   );
 }
+
+/**
+ * Sparkline 迷你走势图：把最近 N 根 K 线画成一条平滑曲线，中间渲染一个
+ * 圆点强调当前价格；用箭头色（红涨绿跌）提示方向，不依赖颜色亦可读懂。
+ */
+export function Sparkline({ history, baseClose, change, width = 220, height = 56 }: {
+  history: Array<{ date: string; close: number }>;
+  baseClose: number | null;
+  change: number | null;
+  width?: number;
+  height?: number;
+}) {
+  const rows = history.slice(-30);
+  if (rows.length < 2) {
+    return <div className="sparkline sparkline--empty" aria-hidden="true" />;
+  }
+  const closes = rows.map((row) => row.close);
+  const min = Math.min(...closes, baseClose ?? Infinity);
+  const max = Math.max(...closes, baseClose ?? -Infinity);
+  const range = Math.max(max - min, 0.0001);
+  const step = rows.length > 1 ? width / (rows.length - 1) : width;
+  const pad = 4;
+  const usableH = height - pad * 2;
+  const x = (index: number) => index * step;
+  const y = (value: number) => pad + (max - value) / range * usableH;
+  const points = rows.map((row, index) => `${x(index).toFixed(1)},${y(row.close).toFixed(1)}`).join(" ");
+  const lastX = x(rows.length - 1);
+  const lastY = y(rows[rows.length - 1].close);
+  const direction = change === null ? "flat" : change >= 0 ? "up" : "down";
+  const baseY = baseClose === null ? null : y(baseClose);
+  return (
+    <svg
+      className={`sparkline sparkline--${direction}`}
+      viewBox={`0 0 ${width} ${height}`}
+      role="img"
+      aria-label={change === null ? "价格走势" : `加入关注以来${change >= 0 ? "上涨" : "下跌"}${Math.abs(change).toFixed(2)}%`}
+    >
+      {baseY !== null && (
+        <line x1="0" x2={width} y1={baseY} y2={baseY} className="sparkline__base" />
+      )}
+      <polyline points={points} className="sparkline__line" />
+      <circle cx={lastX} cy={lastY} r="3" className="sparkline__dot" />
+    </svg>
+  );
+}

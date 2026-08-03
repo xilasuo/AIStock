@@ -11,7 +11,8 @@ import React, {
   type ReactNode,
 } from "react";
 import { useSearchParams, usePathname } from "next/navigation";
-import { SectionHeader, Badge, Stat, Button, IconButton, Field, Input, Select, Textarea, Banner, Hint } from "./components";
+import { SectionHeader, Badge, Stat, Button, IconButton, Field, Input, Select, Textarea, Banner, Hint, LoadingState, ConfirmDialog, StockSearch } from "./components";
+import { Sparkline } from "./charts";
 import { AnalyticsView } from "./AnalyticsView";
 import { ImportPanel } from "./ImportPanel";
 import { MarkdownMessage } from "./MarkdownMessage";
@@ -587,13 +588,15 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     };
   }, [alerts, checkAlerts, portfolio.positions, quoteStale, refreshQuote, watchlist]);
 
-  async function analyzeStock(event?: React.FormEvent) {
+  async function analyzeStock(event?: React.FormEvent, overrideQuery?: string) {
     event?.preventDefault();
-    if (!query.trim()) {
+    const target = (overrideQuery ?? query).trim();
+    if (!target) {
       flash("请输入股票代码或名称");
       return;
     }
-    await fetchAnalysis(query);
+    if (overrideQuery) setQuery(overrideQuery);
+    await fetchAnalysis(target);
   }
 
   // 重新分析：强制绕过行情缓存，拉取最新价并重新计算（供分析页"重新分析"按钮）
@@ -825,7 +828,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
         </header>
 
         {error && <Banner tone="danger" onDismiss={() => setError("")}>{error}</Banner>}
-        {loading ? <div className="loading-state">正在读取你的个人记录…</div> : (
+        {loading ? <LoadingState label="正在读取你的个人记录…" /> : (
           <>
             {view === "home" && (
               <Home
@@ -984,20 +987,21 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
         recentAnalyses={recentAnalyses}
         fetchAnalysis={fetchAnalysis}
       />
-      {confirming === "logout" && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setConfirming(null); }}>
-          <section className="modal watch-confirm" role="alertdialog" aria-modal="true" aria-labelledby="logout-confirm-title">
-            <header><div><span className="eyebrow">确认操作</span><h2 id="logout-confirm-title">退出登录？</h2></div><IconButton label="关闭" onClick={() => setConfirming(null)}>×</IconButton></header>
-            <p>退出后需要重新登录才能使用。确定要退出吗？</p>
-            <div className="modal-actions"><Button variant="ghost" type="button" onClick={() => setConfirming(null)}>取消</Button><Button variant="danger" type="button" onClick={() => {
-              // 退出登录时清空本地行情/最近分析缓存，避免不同账号间数据残留
-              removeCache("quotes");
-              removeCache("recent");
-              window.location.href = signOutUrl;
-            }}>确认退出</Button></div>
-          </section>
-        </div>
-      )}
+      <ConfirmDialog
+        open={confirming === "logout"}
+        eyebrow="确认操作"
+        title="退出登录？"
+        message="退出后需要重新登录才能使用。确定要退出吗？"
+        confirmLabel="确认退出"
+        tone="danger"
+        onCancel={() => setConfirming(null)}
+        onConfirm={() => {
+          // 退出登录时清空本地行情/最近分析缓存，避免不同账号间数据残留
+          removeCache("quotes");
+          removeCache("recent");
+          window.location.href = signOutUrl;
+        }}
+      />
     </div>
   );
 }
@@ -1105,6 +1109,7 @@ function StockAnalysisPanel({
   onBuy,
   onSell,
   onWatch,
+  watchlist,
 }: {
   query: string;
   setQuery: (value: string) => void;
@@ -1113,10 +1118,11 @@ function StockAnalysisPanel({
   portfolio: ReturnType<typeof calculatePortfolio>;
   portfolioInsights: PortfolioInsights;
   watched: boolean;
+  watchlist: WatchItem[];
   recentAnalyses: Analysis[];
   initialSymbol: string;
   onPickRecent: (item: Analysis) => void;
-  onAnalyze: (event?: React.FormEvent) => Promise<void>;
+  onAnalyze: (event?: React.FormEvent, overrideQuery?: string) => Promise<void>;
   onReanalyze: () => Promise<void>;
   onBuy: () => void;
   onSell: () => void;
@@ -1133,6 +1139,23 @@ function StockAnalysisPanel({
     // 手动点击「开始分析」即可，避免无谓等待与重复请求。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 合并「关注列表 + 最近分析」作为搜索联想来源，去重后优先展示关注项
+  const searchSuggestions = useMemo(() => {
+    const seen = new Set<string>();
+    const list: Array<{ symbol: string; name?: string }> = [];
+    for (const item of watchlist) {
+      if (seen.has(item.symbol)) continue;
+      seen.add(item.symbol);
+      list.push({ symbol: item.symbol, name: item.name });
+    }
+    for (const item of recentAnalyses) {
+      if (seen.has(item.stock.code)) continue;
+      seen.add(item.stock.code);
+      list.push({ symbol: item.stock.code, name: item.stock.name });
+    }
+    return list;
+  }, [watchlist, recentAnalyses]);
 
   return (
     <div className="page-content inner-page">
@@ -1157,11 +1180,16 @@ function StockAnalysisPanel({
         {!analysis && <span className="eyebrow">公开数据 + 自动解读 · 你来做决定</span>}
         <h2>{analysis ? "继续查" : "输入代码，先把它看懂。"}</h2>
         {!analysis && <p>输入股票代码或名称，系统自动整理行情、财务与题材，你负责最后的判断。</p>}
-        <form className="stock-search" onSubmit={onAnalyze}>
-          <span className="search-icon"><Search size={21} /></span>
-          <input ref={inputRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="例如 600519、贵州茅台" aria-label="股票代码或名称" />
-          <Button variant="primary" type="submit" disabled={analyzing}>{analyzing ? "正在获取数据…" : "开始分析"}</Button>
-        </form>
+        <StockSearch
+          compact={!!analysis}
+          value={query}
+          onChange={setQuery}
+          onSubmit={() => { void onAnalyze(); }}
+          onSelect={(symbol) => { void onAnalyze(undefined, symbol); }}
+          loading={analyzing}
+          suggestions={searchSuggestions}
+          inputRef={inputRef}
+        />
         <div className="search-meta"><span>无需股票数据账号</span><i /><span>结果标明数据时间</span><i /><span>不提供买卖建议</span></div>
       </section>
 
@@ -2994,51 +3022,6 @@ const watchStatusMap: Record<"研究中" | "等待条件" | "已买入" | "暂�
   "暂停": { tone: "neutral", icon: NotebookPen, label: "暂停" },
 };
 
-/**
- * Sparkline 迷你走势图：把最近 N 根 K 线画成一条平滑曲线，中间渲染一个
- * 圆点强调当前价格；用箭头色（红涨绿跌）提示方向，不依赖颜色亦可读懂。
- */
-function Sparkline({ history, baseClose, change, width = 220, height = 56 }: {
-  history: Array<{ date: string; close: number }>;
-  baseClose: number | null;
-  change: number | null;
-  width?: number;
-  height?: number;
-}) {
-  const rows = history.slice(-30);
-  if (rows.length < 2) {
-    return <div className="sparkline sparkline--empty" aria-hidden="true" />;
-  }
-  const closes = rows.map((row) => row.close);
-  const min = Math.min(...closes, baseClose ?? Infinity);
-  const max = Math.max(...closes, baseClose ?? -Infinity);
-  const range = Math.max(max - min, 0.0001);
-  const step = rows.length > 1 ? width / (rows.length - 1) : width;
-  const pad = 4;
-  const usableH = height - pad * 2;
-  const x = (index: number) => index * step;
-  const y = (value: number) => pad + (max - value) / range * usableH;
-  const points = rows.map((row, index) => `${x(index).toFixed(1)},${y(row.close).toFixed(1)}`).join(" ");
-  const lastX = x(rows.length - 1);
-  const lastY = y(rows[rows.length - 1].close);
-  const direction = change === null ? "flat" : change >= 0 ? "up" : "down";
-  const baseY = baseClose === null ? null : y(baseClose);
-  return (
-    <svg
-      className={`sparkline sparkline--${direction}`}
-      viewBox={`0 0 ${width} ${height}`}
-      role="img"
-      aria-label={change === null ? "价格走势" : `加入关注以来${change >= 0 ? "上涨" : "下跌"}${Math.abs(change).toFixed(2)}%`}
-    >
-      {baseY !== null && (
-        <line x1="0" x2={width} y1={baseY} y2={baseY} className="sparkline__base" />
-      )}
-      <polyline points={points} className="sparkline__line" />
-      <circle cx={lastX} cy={lastY} r="3" className="sparkline__dot" />
-    </svg>
-  );
-}
-
 function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved }: {
   items: WatchItem[];
   quotes: Record<string, Analysis>;
@@ -3270,22 +3253,16 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved }: {
           })}
         </div>
       ) : <div className="empty-state">关注列表还是空的。查一只股票后点击“加入关注”。</div>}
-      {confirming && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setConfirming(null); }}>
-          <section className="modal watch-confirm" role="alertdialog" aria-modal="true" aria-labelledby="watch-confirm-title">
-            <header><div><span className="eyebrow">确认操作</span><h2 id="watch-confirm-title">移出关注？</h2></div><IconButton label="关闭" onClick={() => setConfirming(null)}>×</IconButton></header>
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                void confirmRemove(confirming);
-              }}
-            >
-              <p>{items.find((item) => item.symbol === confirming)?.name || confirming} 将从关注列表中移除，已写的条件也会一并删除。此操作不会影响你的交易记录。</p>
-              <div className="modal-actions"><Button variant="ghost" type="button" onClick={() => setConfirming(null)}>取消</Button><Button variant="danger" type="submit">确认移出</Button></div>
-            </form>
-          </section>
-        </div>
-      )}
+      <ConfirmDialog
+        open={!!confirming}
+        eyebrow="确认操作"
+        title="移出关注？"
+        message={`${confirming ? items.find((item) => item.symbol === confirming)?.name || confirming : ""} 将从关注列表中移除，已写的条件也会一并删除。此操作不会影响你的交易记录。`}
+        confirmLabel="确认移出"
+        tone="danger"
+        onCancel={() => setConfirming(null)}
+        onConfirm={() => { if (confirming) void confirmRemove(confirming); }}
+      />
       {message && <div className="toast inline-toast" role="status">{message}</div>}
     </div>
   );

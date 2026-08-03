@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect } from "react";
 import {
   SectionHeader,
   Card,
@@ -9,7 +9,9 @@ import {
   Banner,
   Hint,
   Spinner,
+  LoadingState,
 } from "./components";
+import { useApi } from "../lib/use-api";
 
 /* ----------------------------- 数据类型 ----------------------------- */
 export type WritebackSignal = {
@@ -71,49 +73,19 @@ function SignalCard({ signal }: { signal: WritebackSignal }) {
 
 /* ------------------------------ 主视图 ------------------------------ */
 export function WritebackView() {
-  const [writeback, setWriteback] = useState<WritebackPayload | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  const load = useCallback(() => {
-    let alive = true;
-    void (async () => {
-      setLoading(true);
-      setError("");
-      try {
-        const res = await fetch("/api/writeback-signals");
-        const json = (await res.json()) as WritebackResponse;
-        if (!alive) return;
-        if (json.ok && json.writeback) setWriteback(json.writeback);
-        else setError(json.error || "暂时无法读取回写结果");
-      } catch {
-        if (alive) setError("暂时无法读取回写结果");
-      } finally {
-        if (alive) setLoading(false);
+  const { data: writeback, loading, error, reload } = useApi<WritebackPayload>(
+    async () => {
+      const res = await fetch("/api/writeback-signals");
+      const json = (await res.json()) as WritebackResponse;
+      if (!json.ok || !json.writeback) {
+        throw new Error(json.error || "暂时无法读取回写结果");
       }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cleanup: (() => void) | undefined;
-    const timer = window.setTimeout(() => {
-      cleanup = load();
-    }, 0);
-    return () => {
-      window.clearTimeout(timer);
-      cleanup?.();
-    };
-  }, [load]);
+      return json.writeback;
+    },
+  );
 
   if (loading) {
-    return (
-      <div className="loading-state">
-        <Spinner /> 正在加载回写结果…
-      </div>
-    );
+    return <LoadingState label="正在加载回写结果…" />;
   }
   if (error || !writeback) {
     return (

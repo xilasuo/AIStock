@@ -5,7 +5,8 @@
  * （区块标题、状态标签、统计块）收敛到单一实现，避免“风格各异”。
  * 所有视觉令牌均来自 globals.css 的 :root 变量，不在组件内硬编码颜色。
  */
-import { forwardRef, type InputHTMLAttributes, type TextareaHTMLAttributes, type SelectHTMLAttributes, type ReactNode } from "react";
+import { forwardRef, useState, type InputHTMLAttributes, type TextareaHTMLAttributes, type SelectHTMLAttributes, type ReactNode } from "react";
+import { Search } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
 /* SectionHeader                                                        */
@@ -413,8 +414,24 @@ export function Divider({ className = "" }: { className?: string }) {
   return <div className={`divider ${className}`.trim()} />;
 }
 
+export function LoadingState({
+  label = "加载中…",
+  className = "",
+}: {
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <div className={`loading-state ${className}`.trim()} role="status" aria-live="polite">
+      <Spinner />
+      <span>{label}</span>
+    </div>
+  );
+}
+
 interface ModalProps {
   title?: React.ReactNode;
+  eyebrow?: string;
   onClose?: () => void;
   children: React.ReactNode;
   footer?: React.ReactNode;
@@ -424,6 +441,7 @@ interface ModalProps {
 
 export function Modal({
   title,
+  eyebrow,
   onClose,
   children,
   footer,
@@ -440,7 +458,10 @@ export function Modal({
       >
         {title !== undefined && (
           <header>
-            <h2>{title}</h2>
+            <div>
+              {eyebrow && <span className="modal__eyebrow">{eyebrow}</span>}
+              <h2>{title}</h2>
+            </div>
             {onClose && (
               <button type="button" aria-label={closeLabel} onClick={onClose}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
@@ -452,6 +473,153 @@ export function Modal({
         {footer && <footer className="modal__footer">{footer}</footer>}
       </div>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* ConfirmDialog（确认弹窗）                                            */
+/* 封装「注销确认」「移出关注」等二元确认弹窗，消除手写 modal-backdrop。  */
+/* ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ */
+/* StockSearch（股票搜索 / 选择框）                                     */
+/* 通用「输入代码或名称 → 提交分析或选中」输入框，可选联想下拉。        */
+/* 联想数据由调用方通过 suggestions 注入（如关注列表 + 最近分析合并），  */
+/* 组件本身不持有股票全量列表，保持轻量、可复用。                       */
+/* ------------------------------------------------------------------ */
+export interface StockSuggestion {
+  symbol: string;
+  name?: string;
+}
+
+export function StockSearch({
+  value,
+  onChange,
+  onSubmit,
+  onSelect,
+  loading = false,
+  suggestions = [],
+  submitLabel = "开始分析",
+  loadingLabel = "正在获取数据…",
+  placeholder = "例如 600519、贵州茅台",
+  compact = false,
+  className = "",
+  inputRef,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  onSubmit: (query: string) => void;
+  onSelect?: (symbol: string) => void;
+  loading?: boolean;
+  suggestions?: StockSuggestion[];
+  submitLabel?: string;
+  loadingLabel?: string;
+  placeholder?: string;
+  compact?: boolean;
+  className?: string;
+  inputRef?: React.Ref<HTMLInputElement>;
+}) {
+  const [open, setOpen] = useState(false);
+  const list = open ? suggestions : [];
+
+  const pick = (symbol: string) => {
+    onChange(symbol);
+    setOpen(false);
+    onSelect?.(symbol);
+  };
+
+  return (
+    <form
+      className={`stock-search ${compact ? "compact" : ""} ${className}`.trim()}
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (value.trim()) onSubmit(value.trim());
+      }}
+    >
+      <span className="search-icon"><Search size={21} /></span>
+      <input
+        ref={inputRef}
+        value={value}
+        onChange={(event) => {
+          onChange(event.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+        placeholder={placeholder}
+        aria-label="股票代码或名称"
+        autoComplete="off"
+      />
+      <Button variant="primary" type="submit" disabled={loading || !value.trim()}>
+        {loading ? loadingLabel : submitLabel}
+      </Button>
+      {list.length > 0 && (
+        <ul className="stock-search__suggestions" role="listbox">
+          {list.map((item) => (
+            <li key={item.symbol}>
+              <button
+                type="button"
+                className="stock-search__option"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  pick(item.symbol);
+                }}
+              >
+                <span className="stock-search__code">{item.symbol}</span>
+                {item.name && <span className="stock-search__name">{item.name}</span>}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </form>
+  );
+}
+
+export function ConfirmDialog({
+  open,
+  eyebrow,
+  title,
+  message,
+  confirmLabel = "确认",
+  cancelLabel = "取消",
+  tone = "primary",
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  eyebrow?: string;
+  title: string;
+  message?: ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  tone?: "primary" | "danger" | "warn";
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <Modal
+      eyebrow={eyebrow}
+      title={title}
+      onClose={onCancel}
+      size="sm"
+      footer={
+        <div className="modal__footer-actions">
+          <button type="button" className="btn btn--ghost" onClick={onCancel}>
+            {cancelLabel}
+          </button>
+          <button
+            type="button"
+            className={`btn ${tone === "danger" ? "btn--danger" : tone === "warn" ? "btn--warn" : "btn--primary"}`}
+            onClick={onConfirm}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      }
+    >
+      {message && <p className="modal__message">{message}</p>}
+    </Modal>
   );
 }
 
