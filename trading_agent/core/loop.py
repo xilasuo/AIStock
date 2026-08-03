@@ -58,6 +58,20 @@ def run(cfg: config.AppConfig, dp=None) -> dict:
     screener_meta = screen_out.get("meta") or {}
     selected_codes = [r["code"] for r in selected]
 
+    # 1.5) 真实历史模拟（滚动再平衡回测，消除幸存者偏差）
+    # 在候选池全量上做 walk-forward：每期只用「截至当期」的数据重选票，
+    # 产出无前视的真实历史绩效。相比用"今天选票回测过去"的乐观结果更可信。
+    walk_forward_bt = None
+    try:
+        if codes:
+            from backtest.walk_forward import walk_forward
+            # 预取候选池全量历史 K 线（供 walk-forward 逐期截取）
+            all_klines = {c: dp.fetch_kline(c, cfg.beg, cfg.end) for c in codes}
+            all_quotes = {c: dp.fetch_quote(c) for c in codes}
+            walk_forward_bt = walk_forward(all_klines, all_quotes, codes, cfg)
+    except Exception:  # noqa: BLE001
+        walk_forward_bt = None
+
     # 拉取已选标的的历史 K 线（回测/信号所需）
     code_klines = {c: dp.fetch_kline(c, cfg.beg, cfg.end) for c in selected_codes}
 
@@ -131,8 +145,20 @@ def run(cfg: config.AppConfig, dp=None) -> dict:
             },
             "best_metrics": best_bt["metrics"],
             "grid": opt["grid"],
+            # 样本外绩效（真实可期，防过拟合）；前端/报告应优先展示此项
+            "out_of_sample": opt.get("out_of_sample") or {},
+            "split": opt.get("split") or {},
         }
-        final_bt = best_bt
+        # 若样本外可用，最终绩效改用样本外（诚实呈现，避免样本内美化）
+        oos = opt.get("out_of_sample") or {}
+        if oos.get("metrics"):
+            final_bt = {
+                "metrics": oos["metrics"],
+                "dates": oos.get("dates", []),
+                "equity": oos.get("equity", []),
+            }
+        else:
+            final_bt = best_bt
         final_signal = opt["best_signal"]
     else:
         final_bt = base_bt
@@ -149,4 +175,15 @@ def run(cfg: config.AppConfig, dp=None) -> dict:
         "equity": final_bt["equity"],
         "n_signals_total": n_signals_total,
     }
+
+    # 真实历史模拟（walk-forward）：诚实呈现，避免幸存者偏差
+    if walk_forward_bt is not None:
+        wf = walk_forward_bt
+        result["walk_forward"] = {
+            "metrics": wf["metrics"],
+            "dates": wf["dates"],
+            "equity": wf["equity"],
+            "rebalance_days": wf["rebalance_days"],
+            "positions": wf.get("positions", []),
+        }
     return result

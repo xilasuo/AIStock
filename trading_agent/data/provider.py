@@ -166,10 +166,13 @@ def _normalize_kline(raw: list[dict]) -> list[dict]:
 
 
 def fetch_kline(code: str, beg: str = "20250101", end: str = "20500101") -> list[dict]:
-    """获取日线 K 线（新浪为主，东财兜底）。
+    """获取日线 K 线（东财前复权为主，新浪未复权兜底）。
 
     返回: [{date, open, close, high, low, vol, amount, ...}, ...]（按日期升序）
-    注：新浪为未复权价；对 MVP 回测足够，如需前复权可优先走东财。
+
+    **复权一致性（重要）**
+    统一以**东财前复权**（fqt=1）作为主数据源，避免与新浪未复权数据混用导致
+    除权除息日的信号/回测失真。新浪未复权仅在东财失败时兜底。
     """
     cached = _load_cache("kline", f"{code}_{beg}_{end}")
     if cached is not None:
@@ -177,12 +180,12 @@ def fetch_kline(code: str, beg: str = "20250101", end: str = "20500101") -> list
 
     rows: list[dict] = []
     try:
-        rows = _normalize_kline(_sina_kline(code))
+        rows = _em_kline(code, beg, end)
     except Exception:
         rows = []
     if not rows:  # 兜底
         try:
-            rows = _em_kline(code, beg, end)
+            rows = _normalize_kline(_sina_kline(code))
         except Exception:
             rows = []
 

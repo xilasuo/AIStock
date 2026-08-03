@@ -71,6 +71,12 @@ type Scan = {
       bestMetrics: ScanMetrics;
       sharpeImprovement: number;
       grid: ScanGridItem[];
+      /** 样本外绩效（时间序列切分验证，防过拟合） */
+      outOfSample?: ScanMetrics | null;
+      split?: {
+        trainRatio: number;
+        testBars?: Record<string, number>;
+      };
     };
   };
   equityCurve: Array<{ date: string; value: number }>;
@@ -89,6 +95,12 @@ type Scan = {
     configured?: Record<string, number>;
     applied?: Record<string, number>;
     skipped?: string[];
+  };
+  /** 真实历史模拟（滚动再平衡回测，消除幸存者偏差） */
+  walkForward?: {
+    metrics: ScanMetrics;
+    rebalanceDays: number;
+    equityCurve: Array<{ date: string; value: number }>;
   };
   disclaimer: string;
 };
@@ -387,27 +399,68 @@ export function StrategyScanView({
         <Stat label="年化收益" value={pct(fm.annualReturn)} />
         <Stat label="夏普比率" value={fm.sharpe.toFixed(2)} hint="风险调整收益" />
         <Stat label="最大回撤" value={pct(fm.maxDrawdown)} hint="越低越好" />
-        <Stat label="日胜率" value={pct(fm.winRate)} />
+        <Stat label="交易胜率" value={pct(fm.winRate)} hint="已平仓交易盈利占比" />
+        <Stat label="交易次数" value={String(fm.trades)} />
       </div>
 
-      {opt && (
-        <Banner
-          tone="success"
-          title={`参数优化有效：夏普 ${opt.sharpeImprovement >= 0 ? "+" : ""}${opt.sharpeImprovement.toFixed(2)}`}
-        >
-          优化后最佳参数 MA{opt.bestSignal.fastMa}/MA{opt.bestSignal.slowMa}，基准 MA
-          {scan.backtest.baseSignal.fastMa}/MA{scan.backtest.baseSignal.slowMa}。
+      {scan.walkForward && (
+        <Banner tone="warn" title={`真实历史模拟（滚动再平衡，${scan.walkForward.rebalanceDays} 交易日换仓）`}>
+          消除幸存者偏差：每期仅用「截至当期」的数据重新选股，按等权 + 单票风险预算建仓。
+          这是策略在历史上的真实可期表现 —— 总收益{" "}
+          <b>{pct(scan.walkForward.metrics.totalReturn)}</b>，夏普{" "}
+          <b>{scan.walkForward.metrics.sharpe.toFixed(2)}</b>，最大回撤{" "}
+          <b>{pct(scan.walkForward.metrics.maxDrawdown)}</b>，交易胜率{" "}
+          <b>{pct(scan.walkForward.metrics.winRate)}</b>，交易{" "}
+          <b>{scan.walkForward.metrics.trades}</b> 次。
+          上方「最终信号」指标为样本内参考，请以本真实历史模拟为准。
         </Banner>
       )}
 
+      {opt && (
+        <>
+          <Banner
+            tone="success"
+            title={`参数优化有效：夏普 ${opt.sharpeImprovement >= 0 ? "+" : ""}${opt.sharpeImprovement.toFixed(2)}`}
+          >
+            优化后最佳参数 MA{opt.bestSignal.fastMa}/MA{opt.bestSignal.slowMa}，基准 MA
+            {scan.backtest.baseSignal.fastMa}/MA{scan.backtest.baseSignal.slowMa}。
+          </Banner>
+
+          {opt.outOfSample && (
+            <Banner tone="info" title="样本外验证（防过拟合）">
+              采用时间序列切分（前 {Math.round((opt.split?.trainRatio ?? 0.7) * 100)}% 训练选参，
+              后 {Math.round((1 - (opt.split?.trainRatio ?? 0.7)) * 100)}% 验证），
+              样本外绩效更能反映策略真实可期表现：总收益{" "}
+              <b>{pct(opt.outOfSample.totalReturn)}</b>，夏普{" "}
+              <b>{opt.outOfSample.sharpe.toFixed(2)}</b>，最大回撤{" "}
+              <b>{pct(opt.outOfSample.maxDrawdown)}</b>，交易胜率{" "}
+              <b>{pct(opt.outOfSample.winRate)}</b>。
+            </Banner>
+          )}
+        </>
+      )}
+
       <Card>
-        <CardHeader title="组合净值曲线" desc="策略在历史区间上的组合净值（起始归一化 1.0）。" />
+        <CardHeader title="组合净值曲线（样本内参考）" desc="用当前选股结果在历史区间上的净值（起始归一化 1.0），可能存在幸存者偏差。" />
         {scan.equityCurve && scan.equityCurve.length > 0 ? (
           <StrategyCurveChart points={scan.equityCurve} />
         ) : (
           <div className="scan-empty-hint">暂无净值曲线数据。</div>
         )}
       </Card>
+
+      {scan.walkForward && scan.walkForward.equityCurve && scan.walkForward.equityCurve.length > 0 && (
+        <Card>
+          <CardHeader
+            title="真实历史模拟净值曲线"
+            desc="滚动再平衡回测：每期只用「截至当期」数据重新选股，按风险预算建仓，消除幸存者偏差。"
+          />
+          <StrategyCurveChart points={scan.walkForward.equityCurve} />
+          <p className="scan-muted-line">
+            换仓周期 {scan.walkForward.rebalanceDays} 交易日 ｜ 起始归一化 1.0 ｜ 已含手续费与滑点
+          </p>
+        </Card>
+      )}
 
       <Card>
         <CardHeader title="选股榜单（多因子打分）" desc="风险调整动量 + 趋势 + 估值 + RSI/MACD 技术确认 + 流动性/规模/资金流，加权打分取 Top N；行业分散约束限制单行业最多入选数。" />

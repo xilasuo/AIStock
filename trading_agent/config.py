@@ -151,6 +151,9 @@ class BacktestConfig:
     initial_cash: float = 1_000_000.0   # 初始资金（仅用于展示金额量级）
     fee_rate: float = 0.0003            # 单边手续费（万三）
     slippage: float = 0.0005            # 滑点
+    rebalance_days: int = 20            # 滚动再平衡周期（交易日，默认约一个月）
+    risk_per_position: float = 0.02     # 单票风险预算（占净值比例）：单票最大亏损不超过净值 2%
+    max_position_weight: float = 0.25   # 单票最大仓位上限（占净值比例），防止等权下过度集中
 
 
 @dataclass
@@ -161,6 +164,7 @@ class OptimConfig:
     slow_ma_grid: list = field(default_factory=lambda: [15, 20, 30, 60])
     metric: str = "sharpe"              # 优化目标指标
     rounds: int = 1                     # 迭代轮数（对应架构内循环）
+    train_ratio: float = 0.7            # 样本外切分：前 70% 训练选参，后 30% 验证（防过拟合）
 
 
 @dataclass

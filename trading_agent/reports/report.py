@@ -104,7 +104,7 @@ def write_report(result: dict, cfg: config.AppConfig) -> str:
     lines.append(
         f"- 总收益：{_pct(bm['total_return'])} ｜ 年化：{_pct(bm['annual_return'])} ｜ "
         f"夏普：{bm['sharpe']:.2f} ｜ 最大回撤：{_pct(bm['max_drawdown'])} ｜ "
-        f"日胜率：{_pct(bm['win_rate'])}"
+        f"交易胜率：{_pct(bm['win_rate'])} ｜ 交易次数：{bm.get('trades', 0)}"
     )
     lines.append("")
 
@@ -115,10 +115,25 @@ def write_report(result: dict, cfg: config.AppConfig) -> str:
         lines.append(
             f"- 总收益：{_pct(fm['total_return'])} ｜ 年化：{_pct(fm['annual_return'])} ｜ "
             f"夏普：{fm['sharpe']:.2f} ｜ 最大回撤：{_pct(fm['max_drawdown'])} ｜ "
-            f"日胜率：{_pct(fm['win_rate'])} ｜ 交易次数：{fm.get('trades', 0)}"
+            f"交易胜率：{_pct(fm['win_rate'])} ｜ 交易次数：{fm.get('trades', 0)}"
         )
         imp = fm["sharpe"] - bm["sharpe"]
         lines.append(f"- 夏普提升：{imp:+.2f}（优化{ '有效' if imp > 0 else '未超越基准'}）")
+        # 样本外绩效（诚实呈现，防过拟合）
+        oos = opt.get("out_of_sample") or {}
+        oos_m = oos.get("metrics") or {}
+        split = opt.get("split") or {}
+        if oos_m:
+            lines.append("")
+            lines.append("**样本外验证（时间序列切分，防过拟合）**")
+            lines.append(
+                f"- 总收益：{_pct(oos_m['total_return'])} ｜ 年化：{_pct(oos_m['annual_return'])} ｜ "
+                f"夏普：{oos_m['sharpe']:.2f} ｜ 最大回撤：{_pct(oos_m['max_drawdown'])} ｜ "
+                f"交易胜率：{_pct(oos_m.get('win_rate', 0.0))} ｜ 交易次数：{oos_m.get('trades', 0)}"
+            )
+            tr = split.get("train_ratio", 0.7)
+            lines.append(f"- 切分：前 {tr*100:.0f}% 训练选参，后 {(1-tr)*100:.0f}% 样本外验证")
+            lines.append("")
         lines.append("")
         lines.append("### 网格搜索 Top 结果")
         lines.append("")
@@ -131,7 +146,23 @@ def write_report(result: dict, cfg: config.AppConfig) -> str:
             )
         lines.append("")
 
-    lines.append("## 三、组合净值曲线")
+    lines.append("## 三、真实历史模拟（滚动再平衡回测）")
+    lines.append("")
+    wf = result.get("walk_forward")
+    if wf:
+        wm = wf["metrics"]
+        lines.append(f"> 消除幸存者偏差：每期只用「截至当期」的数据重选票，按等权与单票风险预算建仓。")
+        lines.append(
+            f"- 总收益：{_pct(wm['total_return'])} ｜ 年化：{_pct(wm['annual_return'])} ｜ "
+            f"夏普：{wm['sharpe']:.2f} ｜ 最大回撤：{_pct(wm['max_drawdown'])} ｜ "
+            f"交易胜率：{_pct(wm['win_rate'])} ｜ 交易次数：{wm.get('trades', 0)}"
+        )
+        lines.append(f"- 再平衡周期：{wf.get('rebalance_days', 20)} 个交易日")
+    else:
+        lines.append("- （候选池或历史数据不足，未生成真实历史模拟）")
+    lines.append("")
+
+    lines.append("## 四、组合净值曲线")
     lines.append("")
     lines.append(f"```")
     lines.append(_sparkline(final["equity"]))
@@ -142,10 +173,10 @@ def write_report(result: dict, cfg: config.AppConfig) -> str:
         lines.append(f"- 净值起点：{eq[0]:.4f} → 终点：{eq[-1]:.4f}（起始归一化 1.0）")
         lines.append(f"- 交易日数：{len(eq)} ｜ 信号总数：{final.get('n_signals_total', 0)}")
     lines.append("")
-    lines.append("## 四、说明")
+    lines.append("## 五、说明")
     lines.append("")
     lines.append("- 本系统为**分析 / 回测 / 模拟**框架，所有结果基于历史数据，不构成投资建议，亦不进行真实资金下单。")
-    lines.append("- 数据来源：腾讯财经（估值）+ 新浪日 K 线（主）/ 东财 push2his（兜底，未复权），均为免 key 公开接口。")
+    lines.append("- 数据来源：腾讯财经（估值）+ 东财前复权日线（主）/ 新浪日 K 线（兜底），均为免 key 公开接口；统一前复权口径避免除权失真。")
     lines.append("- 触达层当前为本地报告；如需微信/App 推送，需连接 westock / 微信类连接器；邮件推送需启用 agent-mail。")
     lines.append("")
 
@@ -264,6 +295,9 @@ def write_scan_json(result: dict, cfg: config.AppConfig) -> str:
 
     opt = result.get("optimized")
     if opt:
+        oos = opt.get("out_of_sample") or {}
+        oos_metrics = oos.get("metrics") or {}
+        oos_view = metrics_view(oos_metrics) if oos_metrics else None
         payload["backtest"]["optimized"] = {
             "bestSignal": {
                 "fastMa": int(opt["best_signal"]["fast_ma"]),
@@ -281,10 +315,30 @@ def write_scan_json(result: dict, cfg: config.AppConfig) -> str:
                 }
                 for g in opt["grid"][:8]
             ],
+            # 样本外绩效（时间序列切分验证，防过拟合）；前端/报告应优先展示此项
+            "outOfSample": oos_view,
+            "split": {
+                "trainRatio": float(opt.get("split", {}).get("train_ratio", 0.7)),
+                "testBars": dict(opt.get("split", {}).get("test_bars", {})),
+            },
+        }
+
+    # 真实历史模拟（滚动再平衡回测，消除幸存者偏差）
+    wf = result.get("walk_forward")
+    if wf:
+        wf_m = wf.get("metrics") or {}
+        payload["walkForward"] = {
+            "metrics": metrics_view(wf_m),
+            "rebalanceDays": int(wf.get("rebalance_days", 20)),
+            "equityCurve": [
+                {"date": d, "value": float(e)}
+                for d, e in zip(wf.get("dates", []), wf.get("equity", []))
+            ],
         }
 
     payload["disclaimer"] = (
-        "本结果基于历史数据回测，不构成投资建议，亦不进行真实资金下单。"
+        "本结果基于历史数据回测与样本外验证，仅供研究参考，不构成投资建议，"
+        "亦不进行真实资金下单。回测绩效不代表未来收益。"
     )
 
     with open(out_path, "w", encoding="utf-8") as f:
