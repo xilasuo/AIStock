@@ -32,9 +32,6 @@
   --amber-soft: #fbf3df;
   --focus: rgba(58, 90, 120, .26);
   --shadow: 0 1px 2px rgba(20, 20, 18, .04), 0 6px 20px rgba(20, 20, 18, .05);
-  --shadow-raised: 0 2px 8px rgba(20, 20, 18, .06), 0 20px 44px rgba(20, 20, 18, .08);
-  --radius-card: 10px;
-  --radius-control: 7px;
   /* 补全被组件引用、亮色模式原本缺失的令牌（红涨绿跌：--up=红 --down=绿） */
   --border: #e8e8e1;
   --text-muted: #8c8c83;
@@ -77,6 +74,9 @@
   /* 补齐缺失的令牌 */
   --radius-pill: 999px;
   --radius-xl: 16px;
+  /* 统一动效节奏令牌（供全局 transition 使用，避免散落的 --ease/--dur 歧义名） */
+  --ease-standard: cubic-bezier(.22, .61, .36, 1);
+  --dur-fast: 160ms;
 
 }
 
@@ -1478,7 +1478,7 @@ svg { display: block; }
 .price-block small { color: var(--muted); }
 .summary-actions { display: flex; gap: 8px; }
 
-.ai-conclusion {
+.verdict {
   align-items: flex-start;
   background: var(--accent-soft);
   border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line));
@@ -1489,7 +1489,7 @@ svg { display: block; }
   padding: 19px;
 }
 
-.ai-mark {
+.verdict-mark {
   align-items: center;
   background: var(--accent);
   border-radius: 9px;
@@ -1503,9 +1503,9 @@ svg { display: block; }
   width: 34px;
 }
 
-.ai-conclusion > div > span { color: var(--accent-ink); font-size: var(--fs-2xs); font-weight: 600; }
-.ai-conclusion h3 { font-size: var(--fs-lg); font-weight: 600; line-height: 1.55; margin: 4px 0 2px; }
-.ai-conclusion p { color: var(--muted); font-size: var(--fs-2xs); margin: 0; }
+.verdict > div > span { color: var(--accent-ink); font-size: var(--fs-2xs); font-weight: 600; }
+.verdict h3 { font-size: var(--fs-lg); font-weight: 600; line-height: 1.55; margin: 4px 0 2px; }
+.verdict p { color: var(--muted); font-size: var(--fs-2xs); margin: 0; }
 
 .evidence-panel,
 .smart-assistant {
@@ -4883,7 +4883,6 @@ svg { display: block; }
 
   /* 舒适触控尺寸（44px 命中区，a11y 友好） */
   .nav-btn { min-height: 44px; }
-  .rem-approve,
   .rem-skip { min-height: 40px; }
 
   /* —— 策略扫描配置面板：三列网格在窄屏堆叠为单列 —— */
@@ -5404,30 +5403,6 @@ svg { display: block; }
   width: 100%;
 }
 
-/* ============================================================
-   设计系统统一层（taste 美化）— 后声明覆盖前声明，安全增量
-   目标：可复用组件、同类风格一致、元素简洁、移动端自适应
-   ============================================================ */
-
-:root {
-  --ease: cubic-bezier(.22, .61, .36, 1);
-  --dur: 200ms;
-  --radius-card: 14px;
-  --radius-control: 10px;
-  --radius-pill: 999px;
-  --shadow-card: 0 1px 2px rgba(12, 17, 21, .04), 0 8px 22px -12px rgba(12, 17, 21, .12);
-  --shadow-raised: 0 16px 42px -20px rgba(12, 17, 21, .30);
-  --focus: rgba(22, 163, 74, .30);
-  --line: #e8ecea;
-  --line-strong: #d8dedb;
-  --surface-soft: #f6f8f7;
-  --surface-strong: #eef1f0;
-  --up-soft: #e9f8ef;
-  --down-soft: rgba(220, 38, 38, .10);
-  --warn-soft: rgba(217, 119, 6, .12);
-  --accent-soft: #eefaf1;
-}
-
 ::selection { background: var(--accent-soft); color: var(--accent-ink); }
 
 * { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
@@ -5456,8 +5431,8 @@ svg { display: block; }
   line-height: 1;
   min-height: 40px;
   padding: 0 16px;
-  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease),
-    color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), transform var(--dur) var(--ease);
+  transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard);
   user-select: none;
   white-space: nowrap;
   text-decoration: none;
@@ -5508,8 +5483,8 @@ svg { display: block; }
   font-size: var(--fs-sm);
   min-height: 40px;
   padding: 0 12px;
-  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease),
-    background var(--dur) var(--ease);
+  transition: border-color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard);
   width: 100%;
 }
 .control::placeholder { color: var(--muted); }
@@ -5566,7 +5541,7 @@ svg { display: block; }
   display: inline-flex;
   height: 38px;
   justify-content: center;
-  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
   width: 38px;
 }
 .icon-btn:hover { background: var(--surface-strong); color: var(--ink); }
@@ -5589,7 +5564,7 @@ svg { display: block; }
 .tag--accent { background: var(--accent-soft); color: var(--accent-ink); }
 .tag--up { background: var(--up-soft); color: var(--up); }
 .tag--down { background: var(--down-soft); color: var(--down); }
-.tag--warn { background: var(--warn-soft); color: var(--warn); }
+.tag--warn { background: var(--amber-soft); color: var(--amber); }
 .tag--danger { background: var(--down-soft); color: var(--down); }
 .tag__x {
   background: transparent; border: 0; color: inherit; cursor: pointer;
@@ -5614,10 +5589,10 @@ svg { display: block; }
   overflow: hidden;
   width: 100%;
 }
-.progress__bar { background: var(--accent); border-radius: inherit; display: block; height: 100%; transition: width var(--dur) var(--ease); }
+.progress__bar { background: var(--accent); border-radius: inherit; display: block; height: 100%; transition: width var(--dur-fast) var(--ease-standard); }
 .progress__bar--up { background: var(--up); }
 .progress__bar--down { background: var(--down); }
-.progress__bar--warn { background: var(--warn); }
+.progress__bar--warn { background: var(--amber); }
 
 /* ---------------- 分段控件 ---------------- */
 .segmented {
@@ -5640,7 +5615,7 @@ svg { display: block; }
   font-size: var(--fs-sm);
   font-weight: 600;
   padding: 7px 14px;
-  transition: background var(--dur) var(--ease), color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard);
 }
 .segmented__item:hover { color: var(--ink); }
 .segmented__item.is-active {
@@ -5694,15 +5669,15 @@ svg { display: block; }
 .banner__close:hover { background: var(--surface-strong); color: var(--ink); }
 .banner--info { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); color: var(--accent-ink); }
 .banner--info .banner__title { color: var(--accent-ink); }
-.banner--warn { background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 35%, var(--line)); color: color-mix(in srgb, var(--warn) 65%, var(--ink)); }
-.banner--warn .banner__title { color: color-mix(in srgb, var(--warn) 55%, var(--ink)); }
+.banner--warn { background: var(--amber-soft); border-color: color-mix(in srgb, var(--amber) 35%, var(--line)); color: color-mix(in srgb, var(--amber) 65%, var(--ink)); }
+.banner--warn .banner__title { color: color-mix(in srgb, var(--amber) 55%, var(--ink)); }
 .banner--danger { background: var(--down-soft); border-color: color-mix(in srgb, var(--down) 35%, var(--line)); color: color-mix(in srgb, var(--down) 70%, var(--ink)); }
 .banner--danger .banner__title { color: color-mix(in srgb, var(--down) 60%, var(--ink)); }
 .banner--success { background: var(--up-soft); border-color: color-mix(in srgb, var(--up) 35%, var(--line)); color: color-mix(in srgb, var(--up) 65%, var(--ink)); }
 .banner--success .banner__title { color: color-mix(in srgb, var(--up) 55%, var(--ink)); }
 
 .hint { color: var(--muted); font-size: var(--fs-xs); line-height: 1.6; margin: 6px 0 0; }
-.hint--warn { color: color-mix(in srgb, var(--warn) 60%, var(--ink)); }
+.hint--warn { color: color-mix(in srgb, var(--amber) 60%, var(--ink)); }
 .hint--danger { color: color-mix(in srgb, var(--down) 65%, var(--ink)); }
 
 /* 基本面取数失败诊断提示（如东财 PE/PB 接口超时/被限流） */
@@ -5756,7 +5731,7 @@ svg { display: block; }
   font-weight: 600;
   gap: 5px;
   padding: 4px 11px;
-  transition: background var(--dur) var(--ease), color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
 }
 .recent-chip:hover { color: var(--ink); border-color: var(--line-strong); }
 .recent-chip.is-active {

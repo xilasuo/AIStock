@@ -856,6 +856,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 portfolio={portfolio}
                 portfolioInsights={portfolioInsights}
                 watched={analysis ? watchlist.some((item) => item.symbol === analysis.stock.code) : false}
+                watchlist={watchlist}
                 recentAnalyses={recentAnalyses}
                 initialSymbol={searchParams.get("symbol") ?? ""}
                 onPickRecent={(item) => setAnalysis(item)}
@@ -1729,8 +1730,8 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
         </div>
       </section>
 
-      <section className="ai-conclusion">
-        <span className="ai-mark">{analysis.mode === "deepseek" ? "在线" : "本地"}</span>
+      <section className="verdict">
+        <span className="verdict-mark">{analysis.mode === "deepseek" ? "在线" : "本地"}</span>
         <div><span>一句话看懂</span><h3>{explanation.summary}</h3><p>只基于页面所列公开数据整理，不构成投资建议。</p></div>
       </section>
 
