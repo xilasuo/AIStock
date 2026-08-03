@@ -804,6 +804,22 @@ svg { display: block; }
 .holding-status.amber { background: var(--amber-soft); color: var(--amber); }
 .holding-status.amber i { background: var(--amber); }
 
+.holding-alerts { display: flex; flex-wrap: wrap; gap: 7px; }
+.holding-alerts .holding-status { margin-top: 0; flex: 1 1 auto; }
+.holding-status.take { background: var(--green-soft); color: var(--green); }
+.holding-status.take i { background: var(--green); }
+
+.trade-alerts-line { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.trade-alert {
+  border-radius: 6px;
+  font-size: var(--fs-2xs);
+  padding: 1px 6px;
+}
+.trade-alert.stop { background: var(--amber-soft); color: var(--amber); }
+.trade-alert.take { background: var(--green-soft); color: var(--green); }
+
+.settings-card__alert-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+
 .portfolio-overview {
   padding: 24px;
 }
@@ -1639,30 +1655,44 @@ svg { display: block; }
   border-collapse: collapse;
   font-size: var(--fs-sm);
   min-width: 100%;
-  width: 100%;
+  table-layout: auto;
+  width: max-content;
 }
 
 .scan-table th {
+  background: var(--surface);
   border-bottom: 1px solid var(--line-strong);
   color: var(--text-muted);
   font-size: var(--fs-xs);
   font-weight: 600;
-  padding: 8px 10px;
+  padding: 10px 12px;
+  position: sticky;
   text-align: left;
+  top: 0;
   white-space: nowrap;
+  z-index: 1;
 }
 
 .scan-table td {
   border-bottom: 1px solid var(--line);
   color: var(--text);
   font-variant-numeric: tabular-nums;
-  padding: 8px 10px;
+  padding: 10px 12px;
   vertical-align: middle;
+  white-space: nowrap;
 }
 
 .scan-table tbody tr:hover td {
   background: var(--surface-soft);
 }
+
+/* 列宽与对齐 */
+.scan-col--code { min-width: 80px; text-align: left; }
+.scan-col--name { min-width: 92px; text-align: left; }
+.scan-col--sector { min-width: 96px; text-align: left; }
+.scan-col--num { min-width: 68px; text-align: right; }
+.scan-col--feedback { min-width: 104px; text-align: center; }
+.scan-col--actions { min-width: 124px; text-align: right; }
 
 .scan-sector {
   background: var(--accent-soft);
@@ -1688,8 +1718,10 @@ svg { display: block; }
   color: var(--text-muted);
   cursor: pointer;
   font-size: var(--fs-xs);
-  padding: 3px 9px;
+  min-width: 48px;
+  padding: 4px 10px;
   transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+  white-space: nowrap;
 }
 
 .scan-feedback__btn:hover:not(:disabled) {
@@ -1716,7 +1748,7 @@ svg { display: block; }
 /* 选股榜单操作列 */
 .scan-actions {
   display: inline-flex;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
 }
 
@@ -1727,7 +1759,8 @@ svg { display: block; }
   color: var(--text-muted);
   cursor: pointer;
   font-size: var(--fs-xs);
-  padding: 3px 10px;
+  min-width: 52px;
+  padding: 4px 12px;
   transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard), opacity var(--dur-fast) var(--ease-standard);
   white-space: nowrap;
 }

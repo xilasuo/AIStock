@@ -227,7 +227,15 @@ async function sinaRealtime(code: string): Promise<RealtimeQuote> {
  */
 async function tencentProfile(code: string): Promise<Partial<StockProfile>> {
   const ts = tencentSymbol(code);
-  const text = await fetchText(`https://qt.gtimg.cn/q=${ts}`);
+  // 该源仅为 PE/PB 的补充来源：请求失败时静默降级为 profileError，
+  // 不能向上抛错，否则会让 getProfile 的 Promise.all 整体失败（东财等其它源的数据也一起丢失）。
+  let text: string;
+  try {
+    text = await fetchText(`https://qt.gtimg.cn/q=${ts}`);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    return { profileError: `腾讯基本面接口请求失败：${reason} (${ts})` };
+  }
   const m = text.match(/="([^"]*)"/);
   if (!m) return { profileError: `腾讯基本面解析失败 (${ts})` };
   const parts = m[1].split("~");
@@ -465,7 +473,8 @@ export async function getProfile(code: string): Promise<StockProfile> {
   const [em, tencent, mairui, emF100, emFund] = await Promise.all([
     eastmoneyProfile(code),
     tencentProfile(code),
-    mairuiEnabled ? getMairuiFundamentals(code) : Promise.resolve(null),
+    // 麦蕊为可选增强源，异常时静默降级为 null，交由下方东财兜底。
+    mairuiEnabled ? getMairuiFundamentals(code).catch(() => null) : Promise.resolve(null),
     eastmoneyF100Profile(code),
     eastmoneyFundamentals(code),
   ]);

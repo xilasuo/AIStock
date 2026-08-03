@@ -20,7 +20,7 @@ import {
 import { ScreenerConfigPanel, type ScreenerOverrides } from "./ScreenerConfigPanel";
 
 /* ----------------------------- 数据类型 ----------------------------- */
-type ScanSelected = {
+export type ScanSelected = {
   code: string;
   name: string;
   score: number;
@@ -400,20 +400,20 @@ export function StrategyScanView({
         <table className="scan-table">
           <thead>
             <tr>
-              <th>代码</th>
-              <th>名称</th>
-              <th>行业</th>
-              <th>得分</th>
-              <th>动量(20d)</th>
-              <th>RSI</th>
-              <th>风险动量</th>
-              <th>趋势</th>
-              <th>PE</th>
-              <th>PB</th>
-              <th>换手%</th>
-              <th>信号数</th>
-              <th>反馈</th>
-              {(onAddWatch || onAnalyze) && <th>操作</th>}
+              <th className="scan-col--code">代码</th>
+              <th className="scan-col--name">名称</th>
+              <th className="scan-col--sector">行业</th>
+              <th className="scan-col--num">得分</th>
+              <th className="scan-col--num">动量(20d)</th>
+              <th className="scan-col--num">RSI</th>
+              <th className="scan-col--num">风险动量</th>
+              <th className="scan-col--num">趋势</th>
+              <th className="scan-col--num">PE</th>
+              <th className="scan-col--num">PB</th>
+              <th className="scan-col--num">换手%</th>
+              <th className="scan-col--num">信号数</th>
+              <th className="scan-col--feedback">反馈</th>
+              {(onAddWatch || onAnalyze) && <th className="scan-col--actions">操作</th>}
             </tr>
           </thead>
           <tbody>
@@ -421,27 +421,27 @@ export function StrategyScanView({
               const isWatched = watchlistItems.some((w) => w.symbol === s.code);
               return (
               <tr key={s.code}>
-                <td>{s.code}</td>
-                <td>{s.name}</td>
-                <td>
+                <td className="scan-col--code">{s.code}</td>
+                <td className="scan-col--name">{s.name}</td>
+                <td className="scan-col--sector">
                   <span className="scan-sector">{s.sector ?? "其他"}</span>
                 </td>
-                <td>{s.score.toFixed(3)}</td>
-                <td>
+                <td className="scan-col--num">{s.score.toFixed(3)}</td>
+                <td className="scan-col--num">
                   <Tag tone={s.momentum >= 0 ? "up" : "down"}>{pct(s.momentum)}</Tag>
                 </td>
-                <td>{s.rsi != null ? s.rsi.toFixed(1) : "-"}</td>
-                <td>
+                <td className="scan-col--num">{s.rsi != null ? s.rsi.toFixed(1) : "-"}</td>
+                <td className="scan-col--num">
                   {s.factors ? `${(s.factors.momentum != null ? s.factors.momentum : 0) * 100 | 0}` : "-"}
                 </td>
-                <td>
+                <td className="scan-col--num">
                   {s.factors ? `${(s.factors.trend != null ? s.factors.trend : 0) * 100 | 0}` : "-"}
                 </td>
-                <td>{s.peTtm.toFixed(2)}</td>
-                <td>{s.pb.toFixed(2)}</td>
-                <td>{s.turnover.toFixed(2)}</td>
-                <td>{s.signals}</td>
-                <td>
+                <td className="scan-col--num">{s.peTtm.toFixed(2)}</td>
+                <td className="scan-col--num">{s.pb.toFixed(2)}</td>
+                <td className="scan-col--num">{s.turnover.toFixed(2)}</td>
+                <td className="scan-col--num">{s.signals}</td>
+                <td className="scan-col--feedback">
                   <span className="scan-feedback">
                     <button
                       type="button"
@@ -462,7 +462,7 @@ export function StrategyScanView({
                   </span>
                 </td>
                 {(onAddWatch || onAnalyze) && (
-                  <td>
+                  <td className="scan-col--actions">
                     <span className="scan-actions">
                       {onAddWatch && (
                         <button
@@ -503,23 +503,23 @@ export function StrategyScanView({
           <table className="scan-table">
             <thead>
               <tr>
-                <th>快线</th>
-                <th>慢线</th>
-                <th>夏普</th>
-                <th>总收益</th>
-                <th>最大回撤</th>
+                <th className="scan-col--code">快线</th>
+                <th className="scan-col--code">慢线</th>
+                <th className="scan-col--num">夏普</th>
+                <th className="scan-col--num">总收益</th>
+                <th className="scan-col--num">最大回撤</th>
               </tr>
             </thead>
             <tbody>
               {opt.grid.map((g, i) => (
                 <tr key={i}>
-                  <td>MA{g.fastMa}</td>
-                  <td>MA{g.slowMa}</td>
-                  <td>{g.metric.toFixed(3)}</td>
-                  <td>
+                  <td className="scan-col--code">MA{g.fastMa}</td>
+                  <td className="scan-col--code">MA{g.slowMa}</td>
+                  <td className="scan-col--num">{g.metric.toFixed(3)}</td>
+                  <td className="scan-col--num">
                     <Tag tone={g.totalReturn >= 0 ? "up" : "down"}>{pct(g.totalReturn)}</Tag>
                   </td>
-                  <td>
+                  <td className="scan-col--num">
                     <Tag tone={g.maxDrawdown >= 0 ? "up" : "down"}>{pct(g.maxDrawdown)}</Tag>
                   </td>
                 </tr>

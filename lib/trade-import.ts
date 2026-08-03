@@ -106,6 +106,11 @@ export function extractMaxLossPercent(text: string): number | null {
   return Number.isFinite(value) && value > 0 ? value : null;
 }
 
+/** 自动止盈的风险倍率（R 倍数）。前端录入弹窗的提示文案也引用这两个常量，
+ * 避免「界面写 1.5R / 实际按 1R 建提醒」这类文案与行为不一致。 */
+export const TAKE_PROFIT_1_R = 1.5;
+export const TAKE_PROFIT_2_R = 2.5;
+
 export type MaxLossAlert = {
   symbol: string;
   name: string;
@@ -129,12 +134,13 @@ export function buildMaxLossAlerts(params: {
   const priceYuan = currentPriceMillis / 1000;
   const lossYuan = maxLossTenThousandths / 10000;
   const stop = priceYuan - lossYuan; // 止损价（最大亏损触发）
-  const takeProfit1 = priceYuan + lossYuan; // 1R 止盈
-  const takeProfit2 = priceYuan + 2 * lossYuan; // 2R 止盈
+  // 倍率需与录入弹窗「留空则按 1.5R / 2.5R 推算」的说明保持一致。
+  const takeProfit1 = priceYuan + TAKE_PROFIT_1_R * lossYuan;
+  const takeProfit2 = priceYuan + TAKE_PROFIT_2_R * lossYuan;
   return [
     { symbol, name, direction: "below", type: "止损", targetTenThousandths: Math.max(0, Math.round(stop * 10000)), note: "止损线（最大亏损触发）" },
-    { symbol, name, direction: "above", type: "止盈一", targetTenThousandths: Math.round(takeProfit1 * 10000), note: "止盈目标一（风险等价）" },
-    { symbol, name, direction: "above", type: "止盈二", targetTenThousandths: Math.round(takeProfit2 * 10000), note: "止盈目标二（风险两倍）" },
+    { symbol, name, direction: "above", type: "止盈一", targetTenThousandths: Math.round(takeProfit1 * 10000), note: `止盈目标一（${TAKE_PROFIT_1_R} 倍风险）` },
+    { symbol, name, direction: "above", type: "止盈二", targetTenThousandths: Math.round(takeProfit2 * 10000), note: `止盈目标二（${TAKE_PROFIT_2_R} 倍风险）` },
   ];
 }
 

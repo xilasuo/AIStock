@@ -60,7 +60,7 @@ export async function getIndexQuotes(): Promise<IndicesData> {
     const changePercent = numOrNull(parts[32]) ?? 0;
     indices.push({
       code: meta.code,
-      name: parts[1] || meta.name,
+      name: meta.name,
       price,
       changePercent,
       change,

@@ -73,6 +73,7 @@ import {
 import type { SectorHeatmap as SectorHeatmapData } from "../lib/sectors";
 import { calculatePortfolioInsights, type PortfolioInsights } from "../lib/portfolio-insights";
 import { calculateTradeStatistics } from "../lib/trade-statistics";
+import { TAKE_PROFIT_1_R, TAKE_PROFIT_2_R } from "../lib/trade-import";
 import { baseCloseSince, resolveStock, type Oscillators } from "../lib/stocks";
 import {
   DEFAULT_PREFERENCES,
@@ -185,6 +186,10 @@ type Analysis = {
     profitMargin: number | null;
     operatingCashflow: number | null;
     series: Record<string, Array<{ date: string; value: number }>>;
+    /** 营收/利润/负债率来源（境外源）不可用，用于前端提示「数据暂缺」而非显示 0 */
+    fundamentalsUnavailable?: boolean;
+    /** PE/PB 取数失败原因，便于线上排查 */
+    profileError?: string | null;
   };
   history: Array<{
     date: string;
@@ -568,13 +573,13 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       return;
     }
     try {
-      await jsonRequest("/api/watchlist", {
+      const result = await jsonRequest<{ existed?: boolean }>("/api/watchlist", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ symbol: stock.code, name: stock.name, note: "等待自己的买入条件" }),
       });
       await loadData();
-      flash(`${stock.name}已加入关注`);
+      flash(result?.existed ? `${stock.name}已在关注列表中` : `${stock.name}已加入关注`);
     } catch (saveError) {
       flash(saveError instanceof Error ? saveError.message : "加入关注失败");
     }
@@ -596,6 +601,8 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       otherReason: String(data.get("otherReason") || ""),
       maxLoss: Number(data.get("maxLoss") || 0),
       fee: Number(data.get("fee") || 0),
+      takeProfit1: data.get("takeProfit1") ? Number(data.get("takeProfit1")) : undefined,
+      takeProfit2: data.get("takeProfit2") ? Number(data.get("takeProfit2")) : undefined,
     };
 
     try {
@@ -630,6 +637,23 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       flash(action === "disable" ? "提醒已停用" : "提醒已确认");
     } catch (updateError) {
       flash(updateError instanceof Error ? updateError.message : "提醒更新失败");
+    }
+  }
+
+  async function updateAlertPrice(id: number, targetPrice: number) {
+    try {
+      await jsonRequest("/api/alerts", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id, action: "update", targetPrice }),
+      });
+      // 服务端已清空该提醒的触发状态，本地去重集合也要同步清掉，
+      // 否则本次会话内改价后的提醒不会再次触发。
+      notified.current.delete(id);
+      await loadData();
+      flash("目标价已更新");
+    } catch (updateError) {
+      flash(updateError instanceof Error ? updateError.message : "目标价更新失败");
     }
   }
 
@@ -815,6 +839,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
               <Trades
                 trades={trades}
                 reviews={reviews}
+                alerts={alerts}
                 capitalFlows={capitalFlows}
                 initialCapitalCents={initialCapitalCents}
                 onBuy={() => setTradeMode("buy")}
@@ -833,6 +858,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 onSection={setSettingsSection}
                 onDisable={(id) => void updateAlert(id, "disable")}
                 onAcknowledge={(id) => void updateAlert(id, "acknowledge")}
+                onUpdateAlert={(id, targetPrice) => void updateAlertPrice(id, targetPrice)}
                 onNotifications={() => void requestNotifications()}
                 onSaveCapital={saveInitialCapital}
                 onAddFlow={handleAddFlow}
@@ -850,12 +876,12 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                   watchlistItems={watchlist}
                   onAddWatch={async (code, name) => {
                     try {
-                      await jsonRequest("/api/watchlist", {
+                      const result = await jsonRequest<{ existed?: boolean }>("/api/watchlist", {
                         method: "POST",
                         headers: { "content-type": "application/json" },
                         body: JSON.stringify({ symbol: code, name, note: "选股榜单加入" }),
                       });
-                      flash(`已将 ${name}(${code}) 加入关注`);
+                      flash(result?.existed ? `${name}(${code}) 已在关注列表中` : `已将 ${name}(${code}) 加入关注`);
                       await loadData();
                     } catch (e) {
                       flash(`加入关注失败: ${e instanceof Error ? e.message : String(e)}`);
@@ -1142,6 +1168,8 @@ function Home({
                     const profitCents = insight?.unrealizedCents ?? 0;
                     const rate = quote ? insight?.returnPercent ?? null : null;
                     const stop = activeAlerts.find((item) => item.symbol === position.symbol && item.type === "止损");
+                    const take1 = activeAlerts.find((item) => item.symbol === position.symbol && item.type === "止盈一");
+                    const take2 = activeAlerts.find((item) => item.symbol === position.symbol && item.type === "止盈二");
                     return (
                       <article className="holding-card" key={position.symbol}>
                         <div className="holding-top">
@@ -1150,7 +1178,11 @@ function Home({
                           <strong className={(rate ?? 0) >= 0 ? "up" : "down"}>{rate === null ? "行情更新中" : `${rate >= 0 ? "+" : ""}${rate.toFixed(2)}%`}</strong>
                         </div>
                         <div className="risk-line"><span>{insight?.allocationPercent !== null && insight?.allocationPercent !== undefined ? `${portfolioInsights.configured ? "账户仓位" : "持仓内部占比"} ${insight.allocationPercent.toFixed(1)}%` : "按当前参考价计算"}</span><b>{quote ? money(profitCents) : "暂无"}</b></div>
-                        <div className={`holding-status ${stop ? "amber" : ""}`}><i />{stop ? `止损提醒 ${alertPrice(stop)}` : "尚未设置止损提醒"}</div>
+                        <div className="holding-alerts">
+                          <span className={`holding-status ${stop ? "amber" : ""}`}><i />{stop ? `止损 ${alertPrice(stop)}` : "未设止损"}</span>
+                          <span className="holding-status take">{take1 ? `止盈一 ${alertPrice(take1)}` : "无止盈一"}</span>
+                          <span className="holding-status take">{take2 ? `止盈二 ${alertPrice(take2)}` : "无止盈二"}</span>
+                        </div>
                       </article>
                     );
                   })}
@@ -1646,6 +1678,9 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
                 <Metric label="利润变化" value={financials.profitGrowth} suffix="%" />
                 <Metric label="负债率" value={financials.debtRatio} suffix="%" />
               </div>
+              {financials.fundamentalsUnavailable ? (
+                <p className="source-warning">营收变化、利润变化、负债率三项来自 Yahoo Finance（境外数据源），当前网络无法访问，数据暂缺。其余指标（市值/PE/PB/ROE/毛净利率）来自东方财富，可正常显示。</p>
+              ) : null}
               <div className="metric-row">
                 <Metric label="总市值" value={financials.marketCap} marketCapValue />
                 <Metric label="市盈率" value={financials.pe} suffix="" help="股价相对公司利润的倍数" />
@@ -3116,9 +3151,11 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved }: {
   );
 }
 
-function Trades({ trades, reviews, capitalFlows, initialCapitalCents, onBuy, onSell, onReview, onDeleteTrade }: {
+function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, onBuy, onSell, onReview, onDeleteTrade }: {
   trades: Trade[];
   reviews: Review[];
+  /** 用于在买入行内展示该股票当前的止损/止盈目标价 */
+  alerts: AlertRule[];
   capitalFlows: CapitalFlow[];
   initialCapitalCents: number | null;
   onBuy: () => void;
@@ -3267,7 +3304,22 @@ function Trades({ trades, reviews, capitalFlows, initialCapitalCents, onBuy, onS
               <div className="trade-row" key={trade.id}>
                 <span className="trade-index">{idx + 1}</span>
                 <span><b>{trade.tradeDate}</b><small>{trade.quantity}股</small></span>
-                <span><b>{trade.name}</b><small>{trade.symbol}</small></span>
+                <span>
+                  <b>{trade.name}</b><small>{trade.symbol}</small>
+                  {trade.side === "买入" && (() => {
+                    const stop = alerts.find((al) => al.symbol === trade.symbol && al.type === "止损" && !al.acknowledgedAt);
+                    const take1 = alerts.find((al) => al.symbol === trade.symbol && al.type === "止盈一" && !al.acknowledgedAt);
+                    const take2 = alerts.find((al) => al.symbol === trade.symbol && al.type === "止盈二" && !al.acknowledgedAt);
+                    if (!stop && !take1 && !take2) return null;
+                    return (
+                      <small className="trade-alerts-line">
+                        {stop && <span className="trade-alert stop">止损 {alertPrice(stop)}</span>}
+                        {take1 && <span className="trade-alert take">止盈一 {alertPrice(take1)}</span>}
+                        {take2 && <span className="trade-alert take">止盈二 {alertPrice(take2)}</span>}
+                      </small>
+                    );
+                  })()}
+                </span>
                 <span>
                   <Badge square tone={trade.side === "买入" ? "red" : "green"}>{trade.side}</Badge>
                   <small>
@@ -3312,7 +3364,7 @@ function Trades({ trades, reviews, capitalFlows, initialCapitalCents, onBuy, onS
   );
 }
 
-function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferences, section, onSection, onDisable, onAcknowledge, onNotifications, onSaveCapital, onAddFlow, onDeleteFlow, onSavePreferences, onImported, currentUser }: {
+function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferences, section, onSection, onDisable, onAcknowledge, onUpdateAlert, onNotifications, onSaveCapital, onAddFlow, onDeleteFlow, onSavePreferences, onImported, currentUser }: {
   status: Status | null;
   initialCapitalCents: number | null;
   capitalFlows: CapitalFlow[];
@@ -3322,6 +3374,7 @@ function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferenc
   onSection: (section: string | null) => void;
   onDisable: (id: number) => void;
   onAcknowledge: (id: number) => void;
+  onUpdateAlert: (id: number, targetPrice: number) => void;
   onNotifications: () => void;
   onSaveCapital: (initialCapital: number) => Promise<void>;
   onAddFlow: (amountCents: number, flowDate: string, note: string) => Promise<void>;
@@ -3524,12 +3577,24 @@ function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferenc
                                 <small>{alertPrice(alert)} · {alert.enabled ? "启用" : "已停用"}{triggered ? " · 已触发" : ""}</small>
                                 {triggered && <span className="triggered-badge small">已触发</span>}
                               </div>
-                              {triggered && (
-                                <Button variant="danger" size="sm" onClick={() => onAcknowledge(alert.id)}>我知道了</Button>
-                              )}
-                              {alert.enabled && !triggered && (
-                                <Button variant="ghost" size="sm" onClick={() => onDisable(alert.id)}>停用</Button>
-                              )}
+                              <div className="settings-card__alert-actions">
+                                {triggered && (
+                                  <Button variant="danger" size="sm" onClick={() => onAcknowledge(alert.id)}>我知道了</Button>
+                                )}
+                                {alert.enabled && !triggered && (
+                                  <>
+                                    <Button variant="ghost" size="sm" onClick={() => {
+                                      const next = window.prompt(`修改「${alert.name} · ${alert.type}」目标价（元）`, String((alert.targetPriceMillis ?? alert.targetPriceCents * 10) / 1000));
+                                      if (next !== null && next.trim() !== "") {
+                                        const value = Number(next);
+                                        if (Number.isFinite(value) && value > 0) onUpdateAlert(alert.id, value);
+                                        else window.alert("目标价必须是正数");
+                                      }
+                                    }}>改价</Button>
+                                    <Button variant="ghost" size="sm" onClick={() => onDisable(alert.id)}>停用</Button>
+                                  </>
+                                )}
+                              </div>
                             </li>
                           );
                         })}
@@ -3748,9 +3813,17 @@ function TradeModal({ mode, stock, positions, onClose, onSubmit }: {
             <Field label="交易日期"><Input name="tradeDate" type="date" defaultValue={localIsoDate()} max={localIsoDate()} required /></Field>
             <Field label="总费用（可选）"><Input name="fee" type="number" min="0" step="0.01" defaultValue="0" /></Field>
             {mode === "buy" && (
-              <Field label="最多接受亏损（元）" help="如果判断错了，这笔交易最多愿意亏多少钱？请填你能实际执行的金额。">
-                <Input name="maxLoss" type="number" min="0" step="0.01" placeholder="例如 500" />
-              </Field>
+              <>
+                <Field label="最多接受亏损（元）" help={`如果判断错了，这笔交易最多愿意亏多少钱？请填你能实际执行的金额。系统会用「成本价 − 最多接受亏损 ÷ 股数」生成止损价，并按 ${TAKE_PROFIT_1_R}/${TAKE_PROFIT_2_R} 倍风险自动生成止盈一、止盈二。`}>
+                  <Input name="maxLoss" type="number" min="0" step="0.01" placeholder="例如 500" />
+                </Field>
+                <Field label="止盈价一（元，可选）" help={`留空则按 ${TAKE_PROFIT_1_R} 倍风险自动推算；填写后覆盖系统推算。`}>
+                  <Input name="takeProfit1" type="number" min="0" step="any" placeholder={`留空则按 ${TAKE_PROFIT_1_R}R 推算`} />
+                </Field>
+                <Field label="止盈价二（元，可选）" help={`留空则按 ${TAKE_PROFIT_2_R} 倍风险自动推算；填写后覆盖系统推算。`}>
+                  <Input name="takeProfit2" type="number" min="0" step="any" placeholder={`留空则按 ${TAKE_PROFIT_2_R}R 推算`} />
+                </Field>
+              </>
             )}
           </div>
           <fieldset>

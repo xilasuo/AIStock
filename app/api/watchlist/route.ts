@@ -67,6 +67,8 @@ export async function POST(request: Request) {
         existed: true,
       });
     }
+    // 防御性清理：若此前 DELETE 的 db.batch 部分失败，watchDetails 可能残留孤儿行
+    await db.delete(watchDetails).where(and(eq(watchDetails.symbol, symbol), eq(watchDetails.userId, user.id)));
     const [itemRows] = await db.batch([
       db.insert(watchItems).values({ userId: user.id, symbol, name, note, createdAt: shanghaiIso() }).returning(),
       db.insert(watchDetails).values({ userId: user.id, symbol, conditionText, status: "研究中" }),
@@ -156,13 +158,15 @@ export async function DELETE(request: Request) {
     }
     await ensureSchema();
     const db = getDb();
-    const [, deletedItems] = await db.batch([
-      db.delete(watchDetails).where(and(eq(watchDetails.symbol, symbol), eq(watchDetails.userId, user.id))),
-      db.delete(watchItems).where(and(eq(watchItems.symbol, symbol), eq(watchItems.userId, user.id))).returning({ symbol: watchItems.symbol }),
-    ]);
-    return deletedItems.length
-      ? Response.json({ ok: true })
-      : Response.json({ error: "关注股票不存在" }, { status: 404 });
+    // 先删主表确认存在性，再清理明细 — 不用 db.batch 避免非原子操作导致孤儿行
+    const deleted = await db.delete(watchItems)
+      .where(and(eq(watchItems.symbol, symbol), eq(watchItems.userId, user.id)))
+      .returning({ symbol: watchItems.symbol });
+    if (!deleted.length) {
+      return Response.json({ error: "关注股票不存在" }, { status: 404 });
+    }
+    await db.delete(watchDetails).where(and(eq(watchDetails.symbol, symbol), eq(watchDetails.userId, user.id)));
+    return Response.json({ ok: true });
   } catch {
     return Response.json({ error: "取消关注失败" }, { status: 500 });
   }

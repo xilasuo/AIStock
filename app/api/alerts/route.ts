@@ -56,20 +56,37 @@ export async function PATCH(request: Request) {
   if (unauthorized) return unauthorized;
   try {
     const user = await getCurrentUser();
-    const payload = await request.json() as { id?: number; action?: string };
+    const payload = await request.json() as { id?: number; action?: string; targetPrice?: number };
     const id = Number(payload.id);
     if (!Number.isInteger(id) || id <= 0) {
       return Response.json({ error: "提醒编号不正确" }, { status: 400 });
     }
-    if (payload.action !== "disable" && payload.action !== "acknowledge" && payload.action !== "trigger") {
+    if (payload.action !== "disable" && payload.action !== "acknowledge" && payload.action !== "trigger" && payload.action !== "update") {
       return Response.json({ error: "提醒操作不正确" }, { status: 400 });
     }
     await ensureSchema();
-    const values = payload.action === "disable"
-      ? { enabled: false }
-      : payload.action === "acknowledge"
-        ? { acknowledgedAt: shanghaiIso() }
-        : { triggeredAt: shanghaiIso() };
+    let values: Partial<typeof alertRules.$inferInsert> = {};
+    if (payload.action === "disable") {
+      values = { enabled: false };
+    } else if (payload.action === "acknowledge") {
+      values = { acknowledgedAt: shanghaiIso() };
+    } else if (payload.action === "trigger") {
+      values = { triggeredAt: shanghaiIso() };
+    } else {
+      const rawTargetPrice = Number(payload.targetPrice);
+      const targetPriceMillis = toMillis(rawTargetPrice);
+      if (!Number.isFinite(rawTargetPrice) || targetPriceMillis <= 0) {
+        return Response.json({ error: "目标价不正确" }, { status: 400 });
+      }
+      // 改价视为一条全新的提醒：必须清掉旧的触发/已读状态，
+      // 否则前端 checkAlerts 会因 triggeredAt 非空而永远跳过这条提醒。
+      values = {
+        targetPriceCents: Math.round(targetPriceMillis / 10),
+        targetPriceMillis,
+        triggeredAt: null,
+        acknowledgedAt: null,
+      };
+    }
     const [alert] = await getDb().update(alertRules).set(values)
       .where(and(eq(alertRules.id, id), eq(alertRules.userId, user.id))).returning();
     return alert

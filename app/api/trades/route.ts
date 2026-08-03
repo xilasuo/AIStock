@@ -141,11 +141,25 @@ export async function POST(request: Request) {
     };
     let trade;
     if (side === "买入" && riskPerShareTenThousandths !== null) {
-      const targets = buildMaxLossAlerts({
+      const baseAlerts = buildMaxLossAlerts({
         symbol,
         name,
         currentPriceMillis: priceMillis,
         maxLossTenThousandths: riskPerShareTenThousandths,
+      });
+      // 用户可手动指定止盈价（元），覆盖系统自动推算的止盈一/止盈二
+      const takeProfit1Number = Number(payload.takeProfit1);
+      const takeProfit2Number = Number(payload.takeProfit2);
+      const hasTakeProfit1 = payload.takeProfit1 !== undefined && payload.takeProfit1 !== null && payload.takeProfit1 !== "" && Number.isFinite(takeProfit1Number) && takeProfit1Number > 0;
+      const hasTakeProfit2 = payload.takeProfit2 !== undefined && payload.takeProfit2 !== null && payload.takeProfit2 !== "" && Number.isFinite(takeProfit2Number) && takeProfit2Number > 0;
+      const targets = baseAlerts.map((alert) => {
+        if (alert.type === "止盈一" && hasTakeProfit1) {
+          return { ...alert, targetTenThousandths: Math.round(toTenThousandths(takeProfit1Number)) };
+        }
+        if (alert.type === "止盈二" && hasTakeProfit2) {
+          return { ...alert, targetTenThousandths: Math.round(toTenThousandths(takeProfit2Number)) };
+        }
+        return alert;
       }).map((alert) => ({
         userId: user.id,
         symbol: alert.symbol,

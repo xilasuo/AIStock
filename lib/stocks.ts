@@ -222,7 +222,18 @@ async function fetchJson<T>(url: string): Promise<T> {
   }
 }
 
-async function getFundamentals(symbol: string) {
+type FundamentalPoint = { date: string; value: number };
+/** 基本面时序返回：成功时按指标名给出序列，失败时 unavailable=true 且无序列。
+ * 显式声明联合后的统一形状，避免调用方在 catch 分支上被窄化成「无任何指标字段」。 */
+type FundamentalsResult = {
+  quarterlyTotalRevenue?: FundamentalPoint[];
+  quarterlyNetIncome?: FundamentalPoint[];
+  quarterlyTotalAssets?: FundamentalPoint[];
+  quarterlyTotalDebt?: FundamentalPoint[];
+  unavailable: boolean;
+};
+
+async function getFundamentals(symbol: string): Promise<FundamentalsResult> {
   const now = Math.floor(Date.now() / 1000);
   const start = now - 60 * 60 * 24 * 365 * 3;
   const types = [
@@ -235,7 +246,7 @@ async function getFundamentals(symbol: string) {
 
   try {
     const data = await fetchJson<{ timeseries?: { result?: FundamentalSeries[] } }>(url);
-    const rows: Record<string, Array<{ date: string; value: number }>> = {};
+    const rows: Record<string, FundamentalPoint[]> = {};
 
     for (const series of data.timeseries?.result ?? []) {
       const type = series.meta?.type?.[0];
@@ -249,17 +260,24 @@ async function getFundamentals(symbol: string) {
         }))
         .slice(-5);
     }
-    return rows;
+    return { ...rows, unavailable: false };
   } catch {
-    return {};
+    return { unavailable: true };
   }
 }
 
-function growth(series: Array<{ value: number }> | undefined) {
+function growth(series: Array<{ date: string; value: number }> | undefined) {
   if (!series || series.length < 2) return null;
-  const previous = series.at(-2)?.value ?? 0;
-  const current = series.at(-1)?.value ?? 0;
-  return previous ? ((current - previous) / Math.abs(previous)) * 100 : null;
+  // 按 asOfDate 升序排序，确保最新一条在末尾
+  const sorted = [...series].sort((a, b) => a.date.localeCompare(b.date));
+  const current = sorted.at(-1)!;
+  const currentYear = Number(current.date.slice(0, 4));
+  // 同比：找去年同季（同月同日，或同年份-1且月日最接近）的一条
+  const prev = [...sorted]
+    .reverse()
+    .find((s) => Number(s.date.slice(0, 4)) === currentYear - 1);
+  if (!prev || !prev.value) return null;
+  return ((current.value - prev.value) / Math.abs(prev.value)) * 100;
 }
 
 // 关键词→概念题材 模糊匹配，覆盖全A股常见行业
@@ -357,6 +375,7 @@ export async function analyzeStockData(query: string) {
   const resistance = Math.max(...highs.slice(-60));
   const riskPerShare = Math.max(livePrice - support, livePrice * 0.03);
   const [fundamentals, profile] = await Promise.all([fundamentalsPromise, profilePromise]);
+  const fundamentalsUnavailable = fundamentals.unavailable === true;
   const revenueGrowth = growth(fundamentals.quarterlyTotalRevenue);
   const profitGrowth = growth(fundamentals.quarterlyNetIncome);
   const assets = fundamentals.quarterlyTotalAssets?.at(-1)?.value ?? 0;
@@ -414,7 +433,12 @@ export async function analyzeStockData(query: string) {
       grossMargin: profile.grossMargin,
       profitMargin: profile.profitMargin,
       operatingCashflow: profile.operatingCashflow,
-      series: fundamentals,
+      // 营收/利润/负债率来自 Yahoo Finance（境外源），国内网络可能加载失败
+      fundamentalsUnavailable,
+      series: (() => {
+        const { unavailable, ...rest } = fundamentals as Record<string, unknown> & { unavailable?: boolean };
+        return rest;
+      })(),
       // 诊断：PE/PB 取数失败原因（如东财接口超时/被限流），便于线上排查。
       profileError: profile.profileError ?? null,
     },
