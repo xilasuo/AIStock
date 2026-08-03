@@ -42,13 +42,17 @@ const ALLOWED_KEYS = new Set([
   // screener
   "top_n", "max_per_sector", "momentum_window",
   "w_momentum", "w_value", "w_liquidity", "w_rsi", "w_macd", "w_trend", "w_size", "w_quality",
+  "w_fund_flow",
   "rsi_window", "macd_fast", "macd_slow", "macd_signal", "vol_window",
   "min_turnover_pct", "max_pe_ttm", "max_pb",
   "boards", "st_filter", "mcap_min", "mcap_max",
   // signal
   "fast_ma", "slow_ma", "use_breakout_filter", "breakout_window", "stop_loss_pct", "max_positions",
   // market
-  "market_enable", "index_code",
+  "market_enable", "index_code", "ma_window", "mom_window", "short_mom_window",
+  "bull_ma_gap", "bear_ma_gap", "bull_mom", "bear_mom",
+  "strong_short_mom", "weak_short_mom", "vol_shrink_threshold",
+  "neutral_up_factor", "neutral_down_factor",
   // optim
   "optim_enabled",
 ]);

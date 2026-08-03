@@ -53,7 +53,9 @@ def run(cfg: config.AppConfig, dp=None) -> dict:
     target_top_n = cfg.screener.top_n
     eff_top_n = max(0, int(round(target_top_n * regime["position_factor"])))
     codes = universe_mod.get_universe(cfg, dp)
-    selected = screener.screen(cfg, codes, dp, top_n_override=eff_top_n)
+    screen_out = screener.screen(cfg, codes, dp, top_n_override=eff_top_n)
+    selected = screen_out["rows"]
+    screener_meta = screen_out.get("meta") or {}
     selected_codes = [r["code"] for r in selected]
 
     # 拉取已选标的的历史 K 线（回测/信号所需）
@@ -75,6 +77,7 @@ def run(cfg: config.AppConfig, dp=None) -> dict:
                 "notifier": cfg.notifier,
             },
             "market_state": regime,
+            "screener": screener_meta,
             "selected": [],
             "base": {
                 "signal": {"fast_ma": cfg.signal.fast_ma, "slow_ma": cfg.signal.slow_ma},
@@ -108,6 +111,7 @@ def run(cfg: config.AppConfig, dp=None) -> dict:
             "notifier": cfg.notifier,
         },
         "market_state": regime,
+        "screener": screener_meta,
         "selected": selected,
         "base": {
             "signal": {"fast_ma": cfg.signal.fast_ma, "slow_ma": cfg.signal.slow_ma},

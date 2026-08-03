@@ -39,6 +39,7 @@ STRATEGY_PRESETS: dict[str, dict] = {
             "w_rsi": 0.02,
             "w_macd": 0.02,
             "w_liquidity": 0.00,
+            "w_fund_flow": 0.00,
             "momentum_window": 60,       # 长回看，过滤短炒
             "max_pe_ttm": 25,            # 低估上限（保守，不追高估值）
             "max_pb": 3.0,
@@ -63,6 +64,7 @@ STRATEGY_PRESETS: dict[str, dict] = {
             "w_momentum": 0.02,
             "w_macd": 0.02,
             "w_liquidity": 0.00,
+            "w_fund_flow": 0.00,
             "momentum_window": 60,
             "max_pe_ttm": 20,
             "max_pb": 2.5,
@@ -88,6 +90,7 @@ STRATEGY_PRESETS: dict[str, dict] = {
             "w_value": 0.02,
             "w_size": 0.02,
             "w_quality": 0.00,
+            "w_fund_flow": 0.00,
             # 阈值 / 参数
             "momentum_window": 20,
             "min_turnover_pct": 1.0,       # 要求活跃换手，过滤无量假突破
@@ -108,6 +111,7 @@ STRATEGY_PRESETS: dict[str, dict] = {
             "w_value": 0.02,
             "w_size": 0.02,
             "w_quality": 0.00,
+            "w_fund_flow": 0.00,
             "fast_ma": 5,
             "slow_ma": 10,
             "min_turnover_pct": 0.30,
@@ -126,6 +130,7 @@ STRATEGY_PRESETS: dict[str, dict] = {
             "w_value": 0.02,
             "w_size": 0.00,
             "w_quality": 0.00,
+            "w_fund_flow": 0.00,
             "macd_fast": 12,
             "macd_slow": 26,
             "macd_signal": 9,
@@ -141,14 +146,15 @@ STRATEGY_PRESETS: dict[str, dict] = {
         "risk": "激进",
         "desc": "游资超短打法近似：超短周期强动量(8日) + 高换手量能驱动 + 不恐高(放开估值) + 短周期突破确认。捕捉游资控盘、放量拉升的弹性标的（注：真实打板需涨停盘口数据，此处用高换手+强动量近似）。",
         "overrides": {
-            "w_momentum": 0.42,
-            "w_liquidity": 0.28,      # 游资本质是资金/量能驱动，权重最高之一
+            "w_momentum": 0.40,
+            "w_liquidity": 0.24,      # 游资本质是资金/量能驱动，权重最高之一
             "w_trend": 0.14,
-            "w_rsi": 0.08,
+            "w_rsi": 0.06,
             "w_macd": 0.08,
             "w_value": 0.00,          # 游资炒情绪不炒价值，估值权重归零
             "w_size": 0.00,
             "w_quality": 0.00,
+            "w_fund_flow": 0.08,      # 主力资金净流入是游资/题材核心驱动力
             "momentum_window": 8,     # 超短周期（游资做超短，今天进明天出）
             "max_pe_ttm": 10000,      # 不恐高，放开估值上限
             "max_pb": 1000,
@@ -165,8 +171,9 @@ STRATEGY_PRESETS: dict[str, dict] = {
         "risk": "激进",
         "desc": "激进：极高动量权重，放开 PE/PB 限制，高换手门槛，精选 4 只。追涨不恐高。",
         "overrides": {
-            "w_momentum": 0.50, "w_liquidity": 0.22, "w_trend": 0.14, "w_rsi": 0.08,
+            "w_momentum": 0.48, "w_liquidity": 0.20, "w_trend": 0.12, "w_rsi": 0.06,
             "w_macd": 0.06, "w_value": 0.00, "w_size": 0.00, "w_quality": 0.00,
+            "w_fund_flow": 0.08,
             "momentum_window": 10, "max_pe_ttm": 10000, "max_pb": 1000,
             "min_turnover_pct": 2.0, "top_n": 4,
             "use_breakout_filter": True, "breakout_window": 10,
@@ -177,8 +184,9 @@ STRATEGY_PRESETS: dict[str, dict] = {
         "risk": "激进",
         "desc": "激进：重 RSI 低位 + MACD 反转，筛超跌后动能回暖标的，PE/PB 放宽，精选 5 只。",
         "overrides": {
-            "w_rsi": 0.38, "w_macd": 0.28, "w_momentum": 0.16, "w_liquidity": 0.08,
+            "w_rsi": 0.36, "w_macd": 0.26, "w_momentum": 0.14, "w_liquidity": 0.08,
             "w_trend": 0.06, "w_value": 0.04, "w_size": 0.00, "w_quality": 0.00,
+            "w_fund_flow": 0.06,
             "momentum_window": 10, "max_pe_ttm": 500, "max_pb": 50,
             "min_turnover_pct": 0.50, "top_n": 5,
             "use_breakout_filter": False,
@@ -189,8 +197,9 @@ STRATEGY_PRESETS: dict[str, dict] = {
         "risk": "激进",
         "desc": "激进：流动性为王 + 量能，不限 PE/PB，极高换手门槛，每板块只取 1 只，纯交易驱动。",
         "overrides": {
-            "w_liquidity": 0.40, "w_momentum": 0.25, "w_macd": 0.15, "w_trend": 0.12,
-            "w_rsi": 0.06, "w_value": 0.02, "w_size": 0.00, "w_quality": 0.00,
+            "w_liquidity": 0.36, "w_momentum": 0.22, "w_macd": 0.14, "w_trend": 0.10,
+            "w_rsi": 0.04, "w_value": 0.02, "w_size": 0.00, "w_quality": 0.00,
+            "w_fund_flow": 0.12,      # 题材热点最核心驱动就是主力资金净流入
             "macd_fast": 6, "macd_slow": 13, "macd_signal": 5,
             "max_pe_ttm": 10000, "max_pb": 1000,
             "min_turnover_pct": 3.0, "top_n": 3, "max_per_sector": 1,

@@ -96,9 +96,12 @@ def _norm_quote(q: dict, code: str) -> dict:
         "turnover_pct": float(g("turnover_pct", "turnover_rate") or 0),
         "change_pct": float(g("change_pct", "change_percent") or 0),
         "mcap_yi": float(g("mcap_yi", "float_mcap_yi", "total_mv", "market_cap") or 0),
+        "float_mcap_yi": (float(g("float_mcap_yi", "float_market_cap")) if g("float_mcap_yi", "float_market_cap") not in (None, "") else None),
         # 质量因子（ROE / 股息率）；缺省为 None，screener 据此判断是否启用质量因子
         "roe": (float(g("roe")) if g("roe") not in (None, "") else None),
         "dividend_yield": (float(g("dividend_yield", "dividendYield")) if g("dividend_yield", "dividendYield") not in (None, "") else None),
+        # 主力资金流（元）；缺省为 None，screener 据此判断是否启用资金流因子
+        "fund_flow": (float(g("fund_flow", "main_net_inflow")) if g("fund_flow", "main_net_inflow") not in (None, "") else None),
     }
 
 
@@ -224,6 +227,8 @@ def apply_config(cfg: config.AppConfig, ov: dict):
         sc.w_size = float(ov["w_size"])
     if "w_quality" in ov:
         sc.w_quality = float(ov["w_quality"])
+    if "w_fund_flow" in ov:
+        sc.w_fund_flow = float(ov["w_fund_flow"])
     if "rsi_window" in ov:
         sc.rsi_window = int(ov["rsi_window"])
     if "macd_fast" in ov:
@@ -259,6 +264,18 @@ def apply_config(cfg: config.AppConfig, ov: dict):
         cfg.market.ma_window = int(ov["ma_window"])
     if "mom_window" in ov:
         cfg.market.mom_window = int(ov["mom_window"])
+    if "short_mom_window" in ov:
+        cfg.market.short_mom_window = int(ov["short_mom_window"])
+    if "strong_short_mom" in ov:
+        cfg.market.strong_short_mom = float(ov["strong_short_mom"])
+    if "weak_short_mom" in ov:
+        cfg.market.weak_short_mom = float(ov["weak_short_mom"])
+    if "vol_shrink_threshold" in ov:
+        cfg.market.vol_shrink_threshold = float(ov["vol_shrink_threshold"])
+    if "neutral_up_factor" in ov:
+        cfg.market.neutral_up_factor = float(ov["neutral_up_factor"])
+    if "neutral_down_factor" in ov:
+        cfg.market.neutral_down_factor = float(ov["neutral_down_factor"])
     if "bull_ma_gap" in ov:
         cfg.market.bull_ma_gap = float(ov["bull_ma_gap"])
     if "bear_ma_gap" in ov:

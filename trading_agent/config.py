@@ -79,6 +79,7 @@ class ScreenerConfig:
     w_trend: float = 0.16               # 趋势强度（价 vs 长期均线）
     w_size: float = 0.04                # 规模（总市值对数，越大越稳）
     w_quality: float = 0.06             # 质量（默认 0.06；仅当行情快照提供 ROE/股息率时实际启用，否则权重自动归 0）
+    w_fund_flow: float = 0.08           # 资金流（主力净流入占流通市值比；仅当行情快照提供时实际启用，否则权重自动归 0）
     # —— 因子计算参数 ——
     rsi_window: int = 14                # RSI 周期
     macd_fast: int = 12                 # MACD 快线
@@ -116,18 +117,32 @@ class MarketStateConfig:
     选股阶段按 position_factor 缩放实际选股数（熊市可降至 0=空仓）。
     判定：价格站在 MA(ma_window) 上方且中期动量≥bull_mom → 牛市；
           价格跌破 MA 且中期动量≤bear_mom → 熊市；其余中性。
+
+    领先指标（降低滞后）：在均线/中期动量之外，叠加「短期动量」与「波动率收缩」两个
+    更灵敏的信号。short_mom 用短窗口捕捉拐点，vol_ratio 反映波动率是否在收窄（缩量
+    整理往往先于方向选择）。领先信号用于：1) 中性态细分出「偏强/偏弱」；2) 帮助在
+    指数尚未远离均线时提前下调/上调仓位系数，缓解纯均线判定的滞后。
     """
     enable: bool = True
     index_code: str = "000300"          # 宽基指数代码（沪深300；fetch_kline 复用）
     ma_window: int = 120                # 长期均线窗口（约半年）
     mom_window: int = 60                # 中期动量窗口（约一季）
+    short_mom_window: int = 10          # 短期动量窗口（领先信号，捕捉拐点）
     bull_ma_gap: float = 0.0            # 价格≥MA*(1+bull_ma_gap) 视为站上长均线
     bear_ma_gap: float = -0.03          # 价格≤MA*(1+bear_ma_gap) 视为跌破长均线
     bull_mom: float = 0.08              # 中期动量≥此值视为上行
     bear_mom: float = -0.05             # 中期动量≤此值视为下行
+    # 领先信号阈值：中性态内进一步细分
+    strong_short_mom: float = 0.04      # 短期动量≥此值视为偏强（中性→上调仓位）
+    weak_short_mom: float = -0.04       # 短期动量≤此值视为偏弱（中性→下调仓位）
+    vol_shrink_threshold: float = 0.75  # 近期波动/长期波动≤此值视为「缩量整理」
     position: dict = field(default_factory=lambda: {
         "bull": 1.0, "neutral": 0.5, "bear": 0.0,
     })
+    # 领先因子在仓位系数上的微调：中性态下，短期动量偏强时把 0.5 上调到 0.65，
+    # 偏弱时下调到 0.35；仅作用在 neutral，不改变 bull/bear 的满仓/空仓决定。
+    neutral_up_factor: float = 0.65
+    neutral_down_factor: float = 0.35
 
 
 @dataclass
@@ -295,14 +310,19 @@ _FLAT_MAP = {
     "screener": [
         "top_n", "max_per_sector", "momentum_window", "w_momentum", "w_value",
         "w_liquidity", "w_rsi", "w_macd", "w_trend", "w_size", "w_quality",
+        "w_fund_flow",
         "rsi_window", "macd_fast", "macd_slow", "macd_signal", "vol_window",
         "min_turnover_pct", "max_pe_ttm", "max_pb", "boards", "st_filter",
         "mcap_min", "mcap_max",
     ],
     "market": {
         "enable": "market_enable", "index_code": "index_code", "ma_window": "ma_window",
-        "mom_window": "mom_window", "bull_ma_gap": "bull_ma_gap", "bear_ma_gap": "bear_ma_gap",
+        "mom_window": "mom_window", "short_mom_window": "short_mom_window",
+        "bull_ma_gap": "bull_ma_gap", "bear_ma_gap": "bear_ma_gap",
         "bull_mom": "bull_mom", "bear_mom": "bear_mom",
+        "strong_short_mom": "strong_short_mom", "weak_short_mom": "weak_short_mom",
+        "vol_shrink_threshold": "vol_shrink_threshold",
+        "neutral_up_factor": "neutral_up_factor", "neutral_down_factor": "neutral_down_factor",
     },
     "signal": [
         "fast_ma", "slow_ma", "use_breakout_filter", "breakout_window",

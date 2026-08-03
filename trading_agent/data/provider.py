@@ -232,6 +232,44 @@ def fetch_quote(code: str) -> dict:
     return q
 
 
+def _eastmoney_secid(code: str) -> str:
+    """东财 secid：沪市 1.xxx，深市/创业板/北交所 0.xxx。"""
+    if code.startswith(("6", "9")):
+        return "1." + code
+    return "0." + code
+
+
+def fetch_fund_flow(code: str) -> float | None:
+    """个股主力资金净流入（元），来自东财公开接口（等效 AKShare stock_individual_fund_flow）。
+
+    返回最近一日主力净流入额（元）；接口失败/数据缺失返回 None（调用方据此降级资金流因子）。
+    """
+    cached = _load_cache("fflow", code, max_age_sec=3600)  # 资金流变化快，缓存 1 小时
+    if cached is not None:
+        return cached.get("main_net_inflow")
+    try:
+        secid = _eastmoney_secid(code)
+        url = "https://push2.eastmoney.com/api/qt/stock/fflow/daykline/get"
+        params = {
+            "lmt": "1", "klt": "101", "secid": secid,
+            "fields1": "f1,f2,f3,f7",
+            "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64,f65",
+        }
+        d = json.loads(_http_get(url, params))
+        klines = (d.get("data") or {}).get("klines") or []
+        if not klines:
+            return None
+        cells = klines[-1].split(",")
+        # fields2 索引：f51=日期, f52=主力净流入额(元), f53=小单净流入 ...
+        if len(cells) < 2:
+            return None
+        val = float(cells[1] or 0)
+        _save_cache("fflow", code, {"main_net_inflow": val})
+        return val
+    except Exception:
+        return None
+
+
 def fetch_hot_stocks() -> list[dict]:
     """同花顺当日强势股（题材归因），作候选池时调用。零鉴权。"""
     cached = _load_cache("hot", "today")
@@ -298,6 +336,10 @@ class TencentEastMoneyProvider(DataProvider):
                 q["dividend_yield"] = f["dividend_yield"]
         except Exception:
             pass
+        # 接入主力资金流：合并进 quote，资金流因子据此启用（接口失败则缺省，权重自动归零）
+        ff = fetch_fund_flow(code)
+        if ff is not None:
+            q["fund_flow"] = ff
         return q
 
     def fetch_hot_stocks(self) -> list[dict]:
@@ -337,6 +379,9 @@ class StaticProvider(DataProvider):
             q["roe"] = f["roe"]
         if f.get("dividend_yield") is not None:
             q["dividend_yield"] = f["dividend_yield"]
+        # 透传中枢注入的主力资金流（fund_flow 字段在 quotes[code] 或 fundamentals 里均可）
+        if q.get("fund_flow") is None and f.get("fund_flow") is not None:
+            q["fund_flow"] = f["fund_flow"]
         return q
 
     def fetch_hot_stocks(self) -> list[dict]:

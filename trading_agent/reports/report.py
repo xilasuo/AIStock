@@ -60,16 +60,40 @@ def write_report(result: dict, cfg: config.AppConfig) -> str:
         st = ms.get("state", "unknown")
         pf = ms.get("position_factor", 1.0)
         lines.append(f"- 市场状态：{st}（仓位系数 {pf:.2f}）— {ms.get('detail', '')}")
+        # 领先信号（短期动量 / 波动率收缩比），与前端市场状态卡片一致
+        sm = ms.get("short_mom")
+        vr = ms.get("vol_ratio")
+        if sm is not None or vr is not None:
+            parts = []
+            if sm is not None:
+                parts.append(f"短期动量 {_pct(sm)}")
+            if vr is not None:
+                parts.append(f"波动比 {vr:.2f}")
+            if parts:
+                lines.append(f"- 领先信号：{' ｜ '.join(parts)}")
     lines.append("")
     lines.append("## 一、选票结果（多因子打分 Top）")
     lines.append("")
-    lines.append("| 代码 | 名称 | 行业 | 得分 | 动量(20d) | RSI | PE(TTM) | PB | 换手率% | 信号数 |")
-    lines.append("|------|------|------|------|-----------|-----|----------|----|----------|--------|")
+    # 实际生效权重说明（预设失真透明化）：列出本轮真实参与的因子及其权重，
+    # 以及因数据缺失被剔除的因子。与前端 screenerMeta 展示保持一致。
+    _scr = result.get("screener") or {}
+    _applied = {k: v for k, v in (_scr.get("applied") or {}).items() if v > 0}
+    _skipped = _scr.get("skipped") or []
+    if _applied:
+        _applied_str = ", ".join(f"{k}={v*100:.0f}%" for k, v in _applied.items())
+        lines.append(f"> 实际生效权重：{_applied_str}")
+        if _skipped:
+            lines.append(f"> 被剔除因子（数据缺失，权重已重新分摊）：{'、'.join(_skipped)}")
+        lines.append("")
+    lines.append("| 代码 | 名称 | 行业 | 得分 | 动量(20d) | RSI | PE(TTM) | PB | 换手率% | 资金流‰ | 信号数 |")
+    lines.append("|------|------|------|------|-----------|-----|----------|----|----------|----------|--------|")
     for r in selected:
+        ffp = r.get("fund_flow_pct")
+        ffp_str = f"{ffp:.2f}" if ffp is not None else "-"
         lines.append(
             f"| {r['code']} | {r['name']} | {r.get('sector', '其他')} | {r['score']:.3f} | "
             f"{_pct(r['momentum'])} | {r.get('rsi', 0):.1f} | {r['pe_ttm']:.2f} | {r['pb']:.2f} | "
-            f"{r['turnover']:.2f} | {r.get('n_signals', 0)} |"
+            f"{r['turnover']:.2f} | {ffp_str} | {r.get('n_signals', 0)} |"
         )
     lines.append("")
 
@@ -157,6 +181,8 @@ def _market_state_view(ms: dict) -> dict:
         "detail": ms.get("detail", ""),
         "maGap": float(ms.get("ma_gap", 0.0)),
         "momentum": float(ms.get("momentum", 0.0)),
+        "shortMom": float(ms.get("short_mom", 0.0)),
+        "volRatio": float(ms.get("vol_ratio", 1.0)),
     }
 
 
@@ -191,6 +217,8 @@ def write_scan_json(result: dict, cfg: config.AppConfig) -> str:
             # —— 质量因子（接数据源后才有；ROE / 股息率）——
             "roe": (float(r["roe"]) if r.get("roe") is not None else None),
             "dividendYield": (float(r["dividend_yield"]) if r.get("dividend_yield") is not None else None),
+            # —— 资金流因子（主力净流入占流通市值千分比；数据源未提供则 None）——
+            "fundFlowPct": (float(r["fund_flow_pct"]) if r.get("fund_flow_pct") is not None else None),
         }
         for r in result["selected"]
     ]
@@ -216,6 +244,11 @@ def write_scan_json(result: dict, cfg: config.AppConfig) -> str:
         "universeSize": int(meta["universe_size"]),
         "selectedCount": int(meta["selected_n"]),
         "marketState": _market_state_view(result.get("market_state") or {}),
+        "screenerMeta": {
+            "configured": {k: float(v) for k, v in (result.get("screener") or {}).get("configured", {}).items()},
+            "applied": {k: float(v) for k, v in (result.get("screener") or {}).get("applied", {}).items()},
+            "skipped": list((result.get("screener") or {}).get("skipped", [])),
+        },
         "selected": selected,
         "backtest": {
             "baseSignal": {"fastMa": int(base_sig["fast_ma"]), "slowMa": int(base_sig["slow_ma"])},

@@ -26,6 +26,7 @@ export type ScreenerOverrides = {
   w_trend?: number;
   w_size?: number;
   w_quality?: number;
+  w_fund_flow?: number;
   // 阈值 / 参数
   momentum_window?: number;
   max_pe_ttm?: number;
@@ -75,7 +76,7 @@ export const STRATEGY_PRESETS: {
     desc: "保守：重估值 + 质量 + 大市值，低动量/低换手，宽止损，避开高波动与题材炒作。适合稳健底仓。",
     overrides: {
       w_value: 0.30, w_quality: 0.28, w_size: 0.20, w_trend: 0.12,
-      w_momentum: 0.06, w_rsi: 0.02, w_macd: 0.02, w_liquidity: 0.00,
+      w_momentum: 0.06, w_rsi: 0.02, w_macd: 0.02, w_liquidity: 0.00, w_fund_flow: 0.00,
       momentum_window: 60, max_pe_ttm: 25, max_pb: 3.0, min_turnover_pct: 0.15,
       top_n: 8, max_per_sector: 2, st_filter: "exclude_st",
       use_breakout_filter: false, stop_loss_pct: -0.12,
@@ -88,7 +89,7 @@ export const STRATEGY_PRESETS: {
     desc: "保守：重质量（ROE/股息）+ 低波动 + 低估值，优选现金流稳定的蓝筹，少交易、求稳。",
     overrides: {
       w_quality: 0.42, w_value: 0.22, w_size: 0.18, w_trend: 0.10,
-      w_rsi: 0.04, w_momentum: 0.02, w_macd: 0.02, w_liquidity: 0.00,
+      w_rsi: 0.04, w_momentum: 0.02, w_macd: 0.02, w_liquidity: 0.00, w_fund_flow: 0.00,
       momentum_window: 60, max_pe_ttm: 20, max_pb: 2.5, min_turnover_pct: 0.15,
       top_n: 8, max_per_sector: 1, st_filter: "exclude_st",
       use_breakout_filter: false, stop_loss_pct: -0.12,
@@ -102,7 +103,7 @@ export const STRATEGY_PRESETS: {
     desc: "强调动量 + 量能，要求活跃换手，捕捉横盘后放量突破前高。",
     overrides: {
       w_momentum: 0.40, w_liquidity: 0.22, w_trend: 0.16, w_rsi: 0.10,
-      w_macd: 0.08, w_value: 0.02, w_size: 0.02, w_quality: 0.00,
+      w_macd: 0.08, w_value: 0.02, w_size: 0.02, w_quality: 0.00, w_fund_flow: 0.00,
       momentum_window: 20, min_turnover_pct: 1.0,
       use_breakout_filter: true, breakout_window: 20,
     },
@@ -114,7 +115,7 @@ export const STRATEGY_PRESETS: {
     desc: "趋势跟随：重趋势 + 动量，快/慢均线 5/10 金叉确认。",
     overrides: {
       w_trend: 0.38, w_momentum: 0.26, w_liquidity: 0.14, w_rsi: 0.12,
-      w_macd: 0.06, w_value: 0.02, w_size: 0.02, w_quality: 0.00,
+      w_macd: 0.06, w_value: 0.02, w_size: 0.02, w_quality: 0.00, w_fund_flow: 0.00,
       fast_ma: 5, slow_ma: 10, min_turnover_pct: 0.30,
     },
   },
@@ -125,7 +126,7 @@ export const STRATEGY_PRESETS: {
     desc: "动能反转：重 MACD 动能 + 趋势，捕捉 DIF 上穿 DEA。",
     overrides: {
       w_macd: 0.40, w_trend: 0.24, w_momentum: 0.18, w_rsi: 0.10,
-      w_liquidity: 0.06, w_value: 0.02, w_size: 0.00, w_quality: 0.00,
+      w_liquidity: 0.06, w_value: 0.02, w_size: 0.00, w_quality: 0.00, w_fund_flow: 0.00,
       macd_fast: 12, macd_slow: 26, macd_signal: 9, min_turnover_pct: 0.30,
     },
   },
@@ -136,8 +137,8 @@ export const STRATEGY_PRESETS: {
     risk: "激进",
     desc: "游资超短打法近似：超短周期强动量(8日) + 高换手量能驱动 + 不恐高(放开估值) + 短周期突破确认。捕捉游资控盘、放量拉升的弹性标的。",
     overrides: {
-      w_momentum: 0.42, w_liquidity: 0.28, w_trend: 0.14, w_rsi: 0.08,
-      w_macd: 0.08, w_value: 0.00, w_size: 0.00, w_quality: 0.00,
+      w_momentum: 0.40, w_liquidity: 0.24, w_trend: 0.14, w_rsi: 0.06,
+      w_macd: 0.08, w_value: 0.00, w_size: 0.00, w_quality: 0.00, w_fund_flow: 0.08,
       momentum_window: 8, max_pe_ttm: 10000, max_pb: 1000,
       min_turnover_pct: 1.8, top_n: 5, st_filter: "exclude_st",
       use_breakout_filter: true, breakout_window: 12,
@@ -149,8 +150,8 @@ export const STRATEGY_PRESETS: {
     risk: "激进",
     desc: "激进：极高动量权重，放开 PE/PB 限制，高换手门槛，精选 4 只。追涨不恐高。",
     overrides: {
-      w_momentum: 0.50, w_liquidity: 0.22, w_trend: 0.14, w_rsi: 0.08,
-      w_macd: 0.06, w_value: 0.00, w_size: 0.00, w_quality: 0.00,
+      w_momentum: 0.48, w_liquidity: 0.20, w_trend: 0.12, w_rsi: 0.06,
+      w_macd: 0.06, w_value: 0.00, w_size: 0.00, w_quality: 0.00, w_fund_flow: 0.08,
       momentum_window: 10, max_pe_ttm: 10000, max_pb: 1000,
       min_turnover_pct: 2.0, top_n: 4,
       use_breakout_filter: true, breakout_window: 10,
@@ -162,8 +163,8 @@ export const STRATEGY_PRESETS: {
     risk: "激进",
     desc: "激进：重 RSI 低位 + MACD 反转，筛超跌后动能回暖标的，PE/PB 放宽，精选 5 只。",
     overrides: {
-      w_rsi: 0.38, w_macd: 0.28, w_momentum: 0.16, w_liquidity: 0.08,
-      w_trend: 0.06, w_value: 0.04, w_size: 0.00, w_quality: 0.00,
+      w_rsi: 0.36, w_macd: 0.26, w_momentum: 0.14, w_liquidity: 0.08,
+      w_trend: 0.06, w_value: 0.04, w_size: 0.00, w_quality: 0.00, w_fund_flow: 0.06,
       momentum_window: 10, max_pe_ttm: 500, max_pb: 50,
       min_turnover_pct: 0.50, top_n: 5,
       use_breakout_filter: false,
@@ -175,8 +176,8 @@ export const STRATEGY_PRESETS: {
     risk: "激进",
     desc: "激进：流动性为王 + 量能，不限 PE/PB，极高换手门槛，每板块只取 1 只，纯交易驱动。",
     overrides: {
-      w_liquidity: 0.40, w_momentum: 0.25, w_macd: 0.15, w_trend: 0.12,
-      w_rsi: 0.06, w_value: 0.02, w_size: 0.00, w_quality: 0.00,
+      w_liquidity: 0.36, w_momentum: 0.22, w_macd: 0.14, w_trend: 0.10,
+      w_rsi: 0.04, w_value: 0.02, w_size: 0.00, w_quality: 0.00, w_fund_flow: 0.12,
       macd_fast: 6, macd_slow: 13, macd_signal: 5,
       max_pe_ttm: 10000, max_pb: 1000,
       min_turnover_pct: 3.0, top_n: 3, max_per_sector: 1,
@@ -202,6 +203,7 @@ const DEFAULTS: Required<ScreenerOverrides> = {
   w_trend: 0.16,
   w_size: 0.04,
   w_quality: 0.06,
+  w_fund_flow: 0.08,
   momentum_window: 20,
   max_pe_ttm: 200,
   max_pb: 20,
@@ -235,6 +237,7 @@ function toNested(ov: ScreenerOverrides): Record<string, unknown> {
   ([
     "top_n", "max_per_sector", "momentum_window", "w_momentum", "w_value",
     "w_liquidity", "w_rsi", "w_macd", "w_trend", "w_size", "w_quality",
+    "w_fund_flow",
     "min_turnover_pct", "max_pe_ttm", "max_pb", "boards", "st_filter",
     "mcap_min", "mcap_max",
   ] as (keyof ScreenerOverrides)[]).forEach((k) => copy(screener, k));
@@ -263,6 +266,7 @@ function fromNested(cfg: Record<string, unknown>): Partial<ScreenerOverrides> {
   ([
     "top_n", "max_per_sector", "momentum_window", "w_momentum", "w_value",
     "w_liquidity", "w_rsi", "w_macd", "w_trend", "w_size", "w_quality",
+    "w_fund_flow",
     "min_turnover_pct", "max_pe_ttm", "max_pb", "boards", "st_filter",
     "mcap_min", "mcap_max",
   ] as (keyof ScreenerOverrides)[]).forEach((k) => {
@@ -508,6 +512,7 @@ export function ScreenerConfigPanel({
   // 检查权重是否有非默认值
   const weightKeys: (keyof ScreenerOverrides)[] = [
     "w_momentum", "w_value", "w_liquidity", "w_rsi", "w_macd", "w_trend", "w_size", "w_quality",
+    "w_fund_flow",
   ];
   // 基准：若当前套用了某预设，则以该预设的权重为基准，否则与默认权重比较。
   // 这样仅当「真正手动偏离」时才标「自定义权重」，避免套用预设被误标。
@@ -689,6 +694,7 @@ export function ScreenerConfigPanel({
               <SliderRow label="流动性(换手)"       value={ov.w_liquidity ?? DEFAULTS.w_liquidity}  defaultValue={DEFAULTS.w_liquidity}  onChange={(v) => set("w_liquidity", v)} />
               <SliderRow label="规模(市值)"         value={ov.w_size ?? DEFAULTS.w_size}           defaultValue={DEFAULTS.w_size}           onChange={(v) => set("w_size", v)} />
               <SliderRow label="质量(ROE/股息)"     value={ov.w_quality ?? DEFAULTS.w_quality}      defaultValue={DEFAULTS.w_quality}      onChange={(v) => set("w_quality", v)} />
+              <SliderRow label="资金流(主力净流入)" value={ov.w_fund_flow ?? DEFAULTS.w_fund_flow}  defaultValue={DEFAULTS.w_fund_flow}  onChange={(v) => set("w_fund_flow", v)} />
             </div>
 
             {/* 高级阈值 */}
