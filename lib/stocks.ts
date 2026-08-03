@@ -326,7 +326,7 @@ function matchThemes(industry: string): string[] {
   return [...found];
 }
 
-export async function analyzeStockData(query: string) {
+export async function analyzeStockData(query: string, force = false) {
   const clean = query.trim();
   const stock = resolveStock(clean) ?? await searchStockByName(clean);
   if (!stock) {
@@ -337,7 +337,8 @@ export async function analyzeStockData(query: string) {
   const fund = FUND_PROFILES[stock.code] ?? null;
   const isFund = Boolean(fund) || isFundCode(stock.code);
   const klinesPromise = getKlines(stock.code);
-  const realtimePromise = getRealtime(stock.code);
+  // force=true 时强制拉最新行情，绕过实时行情缓存（供"重新分析"使用）
+  const realtimePromise = getRealtime(stock.code, force);
   const fundamentalsPromise = getFundamentals(symbol);
   const profilePromise = getProfile(stock.code);
   const klines = await klinesPromise;
@@ -375,12 +376,19 @@ export async function analyzeStockData(query: string) {
   const resistance = Math.max(...highs.slice(-60));
   const riskPerShare = Math.max(livePrice - support, livePrice * 0.03);
   const [fundamentals, profile] = await Promise.all([fundamentalsPromise, profilePromise]);
-  const fundamentalsUnavailable = fundamentals.unavailable === true;
-  const revenueGrowth = growth(fundamentals.quarterlyTotalRevenue);
-  const profitGrowth = growth(fundamentals.quarterlyNetIncome);
-  const assets = fundamentals.quarterlyTotalAssets?.at(-1)?.value ?? 0;
-  const debt = fundamentals.quarterlyTotalDebt?.at(-1)?.value ?? 0;
-  const debtRatio = assets ? (debt / assets) * 100 : null;
+  // 营收/利润/负债率优先用麦蕊 cwzb（配置 token 时），Yahoo Finance 作为兜底。
+  // 麦蕊是原生 A 股数据源、国内稳定；Yahoo 为境外源、国内网络可能加载失败。
+  const yahooRevenueGrowth = growth(fundamentals.quarterlyTotalRevenue);
+  const yahooProfitGrowth = growth(fundamentals.quarterlyNetIncome);
+  const yahooAssets = fundamentals.quarterlyTotalAssets?.at(-1)?.value ?? 0;
+  const yahooDebt = fundamentals.quarterlyTotalDebt?.at(-1)?.value ?? 0;
+  const yahooDebtRatio = yahooAssets ? (yahooDebt / yahooAssets) * 100 : null;
+  const revenueGrowth = profile.revenueGrowth ?? yahooRevenueGrowth;
+  const profitGrowth = profile.profitGrowth ?? yahooProfitGrowth;
+  const debtRatio = profile.debtRatio != null ? profile.debtRatio * 100 : yahooDebtRatio;
+  // 三指标全部缺失才视为「基本面数据暂缺」（前端据此提示而非显示 0）
+  const fundamentalsUnavailable =
+    revenueGrowth === null && profitGrowth === null && debtRatio === null;
 
   let resolvedName = A_STOCK_LIST[stock.code] ?? profile.name ?? stock.name;
   // 若本地列表/行情源都没给出中文名，用名称检索兜底（如腾讯 smartbox），对股票和基金都适用
@@ -433,7 +441,7 @@ export async function analyzeStockData(query: string) {
       grossMargin: profile.grossMargin,
       profitMargin: profile.profitMargin,
       operatingCashflow: profile.operatingCashflow,
-      // 营收/利润/负债率来自 Yahoo Finance（境外源），国内网络可能加载失败
+      // 营收/利润/负债率优先来自麦蕊 cwzb，Yahoo 作为兜底；全缺才标记 fundamentalsUnavailable
       fundamentalsUnavailable,
       series: (() => {
         const { unavailable, ...rest } = fundamentals as Record<string, unknown> & { unavailable?: boolean };
@@ -735,9 +743,14 @@ export function buildOscillatorNote(o: Oscillators | null): string {
 export function automaticExplanation(data: Awaited<ReturnType<typeof analyzeStockData>>) {
   const { stock, quote, financials } = data;
   const trend = quote.price >= quote.ma20 ? "近期价格位于20日均线之上" : "近期价格位于20日均线之下";
-  const profitText = financials.profitGrowth === null
-    ? "公开接口暂未返回可比较的利润数据"
-    : `最近两期利润变化约为 ${financials.profitGrowth.toFixed(1)}%`;
+  const growthText = [
+    financials.revenueGrowth === null ? null : `营收${financials.revenueGrowth >= 0 ? "+" : ""}${financials.revenueGrowth.toFixed(1)}%`,
+    financials.profitGrowth === null ? null : `利润${financials.profitGrowth >= 0 ? "+" : ""}${financials.profitGrowth.toFixed(1)}%`,
+  ].filter(Boolean) as string[];
+  // 营收/利润/负债率优先来自麦蕊，可能缺失；缺失时点明基本面数据不全、解读以技术面为主
+  const profitText = growthText.length
+    ? `最近两期财报口径：${growthText.join("、")}。`
+    : "基本面（营收/利润/负债率）本次未取到，以下解读以技术面（走势/量能/支撑阻力）为主。";
   const volatilityText = quote.volatility > 3 ? "近期波动较大" : "近期波动处于相对温和区间";
   const oscNote = buildOscillatorNote(data.oscillators);
 

@@ -36,6 +36,8 @@ export type ScanSelected = {
   factors?: Record<string, number>;
   /** 行业（行业分散约束）；旧 payload 可能缺失，故可选 */
   sector?: string;
+  /** 主力净流入占流通市值千分比（正值=主力净流入）；数据源未提供则缺失 */
+  fundFlowPct?: number | null;
 };
 type ScanMetrics = {
   totalReturn: number;
@@ -79,6 +81,14 @@ type Scan = {
     detail: string;
     maGap: number;
     momentum: number;
+    shortMom?: number;
+    volRatio?: number;
+  };
+  /** 实际生效的因子权重（预设失真透明化） */
+  screenerMeta?: {
+    configured?: Record<string, number>;
+    applied?: Record<string, number>;
+    skipped?: string[];
   };
   disclaimer: string;
 };
@@ -355,9 +365,14 @@ export function StrategyScanView({
             ms.state === "bull" ? "success" : ms.state === "bear" ? "danger" : "info";
           const label =
             ms.state === "bull" ? "牛市 · 满仓" : ms.state === "bear" ? "熊市 · 空仓" : ms.state === "neutral" ? "中性 · 半仓" : "未知 · 中性";
+          const leadingBits = [
+            ms.shortMom != null ? `短期动量 ${pct(ms.shortMom)}` : null,
+            ms.volRatio != null ? `波动比 ${ms.volRatio.toFixed(2)}` : null,
+          ].filter(Boolean).join(" ｜ ");
           return (
             <Banner tone={tone} title={`市场状态：${label}（仓位系数 ${ms.positionFactor.toFixed(2)}）`}>
               {ms.detail}
+              {leadingBits && <div className="scan-muted-line">{leadingBits}</div>}
             </Banner>
           );
         })()
@@ -395,7 +410,26 @@ export function StrategyScanView({
       </Card>
 
       <Card>
-        <CardHeader title="选股榜单（多因子打分）" desc="风险调整动量 + 趋势 + 估值 + RSI/MACD 技术确认 + 流动性/规模，加权打分取 Top N；行业分散约束限制单行业最多入选数。" />
+        <CardHeader title="选股榜单（多因子打分）" desc="风险调整动量 + 趋势 + 估值 + RSI/MACD 技术确认 + 流动性/规模/资金流，加权打分取 Top N；行业分散约束限制单行业最多入选数。" />
+        {scan.screenerMeta && (() => {
+          const applied = scan.screenerMeta.applied || {};
+          const skipped = scan.screenerMeta.skipped || [];
+          const appliedStr = Object.entries(applied)
+            .filter(([, w]) => w > 0)
+            .map(([k, w]) => `${k}=${(w * 100).toFixed(0)}%`)
+            .join(" ");
+          if (!appliedStr) return null;
+          const skipNote = skipped.length
+            ? `（以下因子因数据缺失被剔除、权重已重新分摊：${skipped.join("、")}）`
+            : "";
+          return (
+            <div className="scan-meta-note">
+              <span className="scan-meta-note__label">实际生效权重：</span>
+              <span className="scan-meta-note__text">{appliedStr}</span>
+              {skipNote && <span className="scan-meta-note__warn">{skipNote}</span>}
+            </div>
+          );
+        })()}
         <div className="scan-table-wrap">
         <table className="scan-table">
           <thead>
@@ -411,6 +445,7 @@ export function StrategyScanView({
               <th className="scan-col--num">PE</th>
               <th className="scan-col--num">PB</th>
               <th className="scan-col--num">换手%</th>
+              <th className="scan-col--num">资金流‰</th>
               <th className="scan-col--num">信号数</th>
               <th className="scan-col--feedback">反馈</th>
               {(onAddWatch || onAnalyze) && <th className="scan-col--actions">操作</th>}
@@ -440,6 +475,11 @@ export function StrategyScanView({
                 <td className="scan-col--num">{s.peTtm.toFixed(2)}</td>
                 <td className="scan-col--num">{s.pb.toFixed(2)}</td>
                 <td className="scan-col--num">{s.turnover.toFixed(2)}</td>
+                <td className="scan-col--num">
+                  {s.fundFlowPct != null ? (
+                    <Tag tone={s.fundFlowPct >= 0 ? "up" : "down"}>{s.fundFlowPct.toFixed(2)}</Tag>
+                  ) : "-"}
+                </td>
                 <td className="scan-col--num">{s.signals}</td>
                 <td className="scan-col--feedback">
                   <span className="scan-feedback">

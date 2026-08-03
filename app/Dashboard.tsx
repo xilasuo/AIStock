@@ -1,7 +1,6 @@
 "use client";
 
-import {
-  FormEvent,
+import React, {
   useCallback,
   useEffect,
   useMemo,
@@ -57,6 +56,7 @@ import {
   AlertTriangle,
   X,
   ChevronUp,
+  RotateCw,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -186,7 +186,7 @@ type Analysis = {
     profitMargin: number | null;
     operatingCashflow: number | null;
     series: Record<string, Array<{ date: string; value: number }>>;
-    /** 营收/利润/负债率来源（境外源）不可用，用于前端提示「数据暂缺」而非显示 0 */
+    /** 营收/利润/负债率全部缺失（麦蕊未取到且无兜底）时置为 true，前端提示「以技术面为主」而非显示 0 */
     fundamentalsUnavailable?: boolean;
     /** PE/PB 取数失败原因，便于线上排查 */
     profileError?: string | null;
@@ -235,6 +235,7 @@ type Status = {
   deepseekConfigured: boolean;
   aiProvider?: string;
   dataSource: string;
+  mairuiEnabled?: boolean;
   reminderMode: string;
 };
 
@@ -444,7 +445,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     return () => window.clearTimeout(timer);
   }, [loadData]);
 
-  const fetchAnalysis = useCallback(async (stockQuery: string, showResult = true) => {
+  const fetchAnalysis = useCallback(async (stockQuery: string, showResult = true, force = false) => {
     if (showResult) {
       setAnalyzing(true);
       setError("");
@@ -461,6 +462,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
           query: stockQuery,
           saveHistory: showResult,
           explain: showResult,
+          force,
           ...(screenerCtx ? { screenerContext: screenerCtx } : {}),
         }),
       });
@@ -551,7 +553,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     };
   }, [alerts, checkAlerts, refreshQuote]);
 
-  async function analyzeStock(event?: FormEvent) {
+  async function analyzeStock(event?: React.FormEvent) {
     event?.preventDefault();
     if (!query.trim()) {
       flash("请输入股票代码或名称");
@@ -559,6 +561,16 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     }
     await fetchAnalysis(query);
   }
+
+  // 重新分析：强制绕过行情缓存，拉取最新价并重新计算（供分析页"重新分析"按钮）
+  const reanalyzeStock = useCallback(async () => {
+    if (!query.trim()) {
+      flash("请先输入股票代码或名称");
+      return;
+    }
+    await fetchAnalysis(query, true, true);
+    flash("已重新拉取最新行情并更新分析");
+  }, [query, fetchAnalysis, flash]);
 
   async function analyzeAndOpen(symbol: string, screenerContext?: import("./StrategyScanView").ScanSelected) {
     setQuery(symbol);
@@ -585,7 +597,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     }
   }
 
-  async function saveTrade(event: FormEvent<HTMLFormElement>) {
+  async function saveTrade(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
@@ -756,7 +768,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
         </div>
         <div className="source-status">
           <i />
-          <span><b>{status?.deepseekConfigured ? "在线分析" : "自动解释模式"}</b><small>{status?.dataSource ?? "正在检查数据源"}</small></span>
+          <span><b>{status?.deepseekConfigured ? "在线分析" : "自动解释模式"}</b><small>{status?.mairuiEnabled ? "麦蕊智数(优先) + 腾讯/东方财富" : (status?.dataSource ?? "正在检查数据源")}</small></span>
         </div>
       </aside>
 
@@ -810,6 +822,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 initialSymbol={searchParams.get("symbol") ?? ""}
                 onPickRecent={(item) => setAnalysis(item)}
                 onAnalyze={analyzeStock}
+                onReanalyze={reanalyzeStock}
                 onBuy={() => setTradeMode("buy")}
                 onSell={() => setTradeMode("sell")}
                 onWatch={() => void addWatch()}
@@ -1047,6 +1060,7 @@ function StockAnalysisPanel({
   initialSymbol,
   onPickRecent,
   onAnalyze,
+  onReanalyze,
   onBuy,
   onSell,
   onWatch,
@@ -1061,7 +1075,8 @@ function StockAnalysisPanel({
   recentAnalyses: Analysis[];
   initialSymbol: string;
   onPickRecent: (item: Analysis) => void;
-  onAnalyze: (event?: FormEvent) => Promise<void>;
+  onAnalyze: (event?: React.FormEvent) => Promise<void>;
+  onReanalyze: () => Promise<void>;
   onBuy: () => void;
   onSell: () => void;
   onWatch: () => void;
@@ -1116,9 +1131,11 @@ function StockAnalysisPanel({
           portfolioInsights={portfolioInsights}
           watched={watched}
           canSell={portfolio.positions.some((position) => position.symbol === analysis.stock.code)}
+          analyzing={analyzing}
           onWatch={onWatch}
           onBuy={onBuy}
           onSell={onSell}
+          onReanalyze={onReanalyze}
         />
       ) : (
         <div className="empty-state analysis-empty">还没有分析记录。输入一只股票代码，系统会整理它的行情、财务与题材，帮你把这只股票先看懂。</div>
@@ -1205,11 +1222,15 @@ function Home({
                   onReview={onReview}
                 />
               )}
+
+              {/* 大盘行情：指数 + 板块热力，占通栏两列，宽度充足更易读 */}
+              <div className="home-market">
+                <MarketIndices />
+                <SectorHeatmap />
+              </div>
             </div>
 
             <aside className="home-side">
-              <MarketIndices />
-              <SectorHeatmap />
               <section className="panel reminder-panel">
                 <SectionHeader title="价格提醒" subtitle="页面打开期间每5分钟检查" />
                 {[...activeAlerts]
@@ -1533,7 +1554,7 @@ function SectorHeatmap() {
     return () => window.clearTimeout(timer);
   }, [date, load]);
 
-  function submit(event: FormEvent) {
+  function submit(event: React.FormEvent) {
     event.preventDefault();
     void load(date);
   }
@@ -1599,15 +1620,17 @@ function SectorHeatmap() {
   );
 }
 
-function AnalysisView({ analysis, position, portfolioInsights, watched, canSell, onWatch, onBuy, onSell }: {
+function AnalysisView({ analysis, position, portfolioInsights, watched, canSell, analyzing, onWatch, onBuy, onSell, onReanalyze }: {
   analysis: Analysis;
   position: Position | null;
   portfolioInsights: PortfolioInsights;
   watched: boolean;
   canSell: boolean;
+  analyzing: boolean;
   onWatch: () => void;
   onBuy: () => void;
   onSell: () => void;
+  onReanalyze: () => Promise<void>;
 }) {
   const [showRaw, setShowRaw] = useState(false);
   const { stock, quote, financials, explanation } = analysis;
@@ -1647,8 +1670,39 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
 
       <MarketChart analysis={analysis} />
 
+      {/* 分析区段锚点导航：长页一键跳转，避免滚动找重点 */}
+      <nav className="analysis-tabs" aria-label="分析区段导航">
+        {[
+          ["01", "公司与行业", "analysis-card-company"],
+          ["02", isEtf ? "基金资料" : "财务体检", "analysis-card-finance"],
+          ["03", "价格位置", "analysis-card-position"],
+          ["04", isEtf ? "指数与特征" : "题材信息", "analysis-card-theme"],
+          ["05", "主要风险", "analysis-card-risk"],
+          ["06", "价格参考", "analysis-card-plan"],
+        ].map(([num, label, target]) => (
+          <button
+            key={target}
+            type="button"
+            className="analysis-tabs__btn"
+            onClick={() => document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+          >
+            <span>{num}</span>{label}
+          </button>
+        ))}
+        <button
+          type="button"
+          className="analysis-tabs__btn analysis-tabs__btn--refresh"
+          disabled={analyzing}
+          onClick={() => void onReanalyze()}
+          title="重新拉取最新行情并重新分析"
+        >
+          <RotateCw size={13} />
+          {analyzing ? "分析中…" : "重新分析"}
+        </button>
+      </nav>
+
       <div className="analysis-grid">
-        <section className="panel analysis-card">
+        <section className="panel analysis-card" id="analysis-card-company">
           <SectionHeader number="01" title={isEtf ? "基金与指数" : "公司与行业"} subtitle={isEtf ? "基金官方资料" : "通俗解释"} bordered />
           <div className="plain-points">
             {explanation.company.map((item, index) => <p key={item}><b>{companyLabels[index] ?? "信息"}</b><span>{item}</span></p>)}
@@ -1658,8 +1712,8 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
           )}
         </section>
 
-        <section className="panel analysis-card">
-          <SectionHeader number="02" title={isEtf ? "基金资料" : "财务体检"} subtitle={isEtf ? "基金官方资料" : "公开财务接口"} bordered />
+        <section className="panel analysis-card" id="analysis-card-finance">
+          <SectionHeader number="02" title={isEtf ? "基金资料" : "财务体检"} subtitle={isEtf ? "基金官方资料" : "麦蕊/东方财富/腾讯 多源"} bordered />
           {isEtf ? (
             <>
               <div className="fund-facts">
@@ -1678,22 +1732,20 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
                 <Metric label="利润变化" value={financials.profitGrowth} suffix="%" />
                 <Metric label="负债率" value={financials.debtRatio} suffix="%" />
               </div>
-              {financials.fundamentalsUnavailable ? (
-                <p className="source-warning">营收变化、利润变化、负债率三项来自 Yahoo Finance（境外数据源），当前网络无法访问，数据暂缺。其余指标（市值/PE/PB/ROE/毛净利率）来自东方财富，可正常显示。</p>
-              ) : null}
               <div className="metric-row">
                 <Metric label="总市值" value={financials.marketCap} marketCapValue />
                 <Metric label="市盈率" value={financials.pe} suffix="" help="股价相对公司利润的倍数" />
                 <Metric label="市净率" value={financials.pb} suffix="" help="股价相对净资产的倍数" />
               </div>
-              {financials.pe == null && financials.profileError ? (
-                <div className="profile-error">市盈率/市净率获取失败：{financials.profileError}</div>
-              ) : null}
               <div className="metric-row">
                 <Metric label="ROE" value={financials.roe} percentValue help="公司使用股东资金赚钱的能力" />
                 <Metric label="毛利率" value={financials.grossMargin} percentValue />
                 <Metric label="净利率" value={financials.profitMargin} percentValue />
               </div>
+              {fundamentalsNote(financials)}
+              {financials.pe == null && financials.profileError ? (
+                <div className="profile-error">市盈率/市净率暂未取到：{financials.profileError}</div>
+              ) : null}
               <Button variant="link" onClick={() => setShowRaw((value) => !value)} iconRight={showRaw ? <ChevronUp size={14} /> : <ChevronRight size={14} />}>{showRaw ? "收起原始数字" : "展开查看原始数字"}</Button>
               {showRaw && (
                 <div className="raw-data">
@@ -1707,7 +1759,7 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
           )}
         </section>
 
-        <section className="panel analysis-card">
+        <section className="panel analysis-card" id="analysis-card-position">
           <SectionHeader number="03" title="价格位置" subtitle="程序计算" bordered />
           <div className="metric-row">
             <Metric label="20日均线" value={quote.ma20} moneyValue help="近20个交易日收盘价的平均值" />
@@ -1723,7 +1775,7 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
           )}
         </section>
 
-        <section className="panel analysis-card">
+        <section className="panel analysis-card" id="analysis-card-theme">
           <SectionHeader number="04" title={isEtf ? "指数与产品特征" : "题材信息"} subtitle={isEtf ? "基金资料已核验" : "候选信息 · 需核验"} bordered />
           <div className="theme-list">
             {explanation.themes.map((theme) => <div key={theme.name}><b>{theme.name}</b><Badge tone="amber">{theme.confidence}</Badge><p>{theme.reason}</p></div>)}
@@ -1731,13 +1783,13 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
           <p className="source-warning">{isEtf ? "指数成份不等于基金实时持仓，请结合基金定期报告和指数编制方案核验。" : "题材不等于业绩事实，请结合公司公告核验。"}</p>
         </section>
 
-        <section className="panel analysis-card risks-card">
+        <section className="panel analysis-card risks-card" id="analysis-card-risk">
           <SectionHeader number="05" title="主要风险" subtitle="按数据可见范围整理" bordered />
           <ol>{explanation.risks.map((risk, index) => <li key={risk}><span>{index + 1}</span><div><p>{risk}</p></div></li>)}</ol>
           {explanation.missingInformation.length > 0 && <p className="source-warning">仍缺少：{explanation.missingInformation.join("、")}</p>}
         </section>
 
-        <section className="panel analysis-card price-plan-card">
+        <section className="panel analysis-card price-plan-card" id="analysis-card-plan">
           <SectionHeader number="06" title="价格参考" subtitle="参考情景，不是买卖建议" bordered />
           <p className="risk-unit-note"><b>先看风险，再看目标：</b>1R就是当前价到风险观察线的距离，2R是这段距离的两倍。</p>
           <div className="price-scenarios">
@@ -1790,10 +1842,10 @@ function EvidencePanel({ analysis, position }: { analysis: Analysis; position: P
     },
     {
       label: "财务完整度",
-      value: [financials.revenueGrowth, financials.profitGrowth, financials.pe, financials.roe].filter((value) => value !== null).length >= 3 ? "主要字段可用" : "关键字段不足",
-      detail: "财务数据用于初筛；报告期、口径和一次性损益仍需结合公告核验。",
+      value: [financials.revenueGrowth, financials.profitGrowth, financials.pe, financials.roe].filter((value) => value !== null).length >= 3 ? "主要字段可用" : "部分字段缺失",
+      detail: "营收/利润/负债率优先来自麦蕊；PE/PB 来自腾讯/东方财富；ROE/毛利/净利率来自麦蕊或东财主指标。缺失字段不影响技术面判断。",
       confidence: "中",
-      source: "公开财务接口",
+      source: "麦蕊/腾讯/东财 多源",
     },
   ];
 
@@ -2088,8 +2140,8 @@ function SmartAssistant(
     setMessages([{
       role: "assistant",
       content: analysis
-        ? `我已经读完${analysis.stock.name}的当前分析。你可以继续追问风险、财务，${position ? "也可以让我结合你的持仓成本解释。" : "记录持仓后还能获得个性化解释。"}`
-        : "当前没有选中具体股票，我可以基于你的账户与持仓记录回答问题（如仓位、现金、收益）。想问某只股票，先去「个股分析」分析它。",
+        ? `我盯完了${analysis.stock.name}。想问买、卖、止损、仓位，直接说；${position ? "结合你的持仓成本我会说得更准。" : "先记录持仓，我才能针对你的成本说清加减仓。"}`
+        : "还没选中股票。我可以先按你的账户和持仓说话（仓位、现金、盈亏）；要谈某只票，先去「个股分析」跑一遍。",
     }]);
     setAssistantMode(null);
     setPrimed(true);
@@ -2130,7 +2182,7 @@ function SmartAssistant(
     }
   }
 
-  function submit(event: FormEvent) {
+  function submit(event: React.FormEvent) {
     event.preventDefault();
     void ask(question);
   }
@@ -2743,7 +2795,7 @@ function AnnouncementPanel({ stock }: { stock: Analysis["stock"] }) {
     return () => window.clearTimeout(timer);
   }, [loadNotes]);
 
-  async function summarize(event: FormEvent<HTMLFormElement>) {
+  async function summarize(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setUploading(true);
     setMessage("");
@@ -2820,6 +2872,53 @@ function formatMarketCap(value: number) {
   return value.toLocaleString("zh-CN");
 }
 
+/**
+ * 财务体检的数据说明：根据麦蕊 / 多源兜底的实际覆盖情况，给出人性化提示。
+ * 麦蕊优先提供营收/利润/负债率；PE/PB 由腾讯/东财；ROE/毛利/净利率由麦蕊或东财主指标。
+ * 只有当核心字段大面积缺失时才提示"数据暂缺"，并区分缺失范围，避免一刀切的过时文案。
+ */
+function fundamentalsNote(financials: {
+  revenueGrowth: number | null;
+  profitGrowth: number | null;
+  debtRatio: number | null;
+  pe: number | null;
+  pb: number | null;
+  roe: number | null;
+  grossMargin: number | null;
+  profitMargin: number | null;
+}) {
+  const growthFields = [financials.revenueGrowth, financials.profitGrowth, financials.debtRatio];
+  const growthOk = growthFields.filter((v) => v !== null).length;
+  const hasPePb = financials.pe !== null || financials.pb !== null;
+  const hasRoeMargin = financials.roe !== null || financials.grossMargin !== null || financials.profitMargin !== null;
+
+  // 全部字段都有：一句正向说明即可
+  if (growthOk === 3 && hasPePb && hasRoeMargin) {
+    return <p className="source-warning">以上为最新一期的公开财务数据：营收/利润/负债率优先来自麦蕊，PE/PB 来自腾讯/东方财富。数据为快照，报告口径以公司公告为准。</p>;
+  }
+  // 多数可用：个别缺失提示缺什么，但不贬低整体
+  if (growthOk >= 1 || hasPePb || hasRoeMargin) {
+    const missing: string[] = [];
+    if (growthOk === 0) missing.push("营收/利润/负债率（麦蕊未能返回或该指标暂缺）");
+    if (!hasPePb) missing.push("市盈率/市净率");
+    if (!hasRoeMargin) missing.push("ROE/毛利率/净利率");
+    return (
+      <p className="source-warning">
+        部分财务数据暂缺：{missing.join("、")}。可用指标仍可作为初筛参考；
+        {growthOk > 0 && "营收/利润/负债率优先来自麦蕊，"}
+        {hasPePb && "PE/PB 来自腾讯/东方财富，"}
+        判断以技术面（均线/量能/支撑阻力）与仓位纪律为主。
+      </p>
+    );
+  }
+  // 几乎全缺：明确说明，引导用技术面，不制造焦虑
+  return (
+    <p className="source-warning">
+      本次未取到该股财务指标，不凭印象补数。技术面（走势/量能/支撑阻力）仍稳定可用，可据此并结合仓位纪律做判断；若有明确的基本面信息，也可在对话里补充核对。
+    </p>
+  );
+}
+
 function Metric({ label, value, suffix = "", moneyValue = false, marketCapValue = false, percentValue = false, help }: {
   label: string;
   value: number | null;
@@ -2836,7 +2935,7 @@ function Metric({ label, value, suffix = "", moneyValue = false, marketCapValue 
     else if (moneyValue) content = price(value);
     else content = `${value >= 0 && suffix === "%" ? "+" : ""}${value.toFixed(1)}${suffix}`;
   }
-  return <div><span>{label}</span><strong className={value !== null && value < 0 ? "down" : "neutral"}>{content}</strong><small>{help ?? (value === null ? "数据不足" : "最新可用数据")}</small></div>;
+  return <div><span>{label}</span><strong className={value !== null && value < 0 ? "down" : "neutral"}>{content}</strong><small>{help ?? (value === null ? "本次未取到" : "最新公开数据")}</small></div>;
 }
 
 /**
@@ -2910,7 +3009,7 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved }: {
   const [message, setMessage] = useState("");
   const [confirming, setConfirming] = useState<string | null>(null);
 
-  async function saveCondition(event: FormEvent<HTMLFormElement>, symbol: string) {
+  async function saveCondition(event: React.FormEvent<HTMLFormElement>, symbol: string) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const metric = ((data.get("conditionMetric") as string | null) ?? "").trim();
@@ -2946,7 +3045,7 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved }: {
     setConfirming(null);
     try {
       await jsonRequest(`/api/watchlist?symbol=${symbol}`, { method: "DELETE" });
-      await onSaved();
+      onSaved();
       setMessage("已移出关注");
     } catch (removeError) {
       setMessage(removeError instanceof Error ? removeError.message : "移出关注失败");
@@ -3422,9 +3521,11 @@ function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferenc
       Icon: Database,
       title: "数据来源",
       caption: "行情与财务口径",
-      text: `${status?.dataSource ?? "公开行情"}。结果显示获取时间，失败时不会伪装成最新。`,
-      state: "无需账号",
-      tone: "blue",
+      text: status?.mairuiEnabled
+        ? "麦蕊智数已启用并优先取数：营收/利润/负债率/PE/PB/ROE/行业/简介优先来自麦蕊，缺失自动回退腾讯/东方财富。显示获取时间，失败不会伪装成最新。"
+        : "当前为免费多源：腾讯证券 + 东方财富。未配置麦蕊 token，营收/利润/负债率可能缺失，分析以技术面为主。",
+      state: status?.mairuiEnabled ? "麦蕊优先" : "免费多源",
+      tone: status?.mairuiEnabled ? "green" : "blue",
     },
     {
       id: "alerts",
@@ -3659,7 +3760,7 @@ function CapitalSettings({ initialCapitalCents, capitalFlows, onSave, onAddFlow,
   const [message, setMessage] = useState("");
   const [flowMsg, setFlowMsg] = useState("");
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const value = Number(new FormData(event.currentTarget).get("initialCapital"));
     setSaving(true);
@@ -3674,7 +3775,7 @@ function CapitalSettings({ initialCapitalCents, capitalFlows, onSave, onAddFlow,
     }
   }
 
-  async function submitFlow(event: FormEvent<HTMLFormElement>) {
+  async function submitFlow(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const fd = new FormData(form);
@@ -3771,7 +3872,7 @@ function TradeModal({ mode, stock, positions, onClose, onSubmit }: {
   stock: { code?: string; symbol?: string; name: string } | null;
   positions: ReturnType<typeof calculatePortfolio>["positions"];
   onClose: () => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
 }) {
   const firstInput = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -3788,7 +3889,7 @@ function TradeModal({ mode, stock, positions, onClose, onSubmit }: {
     return () => window.removeEventListener("keydown", close);
   }, [onClose]);
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
     if (saving) return;
     setSaving(true);
     await onSubmit(event);
@@ -3898,7 +3999,7 @@ function ReviewModal({ cycle, onClose, onSaved }: {
     return () => window.removeEventListener("keydown", close);
   }, [onClose]);
 
-  async function save(event: FormEvent<HTMLFormElement>) {
+  async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (saving) return;
     setSaving(true);

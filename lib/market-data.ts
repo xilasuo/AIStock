@@ -118,6 +118,10 @@ export type StockProfile = {
   sector: string | null;
   industry: string | null;
   businessSummary: string | null;
+  /** 麦蕊 cwzb 财务指标（可选增强层）：营收/利润同比（%）与资产负债率（小数）。 */
+  revenueGrowth?: number | null;
+  profitGrowth?: number | null;
+  debtRatio?: number | null;
   /** 诊断字段：基本面资料取数失败时的具体原因（如东财接口超时/被限流），用于排查线上 PE/PB 缺失。 */
   profileError?: string | null;
 };
@@ -289,11 +293,14 @@ async function fetchRealtime(code: string): Promise<RealtimeQuote | null> {
   return null;
 }
 
-export async function getRealtime(code: string): Promise<RealtimeQuote | null> {
+export async function getRealtime(code: string, force = false): Promise<RealtimeQuote | null> {
   const key = code.trim();
   const now = Date.now();
-  const cached = realtimeCache.get(key);
-  if (cached && cached.expiresAt > now) return await cached.value;
+  // force=true 时跳过缓存，强制重新拉取最新行情（供"重新分析"使用）
+  if (!force) {
+    const cached = realtimeCache.get(key);
+    if (cached && cached.expiresAt > now) return await cached.value;
+  }
 
   const promise = fetchRealtime(key);
   realtimeCache.set(key, { expiresAt: now + REALTIME_CACHE_MS, value: promise });
@@ -470,17 +477,19 @@ async function eastmoneyFundamentals(code: string): Promise<EmFundamentals> {
  * grossMargin/operatingCashflow/sector 由东方财富「财务主指标」免费接口补充（国内稳定可达）。 */
 export async function getProfile(code: string): Promise<StockProfile> {
   const mairuiEnabled = await isMairuiEnabled();
-  const [em, tencent, mairui, emF100, emFund] = await Promise.all([
+  const [em, tencent, mairui, mairuiRealtime, emF100, emFund] = await Promise.all([
     eastmoneyProfile(code),
     tencentProfile(code),
     // 麦蕊为可选增强源，异常时静默降级为 null，交由下方东财兜底。
     mairuiEnabled ? getMairuiFundamentals(code).catch(() => null) : Promise.resolve(null),
+    // 麦蕊实时接口实测返回 pe / pb_ratio，作为 PE/PB 的第一优先级（优先调用麦蕊）。
+    mairuiEnabled ? getMairuiRealtime(code).catch(() => null) : Promise.resolve(null),
     eastmoneyF100Profile(code),
     eastmoneyFundamentals(code),
   ]);
-  // PE/PB 优先用腾讯（国内网络稳定可达）；push2 东财在部分网络环境被掐时静默降级。
-  const pe = tencent.pe ?? em.pe ?? null;
-  const pb = tencent.pb ?? em.pb ?? null;
+  // PE/PB 麦蕊优先（原生 A 股源、国内稳定）→ 腾讯 → 东财。
+  const pe = mairuiRealtime?.pe ?? tencent.pe ?? em.pe ?? null;
+  const pb = mairuiRealtime?.pb ?? tencent.pb ?? em.pb ?? null;
   const profileError =
     pe == null || pb == null
       ? tencent.profileError ?? em.profileError ?? null
@@ -500,6 +509,10 @@ export async function getProfile(code: string): Promise<StockProfile> {
     // 行业/简介：麦蕊优先 → 东方财富 f100 兜底（国内稳定）
     industry: mairui?.industry ?? emF100.industry ?? null,
     businessSummary: mairui?.businessSummary ?? emF100.businessSummary ?? null,
+    // 麦蕊 cwzb 提供的营收/利润同比与资产负债率（仅配置 token 时可能有，缺失为 null）
+    revenueGrowth: mairui?.revenueGrowth ?? null,
+    profitGrowth: mairui?.profitGrowth ?? null,
+    debtRatio: mairui?.debtRatio ?? null,
     profileError,
   };
 }

@@ -244,12 +244,19 @@ export function buildFallbackAnswer(
     return `结论：当前首先要核验价格风险和数据缺口。\n依据：20日风险观察线¥${quote.support.toFixed(3)}，近期平均日波动${quote.volatility.toFixed(2)}%。\n${risks}\n风险与缺口：${context.missingInformation.slice(0, 3).join("、") || "页面所列公开数据之外的信息尚未核验"}${vol ? `\n量价：${vol}` : ""}${osc ? `\n动能：${osc}` : ""}。\n下一步：跌破风险观察线后重新检查原判断，不把单一指标当成买卖指令。`;
   }
 
+  if (/技术面|走势|均线|MA20|支撑|阻力|MACD|RSI|KDJ|金叉|死叉|背离|放量|缩量|量比|突破|跌破/i.test(question)) {
+    const posNote = quote.price >= quote.ma20 ? `站上20日均线¥${quote.ma20.toFixed(3)}，短线结构偏强` : `处于20日均线¥${quote.ma20.toFixed(3)}下方，短线结构偏弱`;
+    const suppRes = `支撑¥${quote.support.toFixed(3)}、阻力¥${quote.resistance.toFixed(3)}，现价距阻力${quote.resistance > 0 ? ((quote.resistance - quote.price) / quote.price * 100).toFixed(1) + "%" : "缺失"}`;
+    const vol = volumeTip(context);
+    return `结论：${stock.name}当前${posNote}；${suppRes}。\n依据：现价¥${quote.price.toFixed(3)}（行情时间${evidenceTime}），近20日平均波动${quote.volatility.toFixed(2)}%${vol ? `\n量价：${vol}` : ""}${osc ? `\n动能：${osc}` : ""}。\n风险与缺口：技术指标在强趋势中会钝化，且单凭指标不能构成买卖结论；${context.missingInformation.slice(0, 2).join("、") || "仍需结合最新公告核验"}。\n下一步：结合账户仓位与持仓成本，再判断动作；跌破¥${quote.support.toFixed(3)}重新审视原逻辑。`;
+  }
+
   if (/财务|业绩|估值|市盈率|市净率|ROE/i.test(question)) {
     const missing = financials.revenueGrowth === null && financials.profitGrowth === null && financials.pe == null && financials.pb == null && financials.roe == null;
     if (missing) {
       return `结论：本次没有取到该股的基本面数据（营收/利润/PE/PB/ROE 均缺失），无法做财务层面的判断。\n依据：可用数据只剩技术面——现价¥${quote.price.toFixed(3)}，相对20日均线¥${quote.ma20.toFixed(3)}处于${quote.price >= quote.ma20 ? "上方" : "下方"}，支撑¥${quote.support.toFixed(3)}、阻力¥${quote.resistance.toFixed(3)}${osc ? `；动能：${osc}` : ""}${volumeTip(context) ? `；${volumeTip(context)}` : ""}。\n风险与缺口：基本面缺失不等于不能交易，技术面仍可作为主要依据，但缺少估值/业绩锚点，长期持有的胜率难验证。\n下一步：先看技术面走势（是否站稳均线、量能是否配合），并结合仓位纪律决定操作；若你已掌握基本面，也可在对话里补充给我。`;
     }
-    return `结论：现有财务数据只能用于初筛，不能单独证明公司被低估或高估。\n依据：营收变化${percent(financials.revenueGrowth)}，利润变化${percent(financials.profitGrowth)}，市盈率${financials.pe?.toFixed(2) ?? "暂无"}，市净率${financials.pb?.toFixed(2) ?? "暂无"}，ROE${percent(financials.roe)}。\n风险与缺口：财务口径、报告期和一次性损益仍需结合公告核验；若营收/利润/负债率缺失，说明该类数据来自境外源未能获取，以下判断需以技术面为主。\n下一步：优先查看最近一期定期报告及业绩说明，并结合技术面（均线/量能/支撑阻力）综合判断。`;
+    return `结论：现有财务数据只能用于初筛，不能单独证明公司被低估或高估。\n依据：营收变化${percent(financials.revenueGrowth)}，利润变化${percent(financials.profitGrowth)}，市盈率${financials.pe?.toFixed(2) ?? "暂无"}，市净率${financials.pb?.toFixed(2) ?? "暂无"}，ROE${percent(financials.roe)}。\n风险与缺口：财务口径、报告期和一次性损益仍需结合公告核验；若营收/利润/负债率缺失，说明该指标本次未取到（麦蕊/多源暂缺），以下判断需以技术面为主。\n下一步：优先查看最近一期定期报告及业绩说明，并结合技术面（均线/量能/支撑阻力）综合判断。`;
   }
 
   const vol = volumeTip(context);

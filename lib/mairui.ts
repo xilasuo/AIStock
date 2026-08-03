@@ -95,9 +95,11 @@ function parseRealtime(row: Record<string, unknown>): MairuiRealtime {
     typeof row.name === "string" && row.name ? row.name
       : typeof row.mc === "string" ? row.mc
         : null;
-  // 麦蕊实时接口不返回 pe/pb（财务 pe/pb 请走 getMairuiFundamentals / cwzb），
-  // 这里恒为 null，避免与兜底值混淆。
-  return { price, previousClose, changePercent, pe: null, pb: null, name };
+  // 麦蕊实时接口实测返回 pe 与 pb_ratio（市净率），直接解析；
+  // 让 PE/PB 也能从麦蕊（第一优先级）取到，缺失时回退给腾讯/东财。
+  const pe = pick(row, ["pe", "pe_ttm", "市盈率"]);
+  const pb = pick(row, ["pb_ratio", "pb", "市净率"]);
+  return { price, previousClose, changePercent, pe, pb, name };
 }
 
 export async function getMairuiRealtime(code: string): Promise<MairuiRealtime | null> {
@@ -154,6 +156,18 @@ export type MairuiFundamentals = {
   profitMargin: number | null; // 销售净利率（小数）
   businessSummary: string | null; // 中文公司简介
   industry: string | null; // 行业标签（从申万行业概念提取）
+  /**
+   * 营收同比（%）——由 cwzb 相邻两期主营收入(zyyw)推算；
+   * 仅在相邻期口径一致（同为季末/年末）时给出，否则为 null 交 Yahoo 兜底。
+   */
+  revenueGrowth: number | null;
+  /** 利润同比（%）——由 cwzb 相邻两期扣非净利润(kflr)推算；口径不一致时为 null。 */
+  profitGrowth: number | null;
+  /**
+   * 资产负债率（小数，0~1）——直接取麦蕊 cwzb 的 zcfzl(%) 转小数；
+   * 该字段麦蕊原生直接给出，比用总负债/总资产推算更可靠。
+   */
+  debtRatio: number | null;
 };
 
 // 麦蕊财务比率返回百分比数值，转小数以对齐 Yahoo（Yahoo financialData 为 0.x）
@@ -163,11 +177,83 @@ function pct(value: unknown): number | null {
   return n / 100;
 }
 
-function parseFinancials(rows: unknown): { roe: number | null; profitMargin: number | null } {
-  if (!Array.isArray(rows) || rows.length === 0) return { roe: null, profitMargin: null };
+// 麦蕊字段命名未完全公开，对每个财务指标给出常见候选键名（中英拼音）做容错提取。
+// 全部未命中则返回 null，由调用方回退到免费源，不影响主流程。
+function pickKey(row: Record<string, unknown>, candidates: string[]): number | null {
+  return pick(row, candidates);
+}
+
+// 从 cwzb 多期数组中提取基础财务项。cwzb 按时间倒序，[0] 为最新一期，[1] 为上一期。
+// 真实字段已用麦蕊接口实测核对（贵州茅台 600519）：
+//   zyyw = 主营业务收入(元)、kflr = 扣非净利润(元)、zzc = 总资产(元)、zcfzl = 资产负债率(%)。
+// 注意：麦蕊 cwzb 各期可能是单季或累计口径（如 Q1 单季 ROE=10%、年报累计 ROE=33%），
+// 直接对相邻两期 zyyw/kflr 算"同比"会在单季/累计口径切换时严重失真，
+// 因此营收/利润增长率仅在相邻期口径一致（date 同为季末或同为年末）时才推算，否则为 null。
+type FinRow = {
+  revenue: number | null; // 单期主营收入（元）
+  netProfit: number | null; // 单期扣非净利润（元）
+  totalAssets: number | null; // 期末总资产（元）
+  debtRatioPct: number | null; // 资产负债率（%，直接给出）
+  date: string | null; // 报告期（YYYY-MM-DD），用于口径一致性判断
+  isYearEnd: boolean; // 是否为年报（12-31）
+};
+function parseFinRows(rows: unknown): FinRow[] {
+  if (!Array.isArray(rows)) return [];
+  return rows.map((item) => {
+    const row = (item ?? {}) as Record<string, unknown>;
+    const date = typeof row.date === "string" ? row.date : null;
+    return {
+      revenue: pickKey(row, ["zyyw", "yy", "totalrevenue", "revenue", "income", "营业额", "营业收入"]),
+      netProfit: pickKey(row, ["kflr", "jlr", "netprofit", "netincome", "净利润", "归母净利润"]),
+      totalAssets: pickKey(row, ["zzc", "zcz", "totalassets", "总资产"]),
+      debtRatioPct: pickKey(row, ["zcfzl", "debtratio", "资产负债率", "zfzl"]),
+      date,
+      isYearEnd: date != null && date.endsWith("-12-31"),
+    };
+  });
+}
+
+function parseFinancials(rows: unknown): {
+  roe: number | null;
+  profitMargin: number | null;
+  revenueGrowth: number | null;
+  profitGrowth: number | null;
+  debtRatio: number | null;
+} {
+  const out = { roe: null, profitMargin: null, revenueGrowth: null, profitGrowth: null, debtRatio: null } as {
+    roe: number | null;
+    profitMargin: number | null;
+    revenueGrowth: number | null;
+    profitGrowth: number | null;
+    debtRatio: number | null;
+  };
+  if (!Array.isArray(rows) || rows.length === 0) return out;
   // cwzb 按时间倒序，[0] 为最新一期
   const latest = (rows[0] ?? {}) as Record<string, unknown>;
-  return { roe: pct(latest.jzsy), profitMargin: pct(latest.xsjl) };
+  out.roe = pct(pickKey(latest, ["jzsy", "roe", "净资产收益率"]));
+  out.profitMargin = pct(pickKey(latest, ["xsjl", "profitmargin", "netmargin", "销售净利率"]));
+
+  // 资产负债率：麦蕊直接给出百分比（如 12.12 表示 12.12%），÷100 转小数对齐 debtRatio 语义
+  const debtPct = pickKey(latest, ["zcfzl", "debtratio", "资产负债率", "zfzl"]);
+  if (debtPct !== null) out.debtRatio = debtPct / 100;
+
+  // 营收/利润同比：仅在相邻两期口径一致（同为季末或同为年末）时推算，避免单季/累计失真
+  const finRows = parseFinRows(rows);
+  if (finRows.length >= 2) {
+    const cur = finRows[0];
+    const prev = finRows[1];
+    const sameScope = cur.isYearEnd === prev.isYearEnd && cur.date !== prev.date;
+    if (sameScope) {
+      if (cur.revenue != null && prev.revenue != null && prev.revenue !== 0) {
+        out.revenueGrowth = ((cur.revenue - prev.revenue) / Math.abs(prev.revenue)) * 100;
+      }
+      if (cur.netProfit != null && prev.netProfit != null && prev.netProfit !== 0) {
+        out.profitGrowth = ((cur.netProfit - prev.netProfit) / Math.abs(prev.netProfit)) * 100;
+      }
+    }
+    // 口径不一致时：不强行给同比，交给 Yahoo 兜底，避免给出错误增长数据
+  }
+  return out;
 }
 
 function parseCompanyProfile(obj: unknown): string | null {
@@ -240,9 +326,20 @@ export async function getMairuiFundamentals(code: string): Promise<MairuiFundame
       profitMargin: fin.profitMargin,
       businessSummary: parseCompanyProfile(gsjj),
       industry: parseIndustry(concepts),
+      revenueGrowth: fin.revenueGrowth,
+      profitGrowth: fin.profitGrowth,
+      debtRatio: fin.debtRatio,
     };
     // 仅在有实际数据时缓存，避免缓存全 null 导致后续永远跳过
-    if (result.roe !== null || result.profitMargin !== null || result.businessSummary || result.industry) {
+    if (
+      result.roe !== null ||
+      result.profitMargin !== null ||
+      result.businessSummary ||
+      result.industry ||
+      result.revenueGrowth !== null ||
+      result.profitGrowth !== null ||
+      result.debtRatio !== null
+    ) {
       fundCache.set(cacheKey, { ts: Date.now(), data: result });
     }
     return result;

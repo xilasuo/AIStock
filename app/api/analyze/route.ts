@@ -146,6 +146,7 @@ async function getDeepSeekExplanation(
               "summary 用一句有观点的大白话：属于什么行业、价格相对20日均线的位置与强弱、波动大小，并点明当前技术姿态（如“站上均线偏强”或“跌破均线偏弱”）；不下达买卖指令，但可结合下方【用户风险偏好与交易纪律】提示与用户风险承受度或交易计划的关系（如近20日波动是否明显超出其单笔可亏阈值、该股若建仓是否会触及单股集中度上限）。",
               "5. 量价关系：必须结合 volume.ratio（量比）与 volume.divergence（量价背离）判断强弱。放量突破才可信，缩量上涨或高位放巨量滞涨需提示风险；当 divergence 为“顶背离”时，summary 与 themes 不得给出偏多结论；volume 字段缺失时对应输出写“量能数据缺失”。",
               "6. 摆动指标：facts 中的 oscillators（MACD/RSI/KDJ）仅作技术姿态参考。RSI>70 视为超买、<30 视为超卖，仅提示风险而非方向结论；MACD 金叉/死叉、KDJ 金叉/死叉、顶/底背离只作为“动能强弱”的依据；指标在强趋势中可能钝化失效，必须提示这一局限。超买区不盲目看多、超卖区不盲目看空，禁止据此给出确定性买卖措辞；字段缺失则对应输出写“摆动指标数据缺失”。",
+              "7. 【技术面为主，基本面按可得性降级】营收增长/利润增长/负债率优先来自麦蕊智数（原生 A 股源），PE/PB 来自腾讯/东方财富，ROE/毛利/净利率来自麦蕊或东财主指标；任一指标缺失即写“数据缺失”，不得编造。summary 与 risks 的解读以走势结构（价格相对均线、支撑阻力）、量能、动能指标为**主要依据**；基本面缺失时不因此拒绝解读，而应注明“基本面数据缺失，以下解读以技术面为主”，并照常给出走势、量价、动能层面的解读。",
               "【用户风险偏好与交易纪律（仅供参考，不改变上述不得荐股、不得下达买卖指令的硬约束）】",
               `risk_profile=${prefs.riskProfile}`,
               `max_loss_percent=${prefs.maxLossPercent}`,
@@ -224,6 +225,8 @@ export async function POST(request: Request) {
       saveHistory?: boolean;
       explain?: boolean;
       strategy?: boolean;
+      /** 强制绕过行情缓存，重新拉取最新价（"重新分析"按钮） */
+      force?: boolean;
       context?: unknown;
       /** 选股榜单行数据（点击"分析"时传入的因子打分上下文） */
       screenerContext?: {
@@ -238,7 +241,8 @@ export async function POST(request: Request) {
       return Response.json({ error: "请输入有效的股票代码或名称" }, { status: 400 });
     }
 
-    const facts = await analyzeStockData(query);
+    // force=true 时绕过行情缓存，强制重新拉取最新价（"重新分析"按钮）
+    const facts = await analyzeStockData(query, payload.force === true);
     const analysis = payload.explain === false || facts.stock.instrumentType === "etf"
       ? { mode: "automatic" as const, explanation: automaticExplanation(facts) }
       : await getDeepSeekExplanation(facts, user.id, payload.screenerContext);

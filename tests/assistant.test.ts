@@ -46,3 +46,24 @@ test("买入问题先检查总仓位和个股集中度", () => {
   assert.match(answer, /总仓位70\.00%/);
   assert.match(answer, /仓位层面仍有空间/);
 });
+
+test("技术面问题会给出走势结构/支撑阻力/量能动能", () => {
+  const answer = buildFallbackAnswer("MACD 和支撑位怎么看？", context);
+  assert.match(answer, /支撑¥1400\.000/);
+  assert.match(answer, /阻力¥1600\.000/);
+  assert.match(answer, /20日均线¥1480\.000/);
+  assert.match(answer, /短线结构偏强/);
+});
+
+test("基本面缺失时仍以技术面为主给出回答，不拒绝判断", () => {
+  const noFund = {
+    ...context,
+    financials: { revenueGrowth: null, profitGrowth: null, debtRatio: null, pe: null, pb: null, roe: null },
+  };
+  const answer = buildFallbackAnswer("财务数据说明了什么？", noFund);
+  assert.match(answer, /本次没有取到该股的基本面数据/);
+  assert.match(answer, /技术面仍可作为主要依据/);
+  // 且不会因为财务缺失就空手而归——技术面要点被带出
+  assert.match(answer, /支撑¥1400\.000/);
+  assert.match(answer, /20日均线¥1480\.000/);
+});

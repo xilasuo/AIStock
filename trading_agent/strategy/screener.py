@@ -12,6 +12,9 @@
     - 流动性：最新换手率
     - 规模：总市值对数（越大越稳）
     - 质量（可选）：ROE + 股息率 —— 仅当 quote 提供时启用，缺失自动跳过
+    - 资金流（可选）：主力净流入占流通市值比 —— 仅当 quote 提供 fund_flow 时启用，
+      缺失自动跳过。资金流与动量是**两个独立维度**：动量看「价格涨跌」，
+      资金流看「主力资金净进出」，避免只选出「涨得好但主力在出货」的票。
 
 因子在候选池内做稳健 z-score 归一化（截断 ±3σ）再 min-max 到 [0,1]，
 按 config 权重加权求和；权重在运行时根据"实际可用的因子"重新归一化，
@@ -118,6 +121,16 @@ def screen(cfg: config.AppConfig, codes: list[str], dp=None, top_n_override: int
         pe = quote.get("pe_ttm") or 0
         pb = quote.get("pb") or 0
         turnover = quote.get("turnover_pct") or 0
+        # 资金流：主力净流入（元）。若数据源提供了才纳入；与流通市值归一化后作为因子
+        fund_flow_raw = quote.get("fund_flow")  # 主力净流入额（元），可能为 None
+        float_mcap_yi = quote.get("float_mcap_yi") or 0.0
+        fund_flow_pct = None
+        if fund_flow_raw is not None and float_mcap_yi > 0:
+            try:
+                # 净流入占流通市值比例（千分比，正值=主力净流入、负值=净流出）
+                fund_flow_pct = (float(fund_flow_raw) / (float_mcap_yi * 1e8)) * 1000.0
+            except (TypeError, ValueError):
+                fund_flow_pct = None
         # 硬性过滤：流动性差 / 估值过高 / 估值无效
         if turnover < sc.min_turnover_pct:
             continue
@@ -211,12 +224,14 @@ def screen(cfg: config.AppConfig, codes: list[str], dp=None, top_n_override: int
             # 基本面（质量因子来源；缺省为 None，供 payload 透传展示）
             "roe": quote.get("roe"),
             "dividend_yield": quote.get("dividend_yield"),
+            # 资金流（主力净流入占流通市值千分比；数据源未提供则为 None）
+            "fund_flow_pct": fund_flow_pct,
         })
 
     if not rows:
-        return []
-
-    # —— 各因子候选池内归一化 ——
+        return {"rows": [], "meta": {
+            "configured": {}, "applied": {}, "skipped": [],
+        }}
     mom_n = _robust_normalize([r["risk_adj_momentum"] for r in rows])
     rsi_n = _robust_normalize([_rsi_factor(r["rsi"]) for r in rows])
     macd_n = _robust_normalize([r["macd"] for r in rows])
@@ -245,6 +260,16 @@ def screen(cfg: config.AppConfig, codes: list[str], dp=None, top_n_override: int
     else:
         quality_n = None
 
+    # 资金流因子：仅当行情快照提供主力资金流时启用（缺失自动跳过，权重归零）
+    fund_present = [r["fund_flow_pct"] for r in rows if r["fund_flow_pct"] is not None]
+    if fund_present:
+        med = _median(fund_present)
+        fund_n = _robust_normalize(
+            [r["fund_flow_pct"] if r["fund_flow_pct"] is not None else med for r in rows]
+        )
+    else:
+        fund_n = None
+
     # 估值复合 = 0.5×PE 便宜度 + 0.5×PB 便宜度
     value_n = [0.5 * a + 0.5 * b for a, b in zip(ey_n, pb_n)]
 
@@ -258,6 +283,7 @@ def screen(cfg: config.AppConfig, codes: list[str], dp=None, top_n_override: int
         "liquidity": sc.w_liquidity,
         "size": sc.w_size if size_n is not None else 0.0,
         "quality": sc.w_quality if quality_n is not None else 0.0,
+        "fund_flow": sc.w_fund_flow if fund_n is not None else 0.0,
     }
     total_w = sum(weights.values())
     if total_w <= 0:
@@ -272,6 +298,7 @@ def screen(cfg: config.AppConfig, codes: list[str], dp=None, top_n_override: int
         "liquidity": liq_n,
         "size": size_n or [0.0] * len(rows),
         "quality": quality_n or [0.0] * len(rows),
+        "fund_flow": fund_n or [0.0] * len(rows),
     }
 
     for i, r in enumerate(rows):
@@ -288,6 +315,22 @@ def screen(cfg: config.AppConfig, codes: list[str], dp=None, top_n_override: int
 
     rows.sort(key=lambda r: r["score"], reverse=True)
 
+    # —— 实际生效权重 meta（预设失真透明化）——
+    # 某些因子因数据缺失被运行时剔除，其权重会按比例分摊到其余因子。
+    # 这里把「配置权重」与「实际生效权重」都暴露出去，供前端/邮件如实展示，
+    # 避免用户套用预设后误以为 quality/size/fund_flow 真的参与了打分。
+    _configured = {
+        "momentum": sc.w_momentum, "rsi": sc.w_rsi, "macd": sc.w_macd,
+        "trend": sc.w_trend, "value": sc.w_value, "liquidity": sc.w_liquidity,
+        "size": sc.w_size, "quality": sc.w_quality, "fund_flow": sc.w_fund_flow,
+    }
+    _applied = {k: round(w / total_w, 4) if w > 0 else 0.0 for k, w in weights.items()}
+    meta = {
+        "configured": {k: round(v, 4) for k, v in _configured.items()},
+        "applied": _applied,
+        "skipped": sorted(k for k, w in weights.items() if w <= 0),
+    }
+
     # 实际选股数：优先用覆盖值（市场状态缩放），否则用配置 top_n
     eff_top_n = top_n_override if top_n_override is not None else sc.top_n
 
@@ -297,7 +340,7 @@ def screen(cfg: config.AppConfig, codes: list[str], dp=None, top_n_override: int
     cap = sc.max_per_sector
     if cap is not None and cap >= eff_top_n:
         # 上限不小于目标数，约束无效，直接取前 eff_top_n
-        return rows[: eff_top_n]
+        return {"rows": rows[: eff_top_n], "meta": meta}
 
     selected: list[dict] = []
     sector_count: dict[str, int] = {}
@@ -309,4 +352,4 @@ def screen(cfg: config.AppConfig, codes: list[str], dp=None, top_n_override: int
             sector_count[sec] = sector_count.get(sec, 0) + 1
         if len(selected) >= eff_top_n:
             break
-    return selected
+    return {"rows": selected, "meta": meta}

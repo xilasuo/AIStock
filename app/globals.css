@@ -1170,17 +1170,26 @@ svg { display: block; }
 }
 .market-indices-foot a { color: var(--accent-ink); }
 
-/* 首页主次两栏：主列放核心（概览/持仓/盈亏/复盘），次列放辅助（大盘/板块/提醒） */
+/* 首页主次两栏：主列放核心（概览/持仓/盈亏/复盘 + 大盘行情通栏），次列放任务（提醒/复盘） */
 .home-cols {
   display: grid;
   gap: var(--space-6);
-  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
 }
 .home-main,
 .home-side { display: grid; gap: var(--space-6); min-width: 0; }
 .home-side .panel { margin: 0; }
 .home-side .reminder-panel,
 .home-side .review-panel { padding: 22px; }
+
+/* 大盘行情通栏：指数 + 板块热力并排两列，宽度充足，避免塞进窄侧栏显得挤 */
+.home-market {
+  display: grid;
+  gap: var(--space-6);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.home-market .market-indices-card,
+.home-market .sector-heatmap-card { margin: 0; }
 
 /* 旧的两栏（仅放提醒+复盘），保留向后兼容但不再用于首页主干 */
 .home-grid {
@@ -1649,6 +1658,39 @@ svg { display: block; }
 .scan-table-wrap {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+/* 实际生效权重提示（预设失真透明化） */
+.scan-meta-note {
+  align-items: baseline;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 0 16px 12px;
+  padding: 8px 12px;
+}
+.scan-meta-note__label {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+.scan-meta-note__text {
+  color: var(--text);
+  font-size: var(--fs-xs);
+}
+.scan-meta-note__warn {
+  color: var(--danger);
+  font-size: var(--fs-xs);
+}
+
+/* 市场状态卡片内的领先信号行 */
+.scan-muted-line {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  margin-top: 4px;
 }
 
 .scan-table {
@@ -2514,13 +2556,63 @@ svg { display: block; }
 
 .assistant-disclaimer { color: var(--muted); display: block; font-size: var(--fs-2xs); margin-top: 8px; }
 
+/* 分析区段锚点导航 */
+.analysis-tabs {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0 4px;
+}
+
+.analysis-tabs__btn {
+  align-items: center;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text-soft);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: var(--fs-xs);
+  gap: 6px;
+  padding: 6px 12px;
+  transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+
+.analysis-tabs__btn:hover {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.analysis-tabs__btn span {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-2xs);
+}
+
+.analysis-tabs__btn--refresh {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  margin-left: auto;
+}
+
+.analysis-tabs__btn--refresh:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.analysis-tabs__btn--refresh:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
 .analysis-grid {
   display: grid;
   gap: 20px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.analysis-card { min-height: 245px; padding: 22px 20px; }
+.analysis-card { min-height: 245px; padding: 22px 20px; scroll-margin-top: 18px; }
 
 .plain-points { display: grid; gap: 9px; }
 
@@ -4435,6 +4527,7 @@ svg { display: block; }
   .holding-grid,
   .home-grid,
   .home-cols,
+  .home-market,
   .analysis-grid,
   .research-grid,
   .watch-cards { grid-template-columns: 1fr; }

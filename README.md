@@ -7,7 +7,7 @@
 ## 主要功能
 
 - 账号体系（Cookie session，多用户 + 超级管理员）：登录页为独立的 `app/login/page.tsx`，主应用 `app/page.tsx` 在服务端校验登录后才渲染 `Dashboard`。首次启动时用 `APP_USERNAME`/`APP_PASSWORD` 自动 seed 一个超级管理员，管理员可在「设置 → 用户」中增删用户、设置角色（`super_admin`/`user`）与禁用账号，数据接口均按登录会话鉴权
-- 公开渠道行情、财务和题材信息整理（东财 / 腾讯 / Yahoo 等免费接口，可选麦蕊智数增强）
+- 行情、财务与题材信息多源整理：配置麦蕊智数 token 后，实时行情、PE/PB、营收/利润/负债率、ROE、行业/简介等**优先取麦蕊**（原生 A 股源、国内稳定）；未配置则自动回退腾讯 / 东方财富 / Yahoo 免费多源，缺失字段以技术面为主分析
 - DeepSeek 或任意 OpenAI 兼容模型解释（也支持 Ollama / OpenRouter / GitHub Models 等免费源）
 - 关注股票、买卖记录、持仓与盈亏计算
 - 止盈止损提醒（前端轮询 + 可选 Cloudflare Cron 每 15 分钟主动推送通知）
