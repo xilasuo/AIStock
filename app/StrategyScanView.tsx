@@ -62,10 +62,10 @@ type Scan = {
   selectedCount: number;
   selected: ScanSelected[];
   backtest: {
-    baseSignal: ScanSignal;
-    baseMetrics: ScanMetrics;
-    finalSignal: ScanSignal;
-    finalMetrics: ScanMetrics;
+    baseSignal?: ScanSignal;
+    baseMetrics?: ScanMetrics;
+    finalSignal?: ScanSignal;
+    finalMetrics?: ScanMetrics;
     optimized?: {
       bestSignal: ScanSignal;
       bestMetrics: ScanMetrics;
@@ -82,11 +82,11 @@ type Scan = {
   equityCurve: Array<{ date: string; value: number }>;
   marketState?: {
     state: string;
-    positionFactor: number;
-    score: number;
-    detail: string;
-    maGap: number;
-    momentum: number;
+    positionFactor?: number;
+    score?: number;
+    detail?: string;
+    maGap?: number;
+    momentum?: number;
     shortMom?: number;
     volRatio?: number;
   };
@@ -105,7 +105,8 @@ type Scan = {
   disclaimer: string;
 };
 
-function pct(x: number): string {
+function pct(x: number | undefined | null): string {
+  if (x == null || Number.isNaN(x)) return "—";
   return `${x >= 0 ? "+" : ""}${(x * 100).toFixed(2)}%`;
 }
 
@@ -349,7 +350,7 @@ export function StrategyScanView({
     );
   }
 
-  const fm = scan.backtest.finalMetrics;
+  const fm = scan.backtest.finalMetrics ?? {};
   const opt = scan.backtest.optimized;
 
   return (
@@ -382,7 +383,7 @@ export function StrategyScanView({
             ms.volRatio != null ? `波动比 ${ms.volRatio.toFixed(2)}` : null,
           ].filter(Boolean).join(" ｜ ");
           return (
-            <Banner tone={tone} title={`市场状态：${label}（仓位系数 ${ms.positionFactor.toFixed(2)}）`}>
+            <Banner tone={tone} title={`市场状态：${label}（仓位系数 ${(ms.positionFactor ?? 0).toFixed(2)}）`}>
               {ms.detail}
               {leadingBits && <div className="scan-muted-line">{leadingBits}</div>}
             </Banner>
@@ -393,14 +394,22 @@ export function StrategyScanView({
       <div className="stat-grid scan-stats">
         <Stat
           label="最终信号"
-          value={`MA${scan.backtest.finalSignal.fastMa}/MA${scan.backtest.finalSignal.slowMa}`}
+          value={
+            scan.backtest.finalSignal
+              ? `MA${scan.backtest.finalSignal.fastMa}/MA${scan.backtest.finalSignal.slowMa}`
+              : "—"
+          }
         />
-        <Stat label="总收益" value={pct(fm.totalReturn)} hint={fm.totalReturn >= 0 ? "盈利" : "亏损"} />
+        <Stat
+          label="总收益"
+          value={pct(fm.totalReturn)}
+          hint={(fm.totalReturn ?? 0) >= 0 ? "盈利" : "亏损"}
+        />
         <Stat label="年化收益" value={pct(fm.annualReturn)} />
-        <Stat label="夏普比率" value={fm.sharpe.toFixed(2)} hint="风险调整收益" />
+        <Stat label="夏普比率" value={(fm.sharpe ?? 0).toFixed(2)} hint="风险调整收益" />
         <Stat label="最大回撤" value={pct(fm.maxDrawdown)} hint="越低越好" />
         <Stat label="交易胜率" value={pct(fm.winRate)} hint="已平仓交易盈利占比" />
-        <Stat label="交易次数" value={String(fm.trades)} />
+        <Stat label="交易次数" value={String(fm.trades ?? 0)} />
       </div>
 
       {scan.walkForward && (
@@ -408,10 +417,10 @@ export function StrategyScanView({
           消除幸存者偏差：每期仅用「截至当期」的数据重新选股，按等权 + 单票风险预算建仓。
           这是策略在历史上的真实可期表现 —— 总收益{" "}
           <b>{pct(scan.walkForward.metrics.totalReturn)}</b>，夏普{" "}
-          <b>{scan.walkForward.metrics.sharpe.toFixed(2)}</b>，最大回撤{" "}
+          <b>{(scan.walkForward.metrics.sharpe ?? 0).toFixed(2)}</b>，最大回撤{" "}
           <b>{pct(scan.walkForward.metrics.maxDrawdown)}</b>，交易胜率{" "}
           <b>{pct(scan.walkForward.metrics.winRate)}</b>，交易{" "}
-          <b>{scan.walkForward.metrics.trades}</b> 次。
+          <b>{scan.walkForward.metrics.trades ?? 0}</b> 次。
           上方「最终信号」指标为样本内参考，请以本真实历史模拟为准。
         </Banner>
       )}
@@ -423,7 +432,7 @@ export function StrategyScanView({
             title={`参数优化有效：夏普 ${opt.sharpeImprovement >= 0 ? "+" : ""}${opt.sharpeImprovement.toFixed(2)}`}
           >
             优化后最佳参数 MA{opt.bestSignal.fastMa}/MA{opt.bestSignal.slowMa}，基准 MA
-            {scan.backtest.baseSignal.fastMa}/MA{scan.backtest.baseSignal.slowMa}。
+            {scan.backtest.baseSignal?.fastMa ?? "?"}/MA{scan.backtest.baseSignal?.slowMa ?? "?"}。
           </Banner>
 
           {opt.outOfSample && (
@@ -432,7 +441,7 @@ export function StrategyScanView({
               后 {Math.round((1 - (opt.split?.trainRatio ?? 0.7)) * 100)}% 验证），
               样本外绩效更能反映策略真实可期表现：总收益{" "}
               <b>{pct(opt.outOfSample.totalReturn)}</b>，夏普{" "}
-              <b>{opt.outOfSample.sharpe.toFixed(2)}</b>，最大回撤{" "}
+              <b>{(opt.outOfSample.sharpe ?? 0).toFixed(2)}</b>，最大回撤{" "}
               <b>{pct(opt.outOfSample.maxDrawdown)}</b>，交易胜率{" "}
               <b>{pct(opt.outOfSample.winRate)}</b>。
             </Banner>
@@ -514,7 +523,7 @@ export function StrategyScanView({
                 <td className="scan-col--sector">
                   <span className="scan-sector">{s.sector ?? "其他"}</span>
                 </td>
-                <td className="scan-col--num">{s.score.toFixed(3)}</td>
+                <td className="scan-col--num">{(s.score ?? 0).toFixed(3)}</td>
                 <td className="scan-col--num">
                   <Tag tone={s.momentum >= 0 ? "up" : "down"}>{pct(s.momentum)}</Tag>
                 </td>
@@ -525,9 +534,9 @@ export function StrategyScanView({
                 <td className="scan-col--num">
                   {s.factors ? `${(s.factors.trend != null ? s.factors.trend : 0) * 100 | 0}` : "-"}
                 </td>
-                <td className="scan-col--num">{s.peTtm.toFixed(2)}</td>
-                <td className="scan-col--num">{s.pb.toFixed(2)}</td>
-                <td className="scan-col--num">{s.turnover.toFixed(2)}</td>
+                <td className="scan-col--num">{(s.peTtm ?? 0).toFixed(2)}</td>
+                <td className="scan-col--num">{(s.pb ?? 0).toFixed(2)}</td>
+                <td className="scan-col--num">{(s.turnover ?? 0).toFixed(2)}</td>
                 <td className="scan-col--num">
                   {s.fundFlowPct != null ? (
                     <Tag tone={s.fundFlowPct >= 0 ? "up" : "down"}>{s.fundFlowPct.toFixed(2)}</Tag>
@@ -608,7 +617,7 @@ export function StrategyScanView({
                 <tr key={i}>
                   <td>MA{g.fastMa}</td>
                   <td>MA{g.slowMa}</td>
-                  <td>{g.metric.toFixed(3)}</td>
+                  <td>{(g.metric ?? 0).toFixed(3)}</td>
                   <td>
                     <Tag tone={g.totalReturn >= 0 ? "up" : "down"}>{pct(g.totalReturn)}</Tag>
                   </td>

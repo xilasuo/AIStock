@@ -685,16 +685,26 @@ export function ScreenerConfigPanel({
           <div className="screener-weights-panel">
             {/* 因子权重滑块 */}
             <div className="screener-weights-sliders">
-              <div className="screener-field-label screener-weights-title">因子权重（拖动调整，默认值灰色显示）</div>
-              <SliderRow label="动量(风险调整)"     value={ov.w_momentum ?? DEFAULTS.w_momentum} defaultValue={DEFAULTS.w_momentum} onChange={(v) => set("w_momentum", v)} />
-              <SliderRow label="估值(PE/PB)"       value={ov.w_value ?? DEFAULTS.w_value}         defaultValue={DEFAULTS.w_value}         onChange={(v) => set("w_value", v)} />
-              <SliderRow label="趋势强度"           value={ov.w_trend ?? DEFAULTS.w_trend}         defaultValue={DEFAULTS.w_trend}         onChange={(v) => set("w_trend", v)} />
-              <SliderRow label="RSI(14)"            value={ov.w_rsi ?? DEFAULTS.w_rsi}             defaultValue={DEFAULTS.w_rsi}             onChange={(v) => set("w_rsi", v)} />
-              <SliderRow label="MACD 动能"          value={ov.w_macd ?? DEFAULTS.w_macd}           defaultValue={DEFAULTS.w_macd}           onChange={(v) => set("w_macd", v)} />
-              <SliderRow label="流动性(换手)"       value={ov.w_liquidity ?? DEFAULTS.w_liquidity}  defaultValue={DEFAULTS.w_liquidity}  onChange={(v) => set("w_liquidity", v)} />
-              <SliderRow label="规模(市值)"         value={ov.w_size ?? DEFAULTS.w_size}           defaultValue={DEFAULTS.w_size}           onChange={(v) => set("w_size", v)} />
-              <SliderRow label="质量(ROE/股息)"     value={ov.w_quality ?? DEFAULTS.w_quality}      defaultValue={DEFAULTS.w_quality}      onChange={(v) => set("w_quality", v)} />
-              <SliderRow label="资金流(主力净流入)" value={ov.w_fund_flow ?? DEFAULTS.w_fund_flow}  defaultValue={DEFAULTS.w_fund_flow}  onChange={(v) => set("w_fund_flow", v)} />
+              <div className="screener-weights-title">因子权重（拖动调整，默认值灰色显示）</div>
+              {[
+                { key: "w_momentum" as const, label: "动量(风险调整)", def: DEFAULTS.w_momentum },
+                { key: "w_value" as const,     label: "估值(PE/PB)",       def: DEFAULTS.w_value },
+                { key: "w_trend" as const,     label: "趋势强度",           def: DEFAULTS.w_trend },
+                { key: "w_rsi" as const,       label: "RSI(14)",            def: DEFAULTS.w_rsi },
+                { key: "w_macd" as const,      label: "MACD 动能",          def: DEFAULTS.w_macd },
+                { key: "w_liquidity" as const, label: "流动性(换手)",       def: DEFAULTS.w_liquidity },
+                { key: "w_size" as const,      label: "规模(市值)",         def: DEFAULTS.w_size },
+                { key: "w_quality" as const,   label: "质量(ROE/股息)",     def: DEFAULTS.w_quality },
+                { key: "w_fund_flow" as const, label: "资金流(主力净流入)", def: DEFAULTS.w_fund_flow },
+              ].map((item) => (
+                <SliderRow
+                  key={item.key}
+                  label={item.label}
+                  value={ov[item.key] ?? item.def}
+                  defaultValue={item.def}
+                  onChange={(v) => set(item.key, v)}
+                />
+              ))}
             </div>
 
             {/* 高级阈值 */}
