@@ -11,7 +11,7 @@ import React, {
   type ReactNode,
 } from "react";
 import { useSearchParams, usePathname } from "next/navigation";
-import { SectionHeader, Badge, Stat, Button, IconButton, Field, Input, Select, Textarea, Banner, Hint, LoadingState, ConfirmDialog, StockSearch } from "./components";
+import { SectionHeader, Badge, Stat, Button, IconButton, Field, Input, Select, Textarea, Banner, Hint, LoadingState, ConfirmDialog, StockSearch, type StockSuggestionGroup } from "./components";
 import { Sparkline } from "./charts";
 import { AnalyticsView } from "./AnalyticsView";
 import { ImportPanel } from "./ImportPanel";
@@ -1136,26 +1136,40 @@ function StockAnalysisPanel({
       setQuery(symbol);
       inputRef.current?.focus();
     }
-    // 仅把股票代码带入输入框，不自动发起分析；用户查看关注后跳转到此，
-    // 手动点击「开始分析」即可，避免无谓等待与重复请求。
+    // 由关注列表 / 策略扫描带入股票代码时，自动执行一次分析
+    if (initialSymbol.trim()) {
+      void onAnalyze(undefined, initialSymbol.trim());
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 合并「关注列表 + 最近分析」作为搜索联想来源，去重后优先展示关注项
-  const searchSuggestions = useMemo(() => {
-    const seen = new Set<string>();
-    const list: Array<{ symbol: string; name?: string }> = [];
+  // 合并「关注列表 + 最近分析」作为搜索联想来源，按分组返回
+  const searchSuggestions = useMemo((): StockSuggestionGroup[] => {
+    const groups: StockSuggestionGroup[] = [];
+
+    // 关注列表
+    const watchItems: StockSuggestion[] = [];
+    const watchSeen = new Set<string>();
     for (const item of watchlist) {
-      if (seen.has(item.symbol)) continue;
-      seen.add(item.symbol);
-      list.push({ symbol: item.symbol, name: item.name });
+      if (watchSeen.has(item.symbol)) continue;
+      watchSeen.add(item.symbol);
+      watchItems.push({ symbol: item.symbol, name: item.name });
     }
+    if (watchItems.length > 0) {
+      groups.push({ label: "关注列表", items: watchItems });
+    }
+
+    // 最近分析（排除已在关注中的）
+    const recentItems: StockSuggestion[] = [];
     for (const item of recentAnalyses) {
-      if (seen.has(item.stock.code)) continue;
-      seen.add(item.stock.code);
-      list.push({ symbol: item.stock.code, name: item.stock.name });
+      if (watchSeen.has(item.stock.code)) continue;
+      recentItems.push({ symbol: item.stock.code, name: item.stock.name });
     }
-    return list;
+    if (recentItems.length > 0) {
+      groups.push({ label: "最近分析", items: recentItems.slice(0, 10) });
+    }
+
+    return groups;
   }, [watchlist, recentAnalyses]);
 
   return (

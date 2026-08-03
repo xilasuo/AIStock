@@ -491,6 +491,11 @@ export interface StockSuggestion {
   name?: string;
 }
 
+export interface StockSuggestionGroup {
+  label: string;           // 分组标题，如 "关注列表"、"最近分析"
+  items: StockSuggestion[];
+}
+
 export function StockSearch({
   value,
   onChange,
@@ -510,7 +515,7 @@ export function StockSearch({
   onSubmit: (query: string) => void;
   onSelect?: (symbol: string) => void;
   loading?: boolean;
-  suggestions?: StockSuggestion[];
+  suggestions?: StockSuggestionGroup[];
   submitLabel?: string;
   loadingLabel?: string;
   placeholder?: string;
@@ -519,13 +524,16 @@ export function StockSearch({
   inputRef?: React.Ref<HTMLInputElement>;
 }) {
   const [open, setOpen] = useState(false);
-  const list = open ? suggestions : [];
+  const groups = open ? suggestions : [];
 
   const pick = (symbol: string) => {
     onChange(symbol);
     setOpen(false);
     onSelect?.(symbol);
   };
+
+  // 计算总条数
+  const totalItems = groups.reduce((sum, g) => sum + g.items.length, 0);
 
   return (
     <form
@@ -552,23 +560,31 @@ export function StockSearch({
       <Button variant="primary" type="submit" disabled={loading || !value.trim()}>
         {loading ? loadingLabel : submitLabel}
       </Button>
-      {list.length > 0 && (
+      {totalItems > 0 && (
         <ul className="stock-search__suggestions" role="listbox">
-          {list.map((item) => (
-            <li key={item.symbol}>
-              <button
-                type="button"
-                className="stock-search__option"
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  pick(item.symbol);
-                }}
-              >
-                <span className="stock-search__code">{item.symbol}</span>
-                {item.name && <span className="stock-search__name">{item.name}</span>}
-              </button>
-            </li>
-          ))}
+          {groups.map((group) =>
+            group.items.length === 0 ? null : (
+              <li key={group.label}>
+                <div className="stock-search__group-label">{group.label}</div>
+                <ul className="stock-search__group-list">
+                  {group.items.map((item) => (
+                    <li key={item.symbol}>
+                      <button
+                        type="button"
+                        className="stock-search__option"
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          pick(item.symbol);
+                        }}
+                      >
+                        <span className="stock-search__name">{item.name || item.symbol}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ),
+          )}
         </ul>
       )}
     </form>
