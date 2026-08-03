@@ -28,6 +28,10 @@ import {
   ChevronRight,
   TrendingUp,
   Upload,
+  Check,
+  Copy,
+  Mic,
+  Trash2,
   CheckCircle2,
   MessageCircle,
   ClipboardList,
@@ -51,7 +55,6 @@ import {
   Scale,
   ArrowRightCircle,
   Star,
-  Trash2,
   Wallet,
   Users,
   AlertTriangle,
@@ -85,6 +88,7 @@ import {
   type TradingPreferences,
 } from "../lib/preferences";
 import type { AssistantContext } from "../lib/assistant";
+import { splitAssistantSections, conclusionTone } from "../lib/assistant";
 import { formatDateShanghai, formatDateTimeShanghai } from "../lib/time";
 import { readCache, writeCache, removeCache } from "../lib/client-cache";
 
@@ -1001,6 +1005,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
         watchlist={watchlist}
         recentAnalyses={recentAnalyses}
         fetchAnalysis={fetchAnalysis}
+        userId={user.id}
       />
       <ConfirmDialog
         open={confirming === "logout"}
@@ -2216,22 +2221,96 @@ function buildPlaceholderContext(portfolioInsights: PortfolioInsights): Assistan
   };
 }
 
+const SECTION_LABELS: Record<string, string> = {
+  conclusion: "结论",
+  basis: "依据",
+  risk: "风险与缺口",
+  next: "下一步",
+};
+
+// 语音识别的最小类型声明（规避 @types/dom 在不同环境下的差异）
+interface SpeechRecognitionLike {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((event: { resultIndex: number; results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }> }) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
+
+function AssistantAnswer({ content }: { content: string }) {
+  const sections = useMemo(() => splitAssistantSections(content), [content]);
+  const isStructured = sections.length >= 2 && sections.some((s) => s.kind !== "other");
+  const [collapsed, setCollapsed] = useState<Record<number, boolean>>({});
+
+  if (!isStructured) {
+    return <MarkdownMessage content={content} />;
+  }
+
+  return (
+    <div className="assistant-sections">
+      {sections.map((section, index) => {
+        const tone = section.kind === "conclusion" ? conclusionTone(section.body) : "neutral";
+        const isCollapsible = section.kind !== "conclusion";
+        const isCollapsed = isCollapsible && collapsed[index];
+        return (
+          <div
+            key={`${section.kind}-${index}`}
+            className={`assistant-section assistant-section--${section.kind}${section.kind === "conclusion" ? ` tone-${tone}` : ""}`}
+          >
+            <button
+              type="button"
+              className="assistant-section__head"
+              onClick={() => isCollapsible && setCollapsed((prev) => ({ ...prev, [index]: !prev[index] }))}
+              aria-expanded={!isCollapsed}
+            >
+              <span className="assistant-section__title">
+                {section.kind !== "other" ? (SECTION_LABELS[section.kind] ?? section.title) : section.title}
+              </span>
+              {section.kind === "conclusion" && (
+                <span className={`assistant-section__badge tone-${tone}`}>
+                  {tone === "act" ? "可执行" : tone === "warn" ? "注意风险" : "信息"}
+                </span>
+              )}
+              {isCollapsible && (
+                <ChevronRight size={14} className={`assistant-section__chevron${isCollapsed ? "" : " is-open"}`} />
+              )}
+            </button>
+            {!isCollapsed && (
+              <div className="assistant-section__body">
+                <MarkdownMessage content={section.body} />
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function SmartAssistant(
-  { analysis, position, portfolioInsights, floating = false, onClose, headerSlot }: {
+  { analysis, position, portfolioInsights, floating = false, onClose, headerSlot, userId }: {
     analysis: Analysis | null;
     position: Position | null;
     portfolioInsights: PortfolioInsights;
     floating?: boolean;
     onClose?: () => void;
     headerSlot?: ReactNode;
+    userId?: string | number;
   },
 ) {
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
+  const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [primed, setPrimed] = useState(false);
   const [assistantMode, setAssistantMode] = useState<"ai" | "fallback" | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
+  const lastInterim = useRef("");
+  const stockCode = analysis?.stock.code ?? "";
 
   const scrollToBottom = useCallback((smooth = true) => {
     const el = messagesRef.current;
@@ -2239,18 +2318,47 @@ function SmartAssistant(
     el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
   }, []);
 
-  // 进入分析页或切换股票时重置对话并给出引导语
-  const stockCode = analysis?.stock.code ?? "";
+  // 按用户 + 股票维度构造本地存储 key
+  const storageKey = `assistant:${userId ?? "anon"}:${stockCode || "global"}`;
+
+  // 切换股票 / 首次进入：优先从本地恢复历史，无缓存才给引导语
   useEffect(() => {
-    setMessages([{
-      role: "assistant",
-      content: analysis
-        ? `我盯完了${analysis.stock.name}。想问买、卖、止损、仓位，直接说；${position ? "结合你的持仓成本我会说得更准。" : "先记录持仓，我才能针对你的成本说清加减仓。"}`
-        : "还没选中股票。我可以先按你的账户和持仓说话（仓位、现金、盈亏）；要谈某只票，先去「个股分析」跑一遍。",
-    }]);
+    if (typeof window === "undefined") return;
+    let restored: AssistantMessage[] = [];
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      if (raw) restored = JSON.parse(raw) as AssistantMessage[];
+    } catch {
+      restored = [];
+    }
+    if (restored.length > 0) {
+      setMessages(restored);
+      setPrimed(true);
+    } else {
+      setMessages([{
+        role: "assistant",
+        content: analysis
+          ? `我盯完了${analysis.stock.name}。想问买、卖、止损、仓位，直接说；${position ? "结合你的持仓成本我会说得更准。" : "先记录持仓，我才能针对你的成本说清加减仓。"}`
+          : "还没选中股票。我可以先按你的账户和持仓说话（仓位、现金、盈亏）；要谈某只票，先去「个股分析」跑一遍。",
+        id: nextId(),
+      }]);
+      setPrimed(true);
+    }
     setAssistantMode(null);
-    setPrimed(true);
-  }, [stockCode, analysis, position]);
+    // 仅股票维度变化触发恢复；position 变化不再清空历史
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stockCode, storageKey]);
+
+  // 任何消息变化都写回本地，避免刷新/切换丢上下文
+  useEffect(() => {
+    if (primed && typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem(storageKey, JSON.stringify(messages));
+      } catch {
+        /* 容量超限或隐私模式时忽略 */
+      }
+    }
+  }, [messages, primed, storageKey]);
 
   // 历史/提问长度变化时把消息列表滚到底
   useEffect(() => {
@@ -2283,21 +2391,27 @@ function SmartAssistant(
       : buildPlaceholderContext(portfolioInsights);
   }
 
-  async function ask(text: string) {
+  async function ask(text: string, opts?: { replaceAssistantId?: string }) {
     const clean = text.trim();
     if (!clean || asking) return;
-    const history = messages.slice(-8);
     const userMessage = { role: "user" as const, content: clean, id: nextId() };
-    setMessages((current) => [...current, userMessage]);
+    const replaceId = opts?.replaceAssistantId;
+    // 重新生成：去掉旧 assistant 气泡，但保留其前面的 user 提问
+    if (replaceId) {
+      setMessages((current) => current.filter((m) => m.id !== replaceId));
+    } else {
+      setMessages((current) => [...current, userMessage]);
+    }
     setQuestion("");
     setAsking(true);
+    setRegeneratingId(replaceId ? null : regeneratingId);
     try {
       const result = await jsonRequest<{ answer: string; mode: "ai" | "fallback" }>("/api/assistant", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           question: clean,
-          messages: history,
+          messages: messages.slice(-8),
           context: buildContext(),
         }),
       });
@@ -2319,6 +2433,7 @@ function SmartAssistant(
       }]);
     } finally {
       setAsking(false);
+      setRegeneratingId(null);
     }
   }
 
@@ -2330,9 +2445,106 @@ function SmartAssistant(
     void ask(target.pendingQuestion);
   }
 
+  function regenerate(messageId: string) {
+    if (asking || regeneratingId) return;
+    // 找到该 assistant 回复之前最近的一条 user 提问
+    const idx = messages.findIndex((m) => m.id === messageId);
+    if (idx <= 0) return;
+    let userQuestion = "";
+    for (let i = idx - 1; i >= 0; i -= 1) {
+      if (messages[i].role === "user") { userQuestion = messages[i].content; break; }
+    }
+    if (!userQuestion) return;
+    setRegeneratingId(messageId);
+    void ask(userQuestion, { replaceAssistantId: messageId });
+  }
+
   function submit(event: React.FormEvent) {
     event.preventDefault();
     void ask(question);
+  }
+
+  // —— 复制单条回复 ——
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  async function copyMessage(text: string, id?: string) {
+    if (!id) return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      setCopiedId(id);
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopiedId(null), 1800);
+    } catch {
+      /* 忽略复制失败 */
+    }
+  }
+
+  function clearHistory() {
+    if (typeof window !== "undefined") {
+      try { window.localStorage.removeItem(storageKey); } catch { /* ignore */ }
+    }
+    setMessages([{
+      role: "assistant",
+      content: analysis
+        ? `我盯完了${analysis.stock.name}。想问买、卖、止损、仓位，直接说；${position ? "结合你的持仓成本我会说得更准。" : "先记录持仓，我才能针对你的成本说清加减仓。"}`
+        : "还没选中股票。我可以先按你的账户和持仓说话（仓位、现金、盈亏）；要谈某只票，先去「个股分析」跑一遍。",
+      id: nextId(),
+    }]);
+    setAssistantMode(null);
+  }
+
+  // —— 语音输入 ——
+  const speechSupported =
+    typeof window !== "undefined" &&
+    ("webkitSpeechRecognition" in window || "SpeechRecognition" in window);
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+
+  function toggleSpeech() {
+    if (listening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+    const SR = (window as unknown as { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor }).SpeechRecognition
+      ?? (window as unknown as { webkitSpeechRecognition?: SpeechRecognitionCtor }).webkitSpeechRecognition;
+    if (!SR) return;
+    const rec = new SR();
+    rec.lang = "zh-CN";
+    rec.interimResults = true;
+    rec.continuous = false;
+    rec.onresult = (event: { resultIndex: number; results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }> }) => {
+      let transcript = "";
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        transcript += event.results[i][0].transcript;
+      }
+      setQuestion((prev) => {
+        // 只在首次或空闲时替换，避免与手动输入冲突
+        if (!prev || prev === lastInterim.current) return transcript;
+        return prev;
+      });
+      lastInterim.current = transcript;
+    };
+    rec.onend = () => { setListening(false); lastInterim.current = ""; };
+    rec.onerror = () => { setListening(false); lastInterim.current = ""; };
+    recognitionRef.current = rec;
+    lastInterim.current = "";
+    try {
+      rec.start();
+      setListening(true);
+    } catch {
+      setListening(false);
+    }
   }
 
   const prompts = analysis
@@ -2358,6 +2570,11 @@ function SmartAssistant(
                 <X size={16} />
               </button>
             )}
+            {primed && messages.length > 1 && (
+              <button type="button" className="assistant-clear" onClick={clearHistory} title="清空本轮对话">
+                <Trash2 size={12} /> 清空
+              </button>
+            )}
           </div>
         }
       />
@@ -2377,14 +2594,44 @@ function SmartAssistant(
           return (
             <div className={`assistant-bubble ${isAssistant ? "assistant" : "user"}${message.error ? " has-error" : ""}`} key={message.id ?? `${role}-${index}`}>
               <div className="assistant-bubble__avatar" aria-hidden>{isAssistant ? "AI" : "我"}</div>
-              <div className="assistant-bubble__body">
+              <div className={`assistant-bubble__body${isAssistant && !message.error ? " has-copy" : ""}`}>
                 <div className="assistant-bubble__name">
                   {isAssistant ? "助手" : "我"}
                   {isAssistant && message.mode === "fallback" && <span className="assistant-bubble__tag">规则</span>}
                   {isAssistant && message.error && <span className="assistant-bubble__tag tag-warn">异常</span>}
+                  {isAssistant && !message.error && (
+                    <>
+                      <button
+                        type="button"
+                        className="assistant-bubble__copy"
+                        onClick={() => copyMessage(message.content, message.id)}
+                        aria-label="复制这条回复"
+                      >
+                        {copiedId === message.id ? <Check size={12} /> : <Copy size={12} />}
+                        <span className="assistant-bubble__copy-label">{copiedId === message.id ? "已复制" : "复制"}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="assistant-bubble__regen"
+                        onClick={() => message.id && regenerate(message.id)}
+                        disabled={asking || regeneratingId === message.id}
+                        aria-label="重新生成这条回复"
+                        title="重新生成"
+                      >
+                        <RefreshCw size={12} className={regeneratingId === message.id ? "spin" : ""} />
+                        <span className="assistant-bubble__regen-label">重生成</span>
+                      </button>
+                    </>
+                  )}
                 </div>
                 {isAssistant ? (
-                  <MarkdownMessage content={message.content} />
+                  regeneratingId === message.id ? (
+                    <div className="assistant-bubble__typing" aria-label="正在重新生成">
+                      <span /><span /><span />
+                    </div>
+                  ) : (
+                    <AssistantAnswer content={message.content} />
+                  )
                 ) : (
                   <div className="assistant-bubble__text">{message.content}</div>
                 )}
@@ -2428,11 +2675,22 @@ function SmartAssistant(
         ))}
       </div>
       <form className="assistant-form" onSubmit={submit}>
+        {speechSupported && (
+          <button
+            type="button"
+            className={`assistant-mic${listening ? " is-listening" : ""}`}
+            onClick={toggleSpeech}
+            aria-label={listening ? "停止语音输入" : "语音输入"}
+            title={listening ? "正在聆听，点击停止" : "语音输入"}
+          >
+            <Mic size={16} />
+          </button>
+        )}
         <input
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
           maxLength={300}
-          placeholder={analysis ? `继续问${analysis.stock.name}…` : "问账户、持仓或收益…"}
+          placeholder={listening ? "正在聆听…" : (analysis ? `继续问${analysis.stock.name}…` : "问账户、持仓或收益…")}
           aria-label="向复盘助手提问"
         />
         <Button variant="primary" type="submit" disabled={asking || !question.trim()}>{asking ? "思考中…" : "发送"}</Button>
@@ -2443,7 +2701,7 @@ function SmartAssistant(
 }
 
 function FloatingAssistantLauncher(
-  { open, onToggle, analysis, position, portfolioInsights, portfolio, watchlist, recentAnalyses, fetchAnalysis }: {
+  { open, onToggle, analysis, position, portfolioInsights, portfolio, watchlist, recentAnalyses, fetchAnalysis, userId }: {
     open: boolean;
     onToggle: () => void;
     analysis: Analysis | null;
@@ -2453,6 +2711,7 @@ function FloatingAssistantLauncher(
     watchlist: WatchItem[];
     recentAnalyses: Analysis[];
     fetchAnalysis: (query: string, showResult?: boolean) => Promise<Analysis | null>;
+    userId?: string | number;
   },
 ) {
   // 浮窗内关联的股票分析（与主页面 analysis 解耦，不影响主页视图）
@@ -2596,6 +2855,7 @@ function FloatingAssistantLauncher(
             analysis={activeAnalysis}
             position={activePosition}
             portfolioInsights={portfolioInsights}
+            userId={userId}
             onClose={onToggle}
             headerSlot={
               <>
