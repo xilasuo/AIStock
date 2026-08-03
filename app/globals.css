@@ -5688,15 +5688,15 @@ html.stealth {
   --accent-ink: #9aa3ad;
   --accent-soft: #1c2128;
   --focus: rgba(107, 114, 128, .3);
-  /* 涨跌：暗红/暗绿，弱存在感 */
-  --up: #b06a6f;
-  --up-soft: #211a1b;
-  --down: #6f9a82;
-  --down-soft: #18211c;
-  --red: #b06a6f;
-  --red-soft: #211a1b;
-  --green: #6f9a82;
-  --green-soft: #18211c;
+  /* 涨跌：极弱存在感，压成中性暗灰，红绿倾向几乎不可辨 */
+  --up: #8c7a78;
+  --up-soft: #1c1818;
+  --down: #7a8c80;
+  --down-soft: #161c19;
+  --red: #8c7a78;
+  --red-soft: #1c1818;
+  --green: #7a8c80;
+  --green-soft: #161c19;
   --amber: #9a8a5e;
   --amber-soft: #201d14;
   /* 阴影变弱，避免边缘高光 */
