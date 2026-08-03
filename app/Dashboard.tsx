@@ -3320,6 +3320,13 @@ function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, on
   const losingCycles = completedCycles.length - winningCycles;
   const winRate = completedCycles.length ? Math.round(winningCycles / completedCycles.length * 100) : null;
 
+  // 排序 + 分页 state（默认：按"已完成周期优先 + 日期倒序"，与历史行为一致）
+  type SortKey = "default" | "date" | "symbol" | "side" | "status" | "createdAt" | "updatedAt";
+  const [sortKey, setSortKey] = useState<SortKey>("default");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
+
   // 绩效统计：复用 lib/trade-statistics，在交易记录页直接给出复盘分析
   const stats = useMemo(() => calculateTradeStatistics(
     trades,
@@ -3343,6 +3350,72 @@ function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, on
     if (aClosed !== bClosed) return aClosed ? -1 : 1;
     return b.tradeDate.localeCompare(a.tradeDate) || b.id - a.id;
   });
+
+  // 用户可控排序：默认沿用 sortedTrades（已完成优先 + 日期倒序）；
+  // 选具体列时按该列排序（数字/时间按数值，文字按字典序）。
+  const displayedTrades = useMemo(() => {
+    if (sortKey === "default") return sortedTrades;
+    const arr = [...trades];
+    const dir = sortDir === "asc" ? 1 : -1;
+    const statusRank = (trade: { id: number; side: string }) => {
+      const cycle = cycleByTradeId.get(trade.id);
+      if (cycle?.endTradeId === null) return 0; // 持仓中
+      if (cycle?.endTradeId === trade.id) return reviewed.has(cycle.endTradeId) ? 3 : 2; // 卖出：已复盘/待复盘
+      return 1; // 周期中买入
+    };
+    arr.sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case "date": cmp = a.tradeDate.localeCompare(b.tradeDate); break;
+        case "symbol": cmp = a.name.localeCompare(b.name, "zh-Hans-CN") || a.symbol.localeCompare(b.symbol); break;
+        case "side": cmp = a.side.localeCompare(b.side); break;
+        case "status": cmp = statusRank(a) - statusRank(b); break;
+        case "createdAt": cmp = (a.createdAt ?? "").localeCompare(b.createdAt ?? ""); break;
+        case "updatedAt": cmp = (a.updatedAt ?? a.createdAt ?? "").localeCompare(b.updatedAt ?? b.createdAt ?? ""); break;
+      }
+      if (cmp === 0) cmp = b.id - a.id; // 稳定次排序
+      return cmp * dir;
+    });
+    return arr;
+  }, [trades, sortedTrades, sortKey, sortDir, cycleByTradeId, reviewed]);
+
+  // 排序变化时回到第 1 页
+  useEffect(() => { setCurrentPage(1); }, [sortKey, sortDir]);
+
+  // 分页
+  const totalPages = Math.max(1, Math.ceil(displayedTrades.length / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const pagedTrades = displayedTrades.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  // 表头点击切换排序（"默认"切到该列 desc）
+  function toggleSort(key: Exclude<SortKey, "default">) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  }
+
+  // 把 createdAt/updatedAt（ISO 字符串）格式化成 "MM-DD HH:mm" + 年份，分两行展示
+  function formatTimeShort(value: string | undefined) {
+    if (!value) return "—";
+    const text = formatDateTimeShanghai(value);
+    // 形如 "2026-08-03 12:34:56"；取 MM-DD HH:mm
+    const m = text.match(/(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
+    if (m) return `${m[1]}-${m[2]} ${m[3]}:${m[4]}`;
+    return text;
+  }
+  function formatYear(value: string | undefined) {
+    if (!value) return "";
+    const text = formatDateTimeShanghai(value);
+    const m = text.match(/^(\d{4})/);
+    return m ? m[1] : "";
+  }
+  // 排序键 → 中文标签（分页栏显示）
+  const sortLabel = (key: SortKey) => ({
+    default: "默认", date: "日期", symbol: "股票", side: "操作", status: "状态", createdAt: "创建时间", updatedAt: "操作时间",
+  })[key];
 
   // 摘要与提示副标题
   const summaryMeta = completedCycles.length === 0
@@ -3434,15 +3507,25 @@ function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, on
       )}
       {trades.length ? (
         <section className="panel trade-list">
-          <div className="trade-head"><span>#</span><span>日期</span><span>股票</span><span>操作</span><span>原因</span><span>状态</span><span></span></div>
-          {sortedTrades.map((trade, idx) => {
+          <div className="trade-head">
+            <span>#</span>
+            <span><SortHeader label="日期" active={sortKey === "date"} dir={sortKey === "date" ? sortDir : null} onClick={() => toggleSort("date")} /></span>
+            <span><SortHeader label="股票" active={sortKey === "symbol"} dir={sortKey === "symbol" ? sortDir : null} onClick={() => toggleSort("symbol")} /></span>
+            <span><SortHeader label="操作" active={sortKey === "side"} dir={sortKey === "side" ? sortDir : null} onClick={() => toggleSort("side")} /></span>
+            <span>原因</span>
+            <span><SortHeader label="状态" active={sortKey === "status"} dir={sortKey === "status" ? sortDir : null} onClick={() => toggleSort("status")} /></span>
+            <span><SortHeader label="创建时间" active={sortKey === "createdAt"} dir={sortKey === "createdAt" ? sortDir : null} onClick={() => toggleSort("createdAt")} /></span>
+            <span><SortHeader label="操作时间" active={sortKey === "updatedAt"} dir={sortKey === "updatedAt" ? sortDir : null} onClick={() => toggleSort("updatedAt")} /></span>
+            <span></span>
+          </div>
+          {pagedTrades.map((trade, idx) => {
             const cycle = cycleByTradeId.get(trade.id);
             const hasReview = cycle?.endTradeId ? reviewed.has(cycle.endTradeId) : false;
             const isCycleClosingSell = trade.side === "卖出" && cycle?.endTradeId === trade.id;
             const cyclePnl = isCycleClosingSell ? cycle.realizedCents : null;
             return (
               <div className="trade-row" key={trade.id}>
-                <span className="trade-index">{idx + 1}</span>
+                <span className="trade-index">{(safePage - 1) * pageSize + idx + 1}</span>
                 <span><b>{trade.tradeDate}</b><small>{trade.quantity}股</small></span>
                 <span>
                   <b>{trade.name}</b><small>{trade.symbol}</small>
@@ -3481,6 +3564,14 @@ function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, on
                         ? <Button variant="ghost" size="sm" onClick={() => onReview(cycle.endTradeId!)}>去复盘</Button>
                         : <Badge tone="amber">待复盘</Badge>}
                 </span>
+                <span className="trade-time" title={`创建于 ${trade.createdAt ?? "未知"}`}>
+                  <b>{formatTimeShort(trade.createdAt)}</b>
+                  <small>{formatYear(trade.createdAt)}</small>
+                </span>
+                <span className="trade-time" title={`最后修改于 ${trade.updatedAt ?? trade.createdAt ?? "未知"}`}>
+                  <b>{formatTimeShort(trade.updatedAt ?? trade.createdAt)}</b>
+                  <small>{formatYear(trade.updatedAt ?? trade.createdAt)}</small>
+                </span>
                 <span className="trade-actions">
                   <Button
                     variant="ghost"
@@ -3500,7 +3591,34 @@ function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, on
           })}
         </section>
       ) : <div className="empty-state">还没有交易记录。保存成功后刷新页面也不会丢失。</div>}
+      {trades.length > 0 && (
+        <div className="trade-pager">
+          <span className="trade-pager__meta">
+            第 {safePage} / {totalPages} 页 · 共 {displayedTrades.length} 条 · 每页 {pageSize} 条
+            {sortKey !== "default" && <span className="trade-pager__sort">（按{sortLabel(sortKey)}{sortDir === "asc" ? " ↑" : " ↓"}）</span>}
+          </span>
+          <div className="trade-pager__btns">
+            <Button variant="ghost" size="sm" disabled={safePage <= 1} onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}>上一页</Button>
+            <Button variant="ghost" size="sm" disabled={safePage >= totalPages} onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}>下一页</Button>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+/** 表头点击排序按钮：显示列名 + 当前方向箭头（无排序时灰色） */
+function SortHeader({ label, active, dir, onClick }: {
+  label: string;
+  active: boolean;
+  dir: "asc" | "desc" | null;
+  onClick: () => void;
+}) {
+  const arrow = !active ? "↕" : dir === "asc" ? "↑" : "↓";
+  return (
+    <button type="button" className={`trade-sort-btn${active ? " is-active" : ""}`} onClick={onClick} aria-label={`按${label}排序`}>
+      {label} <span className="trade-sort-btn__arrow">{arrow}</span>
+    </button>
   );
 }
 

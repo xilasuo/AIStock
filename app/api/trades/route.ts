@@ -246,6 +246,8 @@ export async function PATCH(request: Request) {
     if (Object.keys(updates).length === 0) {
       return Response.json({ error: "没有可更新的内容" }, { status: 400 });
     }
+    // 记录最后修改时间（操作时间），与 POST 的 createdAt 同用上海时区 ISO
+    updates.updatedAt = shanghaiIso();
     const [trade] = await db.update(tradeRecords).set(updates).where(eq(tradeRecords.id, id)).returning();
     return Response.json({ trade });
   } catch {

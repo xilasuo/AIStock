@@ -198,6 +198,9 @@ export async function ensureSchema() {
     await addColumnIfMissing("analysis_reports", "price_millis", "price_millis INTEGER");
     await addColumnIfMissing("reviews", "tags", "tags TEXT NOT NULL DEFAULT '[]'");
     await addColumnIfMissing("reviews", "deviation_reason", "deviation_reason TEXT NOT NULL DEFAULT ''");
+    // 操作时间：交易记录最后修改时间（PATCH 更新时写回；老数据回填为创建时间）
+    await addColumnIfMissing("trade_records", "updated_at", "updated_at TEXT");
+    await db.prepare("UPDATE trade_records SET updated_at = created_at WHERE updated_at IS NULL").run();
 
     // ---- 多用户隔离迁移 ----
     // 1) 给所有用户数据表加 user_id 列（老表兼容，默认 0 表示尚未归属）

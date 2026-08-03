@@ -45,6 +45,7 @@ export const tradeRecords = sqliteTable("trade_records", {
   feeCents: integer("fee_cents").notNull().default(0),
   otherReason: text("other_reason"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at"),
 });
 
 export const watchItems = sqliteTable("watch_items", {

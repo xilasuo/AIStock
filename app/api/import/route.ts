@@ -67,6 +67,7 @@ export async function POST(request: Request) {
         feeCents: prepared.values.feeCents,
         otherReason: null,
         createdAt: shanghaiIso(),
+        updatedAt: shanghaiIso(),
       };
       if (candidate.side === "卖出") {
         const invalid = findInvalidSell([...running, candidate]);

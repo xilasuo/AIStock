@@ -3438,7 +3438,8 @@ svg { display: block; }
 .trade-row {
   display: grid;
   gap: 16px;
-  grid-template-columns: 36px .8fr 1fr .9fr 1.5fr .7fr auto;
+  /* 9 列：# / 日期 / 股票 / 操作 / 原因 / 状态 / 创建时间 / 操作时间 / 操作按钮 */
+  grid-template-columns: 36px 92px 1fr .9fr 1.4fr .8fr 92px 92px auto;
 }
 
 .trade-actions {
@@ -3471,6 +3472,41 @@ svg { display: block; }
 
 .trade-row b { display: block; font-size: var(--fs-xs); }
 .trade-row small { color: var(--muted); display: block; font-size: var(--fs-2xs); margin-top: 3px; }
+
+/* 时间列（创建时间 / 操作时间）：小字两行 + 表格数字字体 */
+.trade-time { color: var(--text-soft); font-size: var(--fs-2xs); }
+.trade-time b { color: var(--text); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
+.trade-time small { color: var(--muted); font-size: var(--fs-2xs); margin-top: 0; }
+
+/* 表头排序按钮 */
+.trade-sort-btn {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  gap: 4px;
+  padding: 0;
+}
+.trade-sort-btn:hover { color: var(--text); }
+.trade-sort-btn.is-active { color: var(--text); }
+.trade-sort-btn__arrow { color: var(--text-faint); font-size: var(--fs-2xs); }
+.trade-sort-btn.is-active .trade-sort-btn__arrow { color: var(--accent-ink); }
+
+/* 交易记录分页栏 */
+.trade-pager {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding: 10px 14px;
+}
+.trade-pager__meta { color: var(--muted); font-size: var(--fs-2xs); }
+.trade-pager__sort { color: var(--text-soft); margin-left: 6px; }
+.trade-pager__btns { display: inline-flex; gap: 8px; }
 
 /* 单笔交易盈亏标识（红涨绿跌，沿用 A 股配色） */
 .trade-pnl {
@@ -4635,9 +4671,11 @@ svg { display: block; }
   .trade-row {
     align-items: center;
     gap: 4px 12px;
+    /* 移动端：只显示 # / 日期 / 股票 / 操作按钮；原因/状态/创建/更新时间隐藏 */
     grid-template-columns: 28px 56px minmax(0, 1fr) auto;
     padding: 12px 14px;
   }
+  .trade-row > span:nth-child(n+6):nth-child(-n+8) { display: none; }
   .trade-row > span:first-child {
     color: var(--text-faint);
     font-size: var(--fs-2xs);

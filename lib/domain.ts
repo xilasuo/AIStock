@@ -14,6 +14,8 @@ export type Trade = {
   maxLossCents: number | null;
   feeCents: number;
   createdAt?: string;
+  /** 最后修改时间（PATCH 时更新）；DB 列 trade_records.updated_at（ensureSchema 运行时加列） */
+  updatedAt?: string | null;
 };
 
 export type Position = {
