@@ -634,6 +634,8 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       flash("请输入股票代码或名称");
       return;
     }
+    // 防止并发：正在分析时忽略重复触发，避免按钮连点 / 自动分析与手动重叠
+    if (analyzing) return;
     if (overrideQuery) setQuery(overrideQuery);
     await fetchAnalysis(target);
   }
@@ -1170,18 +1172,17 @@ function StockAnalysisPanel({
   onWatch: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // 由 URL 带入的股票代码（关注列表 / 策略扫描 / 直接分享链接）只需在首次挂载时自动分析一次；
+  // 用 ref 兜底，避免 <Suspense> 下 Dashboard 双挂载导致重复触发，也防止后续重渲染无谓请求。
+  const didAutoAnalyze = useRef(false);
   useEffect(() => {
-    const symbol = initialSymbol || query;
-    if (symbol.trim()) {
-      setQuery(symbol);
-      inputRef.current?.focus();
-    }
-    // 由关注列表 / 策略扫描带入股票代码时，自动执行一次分析
-    if (initialSymbol.trim()) {
-      void onAnalyze(undefined, initialSymbol.trim());
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!initialSymbol?.trim()) return;
+    if (didAutoAnalyze.current) return;
+    didAutoAnalyze.current = true;
+    setQuery(initialSymbol.trim());
+    inputRef.current?.focus();
+    void onAnalyze(undefined, initialSymbol.trim());
+  }, [initialSymbol, onAnalyze, setQuery]);
 
   // 合并「关注列表 + 最近分析」作为搜索联想来源，按分组返回
   const searchSuggestions = useMemo((): StockSuggestionGroup[] => {
