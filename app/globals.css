@@ -1701,6 +1701,18 @@ svg { display: block; }
   width: max-content;
 }
 
+/* 网格搜索等紧凑表：固定列宽 + 等分列 + 居中，保证表头与数据列边界严格对齐 */
+.scan-table--grid {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 560px;
+}
+.scan-table--grid th,
+.scan-table--grid td {
+  text-align: center;
+  white-space: nowrap;
+}
+
 .scan-table th {
   background: var(--surface);
   border-bottom: 1px solid var(--line-strong);

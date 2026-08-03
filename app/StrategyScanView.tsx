@@ -540,26 +540,26 @@ export function StrategyScanView({
         <Card>
           <CardHeader title="参数网格搜索 Top" desc="按夏普排序的参数组合表现。" />
           <div className="scan-table-wrap">
-          <table className="scan-table">
+          <table className="scan-table scan-table--grid">
             <thead>
               <tr>
-                <th className="scan-col--code">快线</th>
-                <th className="scan-col--code">慢线</th>
-                <th className="scan-col--num">夏普</th>
-                <th className="scan-col--num">总收益</th>
-                <th className="scan-col--num">最大回撤</th>
+                <th>快线</th>
+                <th>慢线</th>
+                <th>夏普</th>
+                <th>总收益</th>
+                <th>最大回撤</th>
               </tr>
             </thead>
             <tbody>
               {opt.grid.map((g, i) => (
                 <tr key={i}>
-                  <td className="scan-col--code">MA{g.fastMa}</td>
-                  <td className="scan-col--code">MA{g.slowMa}</td>
-                  <td className="scan-col--num">{g.metric.toFixed(3)}</td>
-                  <td className="scan-col--num">
+                  <td>MA{g.fastMa}</td>
+                  <td>MA{g.slowMa}</td>
+                  <td>{g.metric.toFixed(3)}</td>
+                  <td>
                     <Tag tone={g.totalReturn >= 0 ? "up" : "down"}>{pct(g.totalReturn)}</Tag>
                   </td>
-                  <td className="scan-col--num">
+                  <td>
                     <Tag tone={g.maxDrawdown >= 0 ? "up" : "down"}>{pct(g.maxDrawdown)}</Tag>
                   </td>
                 </tr>
