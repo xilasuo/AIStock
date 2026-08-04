@@ -146,6 +146,8 @@ trading_agent 可作为被 WorkBuddy / 复盘应用调度的 Agent（对应架�
 
 部署形态：**trading_agent 在本地 PC 运行，AIStock 部署在远程云服务器**。
 
+> **实际每日驱动**：每日自动化并不直接跑 `main.py`，而是用 `run_hub.py --prefetched prefetched.json` 作为引擎入口——它消费由 `gen_universe_from_filter.py`（腾讯自选股 `tool_filter` 单数据源候选池）生成的 `prefetched.json`，跑完引擎后推送云端。`main.py` 仍是引擎与回测能力的入口（含 `--serve` 调度模式），适合手动/调试；`run_hub.py` 是接自动化与云端推送的薄封装。
+
 数据流：
 
 1. 本地 `main.py` 跑完闭环，由 `reports/report.py` 产出 `scan_payload`（共享 JSON，本地查看）。

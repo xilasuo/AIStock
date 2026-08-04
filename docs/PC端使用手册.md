@@ -70,12 +70,12 @@ WorkBuddy 智能体邮箱已开通（具体地址见 `.env` / WorkBuddy 面板�
 
 ## 2. 日常使用（两种入口）
 
-### 2.1 全自动（推荐）：每个交易日盘前 09:00
+### 2.1 全自动（推荐）：每个交易日盘前
 
-什么都不用做。WorkBuddy 自动化 `每日选股中枢编排（盘前）` 会在工作日 **09:00** 自动执行：
+什么都不用做。WorkBuddy 自动化 `每日选股中枢编排（盘前）` 会在工作日 **14:20**（周一至周五；当前为调试遗留时间，并非 09:00）自动执行：
 
-1. 读取候选池 `trading_agent/watchlist.json`（12 只跨行业蓝筹）；
-2. 用 `tdx-connector` / `westock-mcp` 取最新 K 线与估值；
+1. 用 `trading_agent/gen_universe_from_filter.py` 经**腾讯自选股 `tool_filter`**（preset=low_pe）取候选池（单数据源，约 110+ 只）；仅当该源报错或返回 0 只时回退 `tdx-connector` 条件选股，两者皆空才兜底 `watchlist.json`；
+2. 用 `tdx-connector`（K线）/ `westock-mcp`（估值）取候选池最新行情；
 3. 写成 `trading_agent/prefetched.json`；
 4. 运行 `run_hub.py` 跑引擎（选股 → 信号 → 回测 → 优化）；
 5. 推送云端「策略扫描」「回写结果」两页，并往智能体邮箱发邮件摘要。
@@ -108,8 +108,9 @@ WorkBuddy 会按上面的流程跑一遍并回报结果。
 ### 3.1 端到端链路
 
 ```
-WorkBuddy 每日 09:00 自动化（或你手动说一句触发）
-   ├─ 取行情（tdx-connector / westock-mcp）→ 写 prefetched.json
+WorkBuddy 每日 14:20 自动化（或你手动说一句触发）
+   ├─ 候选池：gen_universe_from_filter.py 走腾讯自选股 tool_filter（单数据源，回退 tdx / watchlist）
+   ├─ 取行情（tdx-connector K线 / westock-mcp 估值）→ 写 prefetched.json
    ├─ 运行 run_hub.py 跑纯引擎
    │     选股 → 信号 → 回测 → 优化
    │     本地产出 scan_payload.json + signals_out.json
@@ -160,7 +161,7 @@ WorkBuddy 每日 09:00 自动化（或你手动说一句触发）
 
 | 文件 | 作用 | 谁产生 |
 |------|------|--------|
-| `trading_agent/watchlist.json` | 候选股票池（12 只蓝筹） | 你/初始配置 |
+| `trading_agent/watchlist.json` | 候选池兜底（12 只蓝筹，单数据源失败时用） | 你/初始配置 |
 | `trading_agent/prefetched.json` | 中枢取数后注入引擎的数据（K线+估值） | WorkBuddy 自动化（本地有样例，已 gitignore） |
 | `trading_agent/scan_payload.json` | 引擎产出的完整扫描结果 | `run_hub.py` |
 | `trading_agent/signals_out.json` | 候选买入信号（含最新价，供回写） | `run_hub.py` |
@@ -224,7 +225,7 @@ python main.py --serve --port 8080  # 以 HTTP 服务方式运行（供 WorkBudd
 
 | 想改什么 | 怎么改 |
 |----------|--------|
-| 候选池 | 编辑 `watchlist.json`；或 `main.py --universe-size N` / `--use-hot` |
+| 候选池 | 主选 `gen_universe_from_filter.py`（腾讯自选股 tool_filter）；兜底改 `watchlist.json`；或 `main.py --universe-size N` / `--use-hot` |
 | 选出数量 | `prefetched.json` 的 `config.top_n`，或 `main.py --top-n` |
 | 均线周期 | `config.fast_ma` / `config.slow_ma`（prefetched 的 `config` 或 `main.py --fast-ma/--slow-ma`） |
 | 因子权重/过滤 | `trading_agent/config.py` 的 `ScreenerConfig`（动量/估值/流动性权重、PE/PB 上限、换手下限） |
@@ -259,6 +260,6 @@ python main.py --serve --port 8080  # 以 HTTP 服务方式运行（供 WorkBudd
 
 ## 9. 一句话速记
 
-> **平时不用管**——每个交易日 09:00 WorkBuddy 自动跑，结果进邮箱 + 云端 App。
+> **平时不用管**——每个交易日 14:20 WorkBuddy 自动跑，结果进邮箱 + 云端 App。
 > **想手动**：在 WorkBuddy 说「跑一次选股」；或终端 `cd trading_agent && python run_hub.py --prefetched prefetched.json`（记得 export 环境变量）。
-> **改候选池**：编辑 `watchlist.json`。**改算法**：`config.py`。
+> **改候选池**：主选由 `gen_universe_from_filter.py` 的 tool_filter 决定；兜底可编辑 `watchlist.json`。**改算法**：`config.py`。

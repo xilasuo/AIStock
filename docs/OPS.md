@@ -105,7 +105,7 @@ docker compose exec fupanbu grep -l "strategyScan" /app/app/api/strategy-scan/ro
 ## 4. 个人微信触达通道决策
 
 - **现状**：未配置企业微信。个人微信收提醒走 **WorkBuddy 智能体邮箱（agent-mail）** 中转（零额外账号，已开通）。
-- **机制**：WorkBuddy 自动化在盘前（工作日 09:00）编排 → 取数 → 跑引擎 → 用 agent-mail `SendMessage` 把选股摘要发到绑定邮箱，个人微信收邮件提醒。
+- **机制**：WorkBuddy 自动化在盘前（工作日 14:20）编排 → 取数 → 跑引擎 → 用 agent-mail `SendMessage` 把选股摘要发到绑定邮箱，个人微信收邮件提醒。
 - **备选**：若想直接推微信消息，可用 Server酱（`SERVERCHAN_KEY`）/ PushPlus（`PUSHPLUS_TOKEN`）等第三方 relay，由 `run_hub.py` 的 `push_wechat()` 发送（本机 Python 出站可达；WorkBuddy 沙箱内出站被限，故在本地 PC 跑）。
 - **不要用**企业微信 Webhook（`WECOM_WEBHOOK_URL`）——那是 `connectors/push.py` 的可选代码路径，未配置企业微信时无效。
 
@@ -160,7 +160,7 @@ docker compose exec fupanbu grep -l "strategyScan" /app/app/api/strategy-scan/ro
 
 | 项 | 值 |
 |----|----|
-| 触发（RRULE） | `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=9;BYMINUTE=0`（工作日 09:00） |
+| 触发（RRULE） | `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=14;BYMINUTE=20`（工作日 14:20；当前为调试遗留时间，非 09:00） |
 | 工作目录 cwd | `trading_agent/` |
 | Python 运行时 | WorkBuddy 托管 Python 3.13（自动化内以 `PY` 指代，各环境路径不同） |
 | 推送通道 | 主：agent-mail 智能体邮箱；次：企业微信（wecom 连接器） |
@@ -169,18 +169,19 @@ docker compose exec fupanbu grep -l "strategyScan" /app/app/api/strategy-scan/ro
 ### 8.2 编排流程（10 步提炼）
 
 0. **准备凭据**：解析 `.env` 取 `CLOUD_BASE_URL`、`CLOUD_CFG_USER`、`CLOUD_CFG_PASS`、`WX_PUSH_DRIVER`、`SERVERCHAN_KEY`、`PUSHPLUS_TOKEN`、`CLOUD_SCAN_URL`、`CLOUD_SCAN_TOKEN`、`CLOUD_WRITEBACK_URL`，连同 `PY`、`TA=trading_agent/` 注入后续命令环境（端到端前务必注入，见 §1.1 时序坑）。
-1. **生成双源查询**：`PY build_market_universe.py` 登录云端读策略配置，打印 `TDEX_QUERY`（自然语言）、`WESTOCK_FILTER_PRESET`、`WESTOCK_FILTER_MAX_PE`。
-2. **双源候选池**：
-   - 通达信 `tdx_screener`（message=TDEX_QUERY，rang=AG，分页）→ 收集纯数字代码，上限 **120** 或末页止；
-   - 腾讯自选股 `tool_filter`（preset / max_pe，limit=120）→ 去 sh/sz/bj 前缀收集代码；
-   - 合并去重写 `market_universe.json`（含 `index=000300`）。
+1. **生成候选池查询参数**：用 `gen_universe_from_filter.py` 生成腾讯自选股 `tool_filter` 所需预设参数（preset=low_pe 等，取自云端策略配置 `WESTOCK_FILTER_PRESET` / `WESTOCK_FILTER_MAX_PE`）。
+2. **单数据源候选池（腾讯自选股 `tool_filter` 主选）**：
+   - 主选：腾讯自选股 `tool_filter`（preset / max_pe，limit=120）→ 去 sh/sz/bj 前缀收集代码，写 `market_universe.json`（含 `index=000300`）；返回 >0 只即到此为止，**不再并行调 tdx**；
+   - 回退：仅当 `tool_filter` 报错或返回 0 只时，才调通达信 `tdx_screener`（message=TDEX_QUERY，rang=AG，分页，上限 120）；
+   - 兜底：两者皆空时读 `watchlist.json` 的 `codes` 作 universe，报告标注「⚠️ 已回退 watchlist 兜底」。
+   - ⚠️ **禁止** tdx + tool_filter 双源并行扫描再合并去重（旧逻辑已废弃）。
 3. **股单参考**：westock `data_stocklist(mode=rank, limit=10)` 取腾讯官方股单榜（报告「主题参考」段）。
 4. **双连接器取数 → `prefetched.json`**：
    - K线：`tdx_kline`（setcode 规则：6/9→1，0/2/3→0，8/4→2；period=4 日线；wantNum=130；前复权）；
    - 估值/换手/市值：`westock data_quote`（每批 ≤50，按市场前缀拼接）；
    - 指数牛熊：`tdx_kline(code=000300, setcode=62, target=1)`；
    - 汇总写 `prefetched.json`：`{universe, klines{...,000300}, quotes, hot:[]}`。
-5. **兜底**：若步骤 2 双源皆空，读 `watchlist.json` 的 `codes` 作 universe，同样取数，报告标注「⚠️ 已回退 watchlist 兜底」。
+5. **兜底校验**：若步骤 2 三层候选源（tool_filter / tdx / watchlist）皆空，`market_universe.json` 为空，报告标注「⚠️ 候选池为空」并空仓退出。
 6. **运行引擎**：`PY run_hub.py --prefetched prefetched.json --cloud-config-url $CLOUD_BASE_URL --cloud-user $CLOUD_CFG_USER --cloud-pass $CLOUD_CFG_PASS`（cwd=TA）。run_hub 会：① 登录云端拉配置套用（yaml<云端<prefetched/CLI；若 `CLOUD_BASE_URL` 为空或登录失败则 `local-fallback`，见 §1.1）② StaticProvider 注入 prefetched ③ 按云端因子权重打分取 top_n ④ 扫描 POST 到 `CLOUD_SCAN_URL`、回写 POST 到 `CLOUD_WRITEBACK_URL` ⑤ 写 `scan_payload.json` / `signals_out.json` / `cloud_strategy_receipt.json`。
 7. **合并报告**：读 scan_payload + receipt，再拉完整云端策略做「策略快照」（top_n、因子权重、optim、SHA 指纹前 8 位）；含入选结果、腾讯股单主题、策略溯源凭证（source/fetched_at/login_ok/config_sha256 等）。`source=local-fallback` 必须告警。
 8. **推送邮箱（主）**：agent-mail `SendMessage`，subject「盘前选股 YYYY-MM-DD」，body=合并报告；未开通则跳过提示。
@@ -191,7 +192,7 @@ docker compose exec fupanbu grep -l "strategyScan" /app/app/api/strategy-scan/ro
 
 | 文件 | 作用 | gitignore |
 |------|------|-----------|
-| `market_universe.json` | 双源去重候选池 | ✓ |
+| `market_universe.json` | 候选池（单数据源 tool_filter 主选，tdx / watchlist 回退） | ✓ |
 | `prefetched.json` | 注入引擎的 K线 + 估值 + 指数 | ✓ |
 | `scan_payload.json` / `signals_out.json` | 选股结果 / 候选回写信号 | ✓ |
 | `cloud_strategy_receipt.json` | 云端策略溯源凭证（`source` 字段是健康度关键指标） | — |
