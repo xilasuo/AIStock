@@ -4066,7 +4066,7 @@ function SortHeader({ label, active, dir, onClick }: {
   );
 }
 
-function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferences, section, onSection, onDisable, onAcknowledge, onUpdateAlert, onNotifications, onSaveCapital, onAddFlow, onDeleteFlow, onSavePreferences, onImported, currentUser }: {
+function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferences, section, onSection, onDisable, onAcknowledge, onUpdateAlert, onNotifications, onSaveCapital, onAddFlow, onDeleteFlow, onSavePreferences, onImported, onClearCache, currentUser }: {
   status: Status | null;
   initialCapitalCents: number | null;
   capitalFlows: CapitalFlow[];
