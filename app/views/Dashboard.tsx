@@ -11,7 +11,7 @@ import React, {
   type ReactNode,
 } from "react";
 import { useSearchParams, usePathname } from "next/navigation";
-import { SectionHeader, Badge, Stat, Button, IconButton, Field, Input, Select, Textarea, Banner, Hint, LoadingState, ConfirmDialog, StockSearch, type StockSuggestionGroup } from "../components/ui";
+import { SectionHeader, Badge, Stat, Button, IconButton, Field, Input, Select, Textarea, Banner, Hint, LoadingState, ConfirmDialog, StockSearch, type StockSuggestionGroup, type StockSuggestion } from "../components/ui";
 import { Sparkline } from "../components/charts";
 import { AnalyticsView } from "./AnalyticsView";
 import { ImportPanel } from "./ImportPanel";
@@ -26,6 +26,7 @@ import {
   Bell,
   CalendarDays,
   ChevronRight,
+  ChevronDown,
   TrendingUp,
   Upload,
   Check,
@@ -2359,7 +2360,15 @@ function AssistantAnswer({ content }: { content: string }) {
 }
 
 function SmartAssistant(
-  { analysis, position, portfolioInsights, floating = false, onClose, headerSlot, userId }: {
+  {
+    analysis,
+    position,
+    portfolioInsights,
+    floating = false,
+    onClose,
+    headerSlot,
+    userId,
+  }: {
     analysis: Analysis | null;
     position: Position | null;
     portfolioInsights: PortfolioInsights;
@@ -2375,6 +2384,8 @@ function SmartAssistant(
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [primed, setPrimed] = useState(false);
   const [assistantMode, setAssistantMode] = useState<"ai" | "fallback" | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const stockCode = analysis?.stock.code ?? "";
 
@@ -2404,8 +2415,8 @@ function SmartAssistant(
       setMessages([{
         role: "assistant",
         content: analysis
-          ? `我盯完了${analysis.stock.name}。想问买、卖、止损、仓位，直接说；${position ? "结合你的持仓成本我会说得更准。" : "先记录持仓，我才能针对你的成本说清加减仓。"}`
-          : "还没选中股票。我可以先按你的账户和持仓说话（仓位、现金、盈亏）；要谈某只票，先去「个股分析」跑一遍。",
+          ? `${analysis.stock.name}的当前数据已整理好。先记一笔持仓我能说得更准；想买、卖、加减仓随时问。`
+          : "还没选中股票。可以先按账户和持仓说话；要谈某只票，先去「个股分析」跑一遍。",
         id: nextId(),
       }]);
       setPrimed(true);
@@ -2435,7 +2446,7 @@ function SmartAssistant(
   useEffect(() => {
     if (typeof window === "undefined") return;
     const handle = () => {
-      const root = messagesRef.current?.closest(".smart-assistant") as HTMLElement | null;
+      const root = messagesRef.current?.closest(".sa") as HTMLElement | null;
       if (!root) return;
       const vv = window.visualViewport;
       if (!vv) return;
@@ -2531,8 +2542,6 @@ function SmartAssistant(
   }
 
   // —— 复制单条回复 ——
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   async function copyMessage(text: string, id?: string) {
     if (!id) return;
     try {
@@ -2563,151 +2572,159 @@ function SmartAssistant(
     setMessages([{
       role: "assistant",
       content: analysis
-        ? `我盯完了${analysis.stock.name}。想问买、卖、止损、仓位，直接说；${position ? "结合你的持仓成本我会说得更准。" : "先记录持仓，我才能针对你的成本说清加减仓。"}`
-        : "还没选中股票。我可以先按你的账户和持仓说话（仓位、现金、盈亏）；要谈某只票，先去「个股分析」跑一遍。",
+        ? `${analysis.stock.name}的当前数据已整理好。先记一笔持仓我能说得更准；想买、卖、加减仓随时问。`
+        : "还没选中股票。可以先按账户和持仓说话；要谈某只票，先去「个股分析」跑一遍。",
       id: nextId(),
     }]);
     setAssistantMode(null);
   }
 
+  const targetLabel = analysis?.stock.name ?? "账户总览";
   const prompts = analysis
     ? (position
-      ? ["当前仓位是否允许加仓？", "结合我的成本怎么看？", "主要风险是什么？"]
-      : ["当前仓位是否允许买入？", "主要风险是什么？", "财务数据说明了什么？"])
-    : ["我的总仓位多少？", "还能加仓多少现金？", "账户整体收益如何？"];
+      ? ["这只仓位还能加吗？", "结合我的成本怎么看？", "主要风险是什么？"]
+      : ["这只票现在能买吗？", "主要风险是什么？", "财务数据说明了什么？"])
+    : ["总仓位是多少？", "还能加多少现金？", "账户整体收益如何？"];
+
+  // 仅在尚未正式对话 / 正在等待回答时展示提示问题，避免反复出现打扰阅读
+  const showPrompts = primed && (asking || messages.filter((m) => m.role === "user").length === 0);
 
   return (
-    <section className={floating ? "panel smart-assistant smart-assistant--floating" : "panel smart-assistant"}>
-      {headerSlot}
-      <SectionHeader
-        eyebrow="复盘助手"
-        title={analysis ? "可连续追问" : "账户级问答"}
-        actions={
-          <div className="assistant-header-actions">
-            <Badge tone="accent">{analysis ? (position ? "已结合我的持仓" : "当前未记录持仓") : "未关联具体股票"}</Badge>
-            {assistantMode === "fallback" && (
-              <Badge tone="neutral" title="未配置模型接口，当前使用本地规则生成回答">规则模式</Badge>
-            )}
-            {floating && (
-              <button type="button" className="assistant-close" onClick={onClose} aria-label="收起助手">
-                <X size={16} />
-              </button>
-            )}
-            {primed && messages.length > 1 && (
-              <button type="button" className="assistant-clear" onClick={clearHistory} title="清空本轮对话">
-                <Trash2 size={12} /> 清空
-              </button>
-            )}
-          </div>
-        }
-      />
-      <div className="assistant-messages" ref={messagesRef} aria-live="polite">
+    <section className={`sa${floating ? " sa--floating" : ""}`}>
+      <div className="sa-head">
+        {headerSlot}
+        <div className="sa-head__title">
+          <span className="sa-eyebrow">聊</span>
+          <span className="sa-target" title={targetLabel}>{targetLabel}</span>
+        </div>
+        <div className="sa-head__actions">
+          {primed && messages.length > 1 && (
+            <button
+              type="button"
+              className="sa-iconbtn"
+              onClick={clearHistory}
+              aria-label="清空本轮对话"
+              title="清空对话"
+            >
+              <Trash2 size={13} />
+            </button>
+          )}
+          {floating && onClose && (
+            <button
+              type="button"
+              className="sa-iconbtn sa-iconbtn--close"
+              onClick={onClose}
+              aria-label="收起助手"
+              title="收起"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="sa-msgs" ref={messagesRef} aria-live="polite">
         {!primed && (
-          <div className="assistant-bubble assistant">
-            <div className="assistant-bubble__avatar" aria-hidden>AI</div>
-            <div className="assistant-bubble__body">
-              <div className="assistant-bubble__name">助手</div>
-              <div className="assistant-bubble__text">正在准备…</div>
-            </div>
+          <div className="sa-msg sa-msg--assistant">
+            <div className="sa-msg__body">…</div>
           </div>
         )}
-        {messages.map((message, index) => {
-          const role = message.role;
-          const isAssistant = role === "assistant";
+        {messages.map((message) => {
+          if (message.role === "user") {
+            return (
+              <div key={message.id} className="sa-msg sa-msg--user">
+                <div className="sa-msg__body">{message.content}</div>
+              </div>
+            );
+          }
+          const regen = regeneratingId === message.id;
           return (
-            <div className={`assistant-bubble ${isAssistant ? "assistant" : "user"}${message.error ? " has-error" : ""}`} key={message.id ?? `${role}-${index}`}>
-              <div className="assistant-bubble__avatar" aria-hidden>{isAssistant ? "AI" : "我"}</div>
-              <div className={`assistant-bubble__body${isAssistant && !message.error ? " has-copy" : ""}`}>
-                <div className="assistant-bubble__name">
-                  {isAssistant ? "助手" : "我"}
-                  {isAssistant && message.mode === "fallback" && <span className="assistant-bubble__tag">规则</span>}
-                  {isAssistant && message.error && <span className="assistant-bubble__tag tag-warn">异常</span>}
-                  {isAssistant && !message.error && (
+            <div key={message.id} className={`sa-msg sa-msg--assistant${message.error ? " is-error" : ""}`}>
+              {regen ? (
+                <span className="sa-dots" aria-label="正在重新生成"><span /><span /><span /></span>
+              ) : (
+                <AssistantAnswer content={message.content} />
+              )}
+              {!regen && (
+                <div className="sa-msg__meta">
+                  {message.error ? (
+                    message.pendingQuestion && (
+                      <button
+                        type="button"
+                        className="sa-link"
+                        onClick={() => message.id && retry(message.id)}
+                        disabled={asking}
+                      >
+                        重试
+                      </button>
+                    )
+                  ) : (
                     <>
                       <button
                         type="button"
-                        className="assistant-bubble__copy"
-                        onClick={() => copyMessage(message.content, message.id)}
+                        className="sa-link"
+                        onClick={() => message.id && copyMessage(message.content, message.id)}
                         aria-label="复制这条回复"
+                        title="复制"
                       >
-                        {copiedId === message.id ? <Check size={12} /> : <Copy size={12} />}
-                        <span className="assistant-bubble__copy-label">{copiedId === message.id ? "已复制" : "复制"}</span>
+                        {copiedId === message.id ? "已复制" : "复制"}
                       </button>
+                      <span className="sa-sep" aria-hidden>·</span>
                       <button
                         type="button"
-                        className="assistant-bubble__regen"
+                        className="sa-link"
                         onClick={() => message.id && regenerate(message.id)}
                         disabled={asking || regeneratingId === message.id}
-                        aria-label="重新生成这条回复"
-                        title="重新生成"
+                        aria-label="换一版回复"
+                        title="换一版"
                       >
-                        <RefreshCw size={12} className={regeneratingId === message.id ? "spin" : ""} />
-                        <span className="assistant-bubble__regen-label">重生成</span>
+                        换一版
                       </button>
                     </>
                   )}
                 </div>
-                {isAssistant ? (
-                  regeneratingId === message.id ? (
-                    <div className="assistant-bubble__typing" aria-label="正在重新生成">
-                      <span /><span /><span />
-                    </div>
-                  ) : (
-                    <AssistantAnswer content={message.content} />
-                  )
-                ) : (
-                  <div className="assistant-bubble__text">{message.content}</div>
-                )}
-                {message.error && message.pendingQuestion && (
-                  <button
-                    type="button"
-                    className="assistant-bubble__retry"
-                    onClick={() => message.id && retry(message.id)}
-                    disabled={asking}
-                  >
-                    <RefreshCw size={12} /> 重试
-                  </button>
-                )}
-              </div>
+              )}
             </div>
           );
         })}
         {asking && (
-          <div className="assistant-bubble assistant is-typing">
-            <div className="assistant-bubble__avatar" aria-hidden>AI</div>
-            <div className="assistant-bubble__body">
-              <div className="assistant-bubble__name">助手</div>
-              <div className="assistant-bubble__typing" aria-label="正在思考">
-                <span /><span /><span />
-              </div>
-            </div>
+          <div className="sa-msg sa-msg--assistant sa-msg--typing" aria-label="助手正在思考">
+            <span className="sa-dots"><span /><span /><span /></span>
           </div>
         )}
       </div>
-      <div className="assistant-prompts">
-        {prompts.map((prompt) => (
-          <button
-            key={prompt}
-            type="button"
-            className="assistant-prompt-chip"
-            disabled={asking}
-            onClick={() => void ask(prompt)}
-          >
-            {prompt}
-          </button>
-        ))}
-      </div>
-      <form className="assistant-form" onSubmit={submit}>
+      {showPrompts && prompts.length > 0 && (
+        <div className="sa-prompts" role="group" aria-label="推荐提问">
+          {prompts.map((prompt) => (
+            <button
+              key={prompt}
+              type="button"
+              className="sa-prompt"
+              disabled={asking}
+              onClick={() => void ask(prompt)}
+            >
+              {prompt}
+            </button>
+          ))}
+        </div>
+      )}
+      <form className="sa-form" onSubmit={submit}>
         <input
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
           maxLength={300}
-          placeholder={analysis ? `继续问${analysis.stock.name}…` : "问账户、持仓或收益…"}
-          aria-label="向复盘助手提问"
+          placeholder={analysis ? `问${analysis.stock.name}…` : "问账户、持仓、收益…"}
+          aria-label="向助手提问"
         />
-        <Button variant="primary" type="submit" disabled={asking || !question.trim()}>{asking ? "思考中…" : "发送"}</Button>
+        <button
+          type="submit"
+          className="sa-send"
+          disabled={asking || !question.trim()}
+          aria-label="发送"
+          title="发送"
+        >
+          <ArrowUp size={15} />
+        </button>
       </form>
-      <small className="assistant-disclaimer">回答仅基于当前页面数据与个人记录，不构成投资建议。</small>
     </section>
   );
 }
@@ -2731,6 +2748,24 @@ function FloatingAssistantLauncher(
   const [linked, setLinked] = useState<Analysis | null>(null);
   const [linking, setLinking] = useState(false);
   const [linkError, setLinkError] = useState("");
+  const [linkerOpen, setLinkerOpen] = useState(false);
+  const linkerRef = useRef<HTMLDivElement | null>(null);
+
+  // 关闭浮窗时自动收起选择器，避免下次打开时残留
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!open) setLinkerOpen(false);
+  }, [open]);
+
+  // 点击选择器外部关闭
+  useEffect(() => {
+    if (!linkerOpen) return;
+    const onMouseDown = (event: MouseEvent) => {
+      if (!linkerRef.current?.contains(event.target as Node)) setLinkerOpen(false);
+    };
+    window.addEventListener("mousedown", onMouseDown);
+    return () => window.removeEventListener("mousedown", onMouseDown);
+  }, [linkerOpen]);
 
   // 拖拽定位：记录 FAB 当前固定的 left/top（视口坐标）。null 表示使用 CSS 默认右下角。
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
@@ -2747,7 +2782,6 @@ function FloatingAssistantLauncher(
   const draggedRef = useRef(false);
 
   // 把 FAB 定位到指定视口坐标，并让面板跟随 FAB 但始终夹在视口内。
-  // 直接写 DOM 的 left/top（不触发 React 重渲染），保持移动端拖拽流畅。
   const applyPos = (left: number, top: number) => {
     if (fabRef.current) {
       fabRef.current.style.left = `${left}px`;
@@ -2759,12 +2793,10 @@ function FloatingAssistantLauncher(
       const margin = 8;
       const pw = panelRef.current.offsetWidth || Math.min(400, window.innerWidth - 44);
       const ph = panelRef.current.offsetHeight || Math.min(window.innerHeight * 0.82, 760);
-      // 默认放在 FAB 左上方（面板右下对齐 FAB 右上，底部贴 FAB 顶上 12px）
       let pLeft = left + 50 - pw;
       let pTop = top - 12 - ph;
-      // 夹在视口内；若某一侧放不下则翻转到另一侧
-      if (pTop < margin) pTop = top + 50 + 12; // 上方放不下 → 放 FAB 下方
-      if (pLeft < margin) pLeft = left; // 左侧放不下 → 与 FAB 左边缘对齐
+      if (pTop < margin) pTop = top + 50 + 12;
+      if (pLeft < margin) pLeft = left;
       pLeft = Math.max(margin, Math.min(window.innerWidth - pw - margin, pLeft));
       pTop = Math.max(margin, Math.min(window.innerHeight - ph - margin, pTop));
       panelRef.current.style.left = `${pLeft}px`;
@@ -2772,7 +2804,6 @@ function FloatingAssistantLauncher(
       panelRef.current.style.right = "auto";
       panelRef.current.style.bottom = "auto";
     }
-    // 状态胶囊跟随 FAB：右对齐其右缘、置于其上方 8px，拖拽时实时跟随
     if (pillRef.current) {
       const pw = pillRef.current.offsetWidth || 140;
       const ph = pillRef.current.offsetHeight || 30;
@@ -2785,7 +2816,6 @@ function FloatingAssistantLauncher(
     }
   };
 
-  // 持久化定位（pos state）变化时同步 DOM，避免与拖拽中手动设置的定位冲突
   useEffect(() => {
     if (pos) applyPos(pos.left, pos.top);
   }, [pos]);
@@ -2812,7 +2842,6 @@ function FloatingAssistantLauncher(
       state.moved = true;
       draggedRef.current = true;
     }
-    // 夹紧到视口内（保留 8px 边距），保证 FAB 完全可见、想拖到哪就拖到哪
     const fabW = 50;
     const fabH = 50;
     const margin = 8;
@@ -2832,7 +2861,6 @@ function FloatingAssistantLauncher(
       if (rect) {
         const left = Math.max(margin, Math.min(window.innerWidth - fabW - margin, rect.left));
         const top = Math.max(margin, Math.min(window.innerHeight - fabH - margin, rect.top));
-        // 仅提交一次最终位置，触发一次重渲染以持久化定位
         setPos({ left, top });
       }
     }
@@ -2862,8 +2890,12 @@ function FloatingAssistantLauncher(
     setLinkError("");
     try {
       const result = await fetchAnalysis(code, false);
-      if (result) setLinked(result);
-      else setLinkError("未找到该股票的分析");
+      if (result) {
+        setLinked(result);
+        setLinkerOpen(false);
+      } else {
+        setLinkError("未找到该股票的分析");
+      }
     } catch {
       setLinkError("关联失败，请检查代码后重试");
     } finally {
@@ -2871,8 +2903,6 @@ function FloatingAssistantLauncher(
     }
   }
 
-  // 定位：有持久化位置 pos 时用 left/top（绝对坐标），否则用 CSS 默认右下角。
-  // 与 applyPos 算法保持一致，避免 React 重渲染覆盖拖拽结果（SSR 安全，用 CSS 估算面板尺寸）。
   const fabStyle: React.CSSProperties = pos
     ? { left: pos.left, top: pos.top, right: "auto", bottom: "auto" }
     : {};
@@ -2923,58 +2953,100 @@ function FloatingAssistantLauncher(
             userId={userId}
             onClose={onToggle}
             headerSlot={
-              <>
-                <div className="assistant-fab-linker">
-                  <select
-                    value={linked?.stock.code ?? ""}
-                    disabled={linking}
-                    onChange={(event) => event.target.value && void linkStock(event.target.value)}
-                    aria-label="关联自选股进行分析问答"
-                  >
-                    <option value="">{linked ? "切换关联股票…" : "关联股票提问…"}</option>
+              <div className="sa-linker" ref={linkerRef}>
+                <button
+                  type="button"
+                  className={`sa-linker__btn${linkerOpen ? " is-open" : ""}${linked ? " is-active" : ""}`}
+                  onClick={() => setLinkerOpen((value) => !value)}
+                  aria-expanded={linkerOpen}
+                  aria-haspopup="dialog"
+                  title={linked ? `已关联：${linked.stock.name}${linked.stock.code ? `（${linked.stock.code}）` : ""}` : "关联其它股票来分析问答"}
+                >
+                  <ChevronDown size={12} className={`sa-linker__chev${linkerOpen ? " is-open" : ""}`} />
+                  <span className="sa-linker__label">{linked ? "已关联" : "切换股票"}</span>
+                </button>
+                {linkerOpen && (
+                  <div className="sa-linker__pop" role="dialog" aria-label="股票关联">
                     {watchlist.length > 0 && (
-                      <optgroup label="自选股">
-                        {watchlist.map((item) => {
-                          const label = item.name && item.name !== item.symbol
-                            ? `${item.name}（${item.symbol}）`
-                            : item.symbol;
-                          return <option key={item.id} value={item.symbol}>{label}</option>;
-                        })}
-                      </optgroup>
+                      <div className="sa-linker__group">
+                        <small>自选股</small>
+                        <div className="sa-linker__chips">
+                          {watchlist.map((item) => {
+                            const isActive = activeAnalysis?.stock.code === item.symbol;
+                            const labelText = item.name && item.name !== item.symbol ? item.name : item.symbol;
+                            return (
+                              <button
+                                key={item.id}
+                                type="button"
+                                className={`sa-linker__chip${isActive ? " is-active" : ""}`}
+                                onClick={() => void linkStock(item.symbol)}
+                                disabled={linking}
+                                title={item.symbol}
+                              >
+                                <span className="sa-linker__chip-name">{labelText}</span>
+                                {labelText !== item.symbol && <span className="sa-linker__chip-code">{item.symbol}</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     )}
                     {recentAnalyses.length > 0 && (
-                      <optgroup label="最近分析">
-                        {recentAnalyses
-                          .filter((item) => !watchlist.some((w) => w.symbol === item.stock.code))
-                          .map((item) => {
-                            const label = item.stock.name && item.stock.name !== item.stock.code
-                              ? `${item.stock.name}（${item.stock.code}）`
-                              : item.stock.code;
-                            return <option key={item.stock.code} value={item.stock.code}>{label}</option>;
-                          })}
-                      </optgroup>
+                      <div className="sa-linker__group">
+                        <small>最近分析</small>
+                        <div className="sa-linker__chips">
+                          {recentAnalyses
+                            .filter((item) => !watchlist.some((w) => w.symbol === item.stock.code))
+                            .map((item) => {
+                              const isActive = activeAnalysis?.stock.code === item.stock.code;
+                              const labelText = item.stock.name && item.stock.name !== item.stock.code ? item.stock.name : item.stock.code;
+                              return (
+                                <button
+                                  key={item.stock.code}
+                                  type="button"
+                                  className={`sa-linker__chip${isActive ? " is-active" : ""}`}
+                                  onClick={() => void linkStock(item.stock.code)}
+                                  disabled={linking}
+                                  title={item.stock.code}
+                                >
+                                  <span className="sa-linker__chip-name">{labelText}</span>
+                                  {labelText !== item.stock.code && <span className="sa-linker__chip-code">{item.stock.code}</span>}
+                                </button>
+                              );
+                            })}
+                        </div>
+                      </div>
                     )}
-                  </select>
-                  <input
-                    defaultValue=""
-                    placeholder={linking ? "分析中…" : "或输入代码回车"}
-                    disabled={linking}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        const target = event.currentTarget;
-                        void linkStock(target.value).then(() => { target.value = ""; });
-                      }
-                    }}
-                    aria-label="输入股票代码关联"
-                  />
-                  {linked && (
-                    <button type="button" className="assistant-fab-unlink" onClick={() => setLinked(null)} aria-label="取消关联">
-                      解绑
-                    </button>
-                  )}
-                </div>
-                {linkError && <small className="assistant-fab-linkerror">{linkError}</small>}
-              </>
+                    <div className="sa-linker__group">
+                      <small>输入代码</small>
+                      <input
+                        placeholder={linking ? "分析中…" : "例如 600519"}
+                        disabled={linking}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            const target = event.currentTarget;
+                            const v = target.value.trim();
+                            if (v) {
+                              void linkStock(v).then(() => { target.value = ""; });
+                            }
+                          }
+                        }}
+                        aria-label="输入股票代码关联"
+                      />
+                    </div>
+                    {linked && (
+                      <button
+                        type="button"
+                        className="sa-linker__clear"
+                        onClick={() => { setLinked(null); setLinkerOpen(false); }}
+                      >
+                        解除关联，回到当前页
+                      </button>
+                    )}
+                    {linkError && <small className="sa-linker__error">{linkError}</small>}
+                  </div>
+                )}
+              </div>
             }
           />
         </div>
