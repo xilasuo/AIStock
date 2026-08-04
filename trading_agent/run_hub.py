@@ -183,7 +183,7 @@ def pull_cloud_overrides(url: str, user: str, password: str):
     receipt["config_keys"] = sorted(overrides.keys())
     receipt["source"] = "cloud"
     receipt["note"] = "策略配置已从云端拉取并应用"
-    return overrides, receipt
+    return overrides, cookie, receipt
 
 
 def _write_cloud_receipt(receipt: dict, out_dir: str):

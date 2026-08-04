@@ -43,7 +43,7 @@
    - 入选结果：从 scan_payload 提取入选股票（代码/名称/得分/PE/PB/动量）、基准回测收益与夏普、候选回写信号数量、本次 market_state，并注明「候选池来源：腾讯自选股 tool_filter / 通达信 tdx_screener / watchlist 兜底」三选一。
    - 腾讯股单主题参考（步骤3 的股单名+描述，列 3-5 个）。
    - 「策略溯源凭证」块：原样列出 receipt 的 source、base_url、endpoint、fetched_at、http_status、login_ok、config_sha256、config_keys、note。若 source=local-fallback，必须提示「⚠️ 本次策略未来自云端，已回退本地配置」并附 note 原因。
-   整理为一份简洁中文 Markdown 合并报告（含上述四段：策略快照 / 入选结果 / 腾讯股单主题参考 / 策略溯源凭证），作为后续双渠道推送的统一正文。
+   整理为一份简洁中文 Markdown 合并报告（含上述四段：策略快照 / 入选结果 / 腾讯股单主题参考 / 策略溯源凭证），**写入 TA/reports/report_YYYY-MM-DD.md**（report_<日期>.md 主文件，若有 priorrun 则同时写 TA/reports/report_<日期>_priorrun.md），作为后续双渠道推送的统一正文。reports 目录已在 .gitignore 中忽略。
 
 8. 推送邮箱（主通道）：先调用 mcp__agent-mail__GetMe 确认邮箱已开通；若 not_bound 则跳过并在说明里提示去「更多-我的邮箱」开通。若已开通，用返回邮箱地址作收件人，调用 mcp__agent-mail__SendMessage，to=[{email:该地址}]，subject="盘前选股 YYYY-MM-DD"（当天日期），body=第7步合并报告（含策略快照+入选结果+溯源凭证），body_format="PLAIN"。如需确认按提示索取。
 

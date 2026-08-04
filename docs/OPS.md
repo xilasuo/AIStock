@@ -187,14 +187,17 @@ docker compose exec fupanbu grep -l "strategyScan" /app/app/api/strategy-scan/ro
 9. **推送企业微信（次）**：wecom 连接器发送同一报告；失败仅记录不中断。
 10. **收尾简述**：各通道状态、策略来源（cloud/local-fallback）、牛熊判定、本策略 SHA 指纹前 8 位。tdx-connector 无 `place_order` → 回写恒 dry-run（§5）。
 
-### 8.3 关键产物（位于 `trading_agent/`）
+### 8.3 关键产物
 
-| 文件 | 作用 |
-|------|------|
-| `market_universe.json` | 双源去重候选池 |
-| `prefetched.json` | 注入引擎的 K线 + 估值 + 指数 |
-| `scan_payload.json` / `signals_out.json` | 选股结果 / 候选回写信号 |
-| `cloud_strategy_receipt.json` | 云端策略溯源凭证（`source` 字段是健康度关键指标） |
+| 文件 | 作用 | gitignore |
+|------|------|-----------|
+| `market_universe.json` | 双源去重候选池 | ✓ |
+| `prefetched.json` | 注入引擎的 K线 + 估值 + 指数 | ✓ |
+| `scan_payload.json` / `signals_out.json` | 选股结果 / 候选回写信号 | ✓ |
+| `cloud_strategy_receipt.json` | 云端策略溯源凭证（`source` 字段是健康度关键指标） | — |
+| `reports/report_YYYY-MM-DD.md` | 盘前合并报告（双渠道推送正文） | ✓ |
+| `reports/report_YYYY-MM-DD_priorrun.md` | 前一次运行报告（对比用） | ✓ |
+| `reports/report_YYYYMMDD_HHMM.md` | 标准引擎运行报告（main.py 产出） | ✓ |
 
 ### 8.4 维护要点
 

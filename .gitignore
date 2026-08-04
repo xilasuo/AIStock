@@ -84,10 +84,12 @@ env/
 
 # ---- trading_agent: runtime cache & generated reports ----
 trading_agent/cache/
-trading_agent/reports/*.csv
-trading_agent/reports/*.json
-trading_agent/reports/*.md
+trading_agent/reports/
 trading_agent/feedback.jsonl
+
+# ---- trading_agent: 根目录遗留报告（防误提交，应以 reports/ 为准） ----
+trading_agent/report_*.md
+trading_agent/hub_report_*.md
 
 # ---- trading_agent: 本地联调临时数据 ----
 trading_agent/.tmp_cloud/
