@@ -94,7 +94,8 @@ export async function requireApiUserOrPushToken(
     req.headers.get("x-push-token") ||
     req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
     undefined;
-  if (secret && provided === secret) return null;
+  // 恒定时间比较，避免通过响应耗时侧信道逐字节爆破推送令牌
+  if (secret && provided && (await safeEqual(provided, secret))) return null;
   return Response.json({ error: "请先登录后再使用" }, { status: 401 });
 }
 

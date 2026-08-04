@@ -11,5 +11,6 @@ declare namespace Cloudflare {
     APP_AUTH_SECRET?: string;
     MAIRUI_TOKEN?: string;
     STRATEGY_PUSH_TOKEN?: string;
+    CRON_SECRET?: string;
   }
 }
