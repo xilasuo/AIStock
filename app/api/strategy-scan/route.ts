@@ -1,5 +1,5 @@
-import { desc } from "drizzle-orm";
-import { requireApiUser, pushSharedSecret } from "../../../lib/auth";
+import { sql } from "drizzle-orm";
+import { getAuthenticatedUser, pushSharedSecret } from "../../../lib/auth";
 import { getDb, ensureSchema } from "../../../db";
 import { strategyScan } from "../../../db/schema";
 import { shanghaiIso } from "../../../lib/time";
@@ -34,15 +34,17 @@ async function readLocalScanPayload(): Promise<unknown | null> {
 }
 
 export async function GET() {
-  const unauthorized = await requireApiUser();
-  if (unauthorized) return unauthorized;
+  const user = await getAuthenticatedUser();
+  if (!user) return Response.json({ error: "请先登录后再使用" }, { status: 401 });
   try {
     await ensureSchema();
     const db = getDb();
+    // 按用户隔离：优先本人最新一条；本人无则回退全局默认（user_id IS NULL，老库遗留）。
     const rows = await db
       .select()
       .from(strategyScan)
-      .orderBy(desc(strategyScan.createdAt))
+      .where(sql`user_id = ${user.id} OR user_id IS NULL`)
+      .orderBy(sql`(CASE WHEN user_id IS NULL THEN 1 ELSE 0 END) ASC, created_at DESC`)
       .limit(1);
     if (!rows.length) {
       // 本地兜底：云端 D1 无数据时，回退读取本机引擎产物 scan_payload.json，
@@ -66,14 +68,24 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  // 推送鉴权：本地 PC 持有的 token 需与云端一致
-  const secret = pushSharedSecret();
-  const provided =
-    req.headers.get("x-push-token") ||
-    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
-    undefined;
-  if (!secret || provided !== secret) {
-    return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  // 鉴权与身份判定：
+  //  - 本地 PC / 网页以登录会话（Cookie）调用 -> 取本人身份，结果写入该用户隔离桶。
+  //  - 仅持共享推送令牌（x-push-token，无登录身份）-> 兼容老自动化，结果落入「全局」桶
+  //    (user_id IS NULL)；因令牌不绑定具体用户，禁止其伪造任意 user_id，避免越权写入他人结果。
+  const user = await getAuthenticatedUser();
+  let userId: number | null = null;
+  if (user) {
+    userId = user.id;
+  } else {
+    const secret = pushSharedSecret();
+    const provided =
+      req.headers.get("x-push-token") ||
+      req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
+      undefined;
+    if (!secret || provided !== secret) {
+      return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
+    }
+    userId = null;
   }
   const contentLength = Number(req.headers.get("content-length") ?? 0);
   if (Number.isFinite(contentLength) && contentLength > MAX_PUSH_BYTES) {
@@ -105,7 +117,7 @@ export async function POST(req: Request) {
     }
     await ensureSchema();
     const db = getDb();
-    await db.insert(strategyScan).values({ payload });
+    await db.insert(strategyScan).values({ payload, userId });
     return Response.json({ ok: true, savedAt: shanghaiIso() });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

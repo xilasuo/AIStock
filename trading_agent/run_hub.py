@@ -125,9 +125,10 @@ def load_prefetched(path: str):
 def pull_cloud_overrides(url: str, user: str, password: str):
     """登录云端并拉取策略扫描配置，摊平为 overrides；同时返回溯源凭证 receipt。
 
-    返回 (overrides: dict, receipt: dict)。云端不执行引擎、只维护配置；
+    返回 (overrides: dict, cookie: str|None, receipt: dict)。云端不执行引擎、只维护配置；
     本地程序（含 WorkBuddy 中枢调用的 run_hub）以此先拉取云端配置再执行。
-    网络/鉴权失败则返回 ({}, receipt)，receipt.source="local-fallback"，不阻断本地流程。
+    网络/鉴权失败则返回 ({}, None, receipt)，receipt.source="local-fallback"，不阻断本地流程。
+    cookie 为登录会话串（成功时非空），可被推送扫描结果复用，使云端按登录用户写入隔离结果。
 
     receipt 关键字段（供邮件溯源与独立复算）：
       source        : "cloud" | "local-fallback"
@@ -153,26 +154,26 @@ def pull_cloud_overrides(url: str, user: str, password: str):
     }
     if not url or not user or not password:
         receipt["note"] = "未提供完整云端凭据，跳过云端配置拉取（回退本地 strategy_config.yaml）"
-        return {}, receipt
+        return {}, None, receipt
     try:
         import pull_cloud_config as pcc
     except Exception as e:  # noqa: BLE001
         receipt["note"] = f"导入 pull_cloud_config 失败，跳过云端配置: {e}"
-        return {}, receipt
+        return {}, None, receipt
     cookie = pcc.login(url, user, password)
     if not cookie:
         receipt["note"] = "云端登录失败（凭据/网络不可达），已回退本地 strategy_config.yaml"
-        return {}, receipt
+        return {}, None, receipt
     receipt["login_ok"] = True
     try:
         status, obj, raw = pcc.fetch_cloud_config_raw(url, cookie)
     except Exception as e:  # noqa: BLE001
         receipt["note"] = f"获取云端配置异常: {e}，已回退本地"
-        return {}, receipt
+        return {}, cookie, receipt
     receipt["http_status"] = status
     if not obj:
         receipt["note"] = f"云端返回异常（HTTP {status}），已回退本地 strategy_config.yaml"
-        return {}, receipt
+        return {}, cookie, receipt
     nested = obj.get("config") or {}
     try:
         receipt["config_sha256"] = hashlib.sha256(raw.encode("utf-8")).hexdigest()
@@ -321,17 +322,24 @@ def push_writeback(url: str, token: str, payload: dict) -> bool:
     return False
 
 
-def push_scan(url: str, token: str, payload: dict) -> bool:
-    """把扫描结果 POST 到云端 /api/strategy-scan。"""
+def push_scan(url: str, token: str, payload: dict, cookie: str | None = None) -> bool:
+    """把扫描结果 POST 到云端 /api/strategy-scan。
+
+    cookie 为登录会话串（来自 pull_cloud_overrides 的复用）。携带时云端按登录用户
+    写入隔离结果桶（user_id=本人）；不携带则仅 token 鉴权，落入全局桶（兼容老自动化）。
+    """
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    headers: dict = {
+        "Content-Type": "application/json",
+        "x-push-token": token,
+    }
+    if cookie:
+        headers["Cookie"] = cookie
     req = Request(
         url,
         data=data,
         method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "x-push-token": token,
-        },
+        headers=headers,
     )
     try:
         with urlopen(req, timeout=15) as resp:
@@ -786,8 +794,9 @@ def main():
     # 优先级介于 strategy_config.yaml 与 prefetched/CLI 之间，
     # 即「云端条件可用，本地 prefetched/CLI 仍可覆盖」。
     cloud_receipt = None
+    cloud_cookie = None
     if args.cloud_config_url:
-        cloud_ov, cloud_receipt = pull_cloud_overrides(
+        cloud_ov, cloud_cookie, cloud_receipt = pull_cloud_overrides(
             args.cloud_config_url, args.cloud_user, args.cloud_pass)
         if cloud_ov:
             apply_config(cfg, cloud_ov)
@@ -852,7 +861,8 @@ def main():
 
     # 可选：把扫描结果推送到云端「策略扫描」页
     if args.scan_url and args.scan_token:
-        push_scan(args.scan_url, args.scan_token, payload)
+        # 复用云端配置拉取时建立的登录会话，使结果按登录用户隔离（user_id=本人）。
+        push_scan(args.scan_url, args.scan_token, payload, cookie=cloud_cookie)
     else:
         print("（未配置扫描推送地址/令牌，跳过云端扫描推送；本地 scan_payload.json 已就绪）")
 

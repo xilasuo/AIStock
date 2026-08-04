@@ -230,6 +230,12 @@ export async function ensureSchema() {
     // 老库遗留的单条全局配置 user_id 为 NULL，自动成为「全局默认」回退；
     // 各登录用户保存自己的配置时 user_id = 本人 id，互不覆盖。
     await addColumnIfMissing("strategy_config", "user_id", "user_id INTEGER");
+
+    // 1.7) 选股结果推送表按用户隔离：加可空 user_id 列。
+    // 老库遗留的扫描结果（由共享令牌推送）user_id 为 NULL，自动成为「全局默认」回退；
+    // 以登录会话推送的结果 user_id = 本人 id，前端「策略扫描」页按登录用户只展示本人结果。
+    await addColumnIfMissing("strategy_scan", "user_id", "user_id INTEGER");
+
     await db.batch([
       db.prepare(
         `CREATE UNIQUE INDEX IF NOT EXISTS account_settings_user_idx ON account_settings(user_id)`,

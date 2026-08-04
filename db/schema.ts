@@ -179,6 +179,7 @@ export const strategyFeedback = sqliteTable("strategy_feedback", {
 export const strategyScan = sqliteTable("strategy_scan", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   payload: text("payload").notNull(),
+  userId: integer("user_id"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
