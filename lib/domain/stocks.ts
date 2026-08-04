@@ -1,5 +1,5 @@
-import A_STOCK_LIST from "../db/seeds/a_stock_list";
-import { USER_FUND_PROFILES } from "../db/seeds/funds_user";
+import A_STOCK_LIST from "../../db/seeds/a_stock_list";
+import { USER_FUND_PROFILES } from "../../db/seeds/funds_user";
 import { getRealtime, getKlines, getProfile } from "../market/market-data";
 import { shanghaiIso } from "../utils/time";
 

@@ -1,6 +1,6 @@
-import type { getDb } from "../db";
+import type { getDb } from "../../db";
 import { eq } from "drizzle-orm";
-import { tradingPreferences } from "../db/schema";
+import { tradingPreferences } from "../../db/schema";
 
 export type AppDb = ReturnType<typeof getDb>;
 

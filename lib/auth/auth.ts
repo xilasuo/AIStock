@@ -2,8 +2,8 @@ import { env } from "cloudflare:workers";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
-import { getDb, ensureSchema } from "../db";
-import { users } from "../db/schema";
+import { getDb, ensureSchema } from "../../db";
+import { users } from "../../db/schema";
 import {
   createSessionToken,
   verifyToken,
