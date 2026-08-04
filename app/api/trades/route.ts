@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import { alertRules, tradeRecords } from "../../../db/schema";
 import { findInvalidSell, isIsoDate, isStockCode, isTradeSide, toCents, toTenThousandths } from "../../../lib/domain/domain";
@@ -209,46 +209,177 @@ export async function PATCH(request: Request) {
     if (!existing) {
       return Response.json({ error: "交易记录不存在" }, { status: 404 });
     }
-    const updates: Partial<typeof tradeRecords.$inferInsert> = {};
+
+    // 先把可编辑字段归一化到「合并后交易」，再统一做与 POST 同源的校验。
+    const next = { ...existing };
     if (payload.price !== undefined) {
       const rawPrice = Number(payload.price);
       if (!Number.isFinite(rawPrice) || rawPrice <= 0) {
         return Response.json({ error: "价格不正确" }, { status: 400 });
       }
       const priceTenThousandths = toTenThousandths(rawPrice);
-      updates.priceTenThousandths = priceTenThousandths;
-      updates.priceMillis = Math.round(priceTenThousandths / 10);
-      updates.priceCents = Math.round(priceTenThousandths / 100);
+      next.priceTenThousandths = priceTenThousandths;
+      next.priceMillis = Math.round(priceTenThousandths / 10);
+      next.priceCents = Math.round(priceTenThousandths / 100);
     }
     if (payload.quantity !== undefined) {
       const quantity = Number(payload.quantity);
       if (!Number.isInteger(quantity) || quantity <= 0) {
         return Response.json({ error: "数量不正确" }, { status: 400 });
       }
-      updates.quantity = quantity;
+      next.quantity = quantity;
     }
     if (payload.fee !== undefined) {
       const fee = Number(payload.fee);
       if (!Number.isFinite(fee) || fee < 0) {
         return Response.json({ error: "费用不正确" }, { status: 400 });
       }
-      updates.feeCents = toCents(fee);
+      next.feeCents = toCents(fee);
     }
-    if (payload.reason !== undefined) updates.reason = String(payload.reason ?? "").trim();
-    if (payload.otherReason !== undefined) updates.otherReason = String(payload.otherReason ?? "").trim() || null;
+    if (payload.reason !== undefined) next.reason = String(payload.reason ?? "").trim();
+    if (payload.otherReason !== undefined) next.otherReason = String(payload.otherReason ?? "").trim() || null;
     if (payload.tradeDate !== undefined) {
       const tradeDate = String(payload.tradeDate);
       if (!isIsoDate(tradeDate)) {
         return Response.json({ error: "交易日期格式不正确" }, { status: 400 });
       }
-      updates.tradeDate = tradeDate;
+      const today = shanghaiDate();
+      if (tradeDate > today) {
+        return Response.json({ error: "交易日期不能晚于今天" }, { status: 400 });
+      }
+      next.tradeDate = tradeDate;
     }
-    if (Object.keys(updates).length === 0) {
-      return Response.json({ error: "没有可更新的内容" }, { status: 400 });
+
+    // 买入记录可再编辑风险计划（止损/止盈/最大亏损）。
+    const riskEdited =
+      payload.maxLoss !== undefined ||
+      payload.stopLoss !== undefined ||
+      payload.takeProfit1 !== undefined ||
+      payload.takeProfit2 !== undefined;
+    let nextMaxLossCents: number | null = next.maxLossCents ?? null;
+    let nextStopLoss: number | undefined;
+    let nextTakeProfit1: number | undefined;
+    let nextTakeProfit2: number | undefined;
+    if (next.side === "买入" && riskEdited) {
+      const maxLossNumber = Number(payload.maxLoss);
+      const rawMaxLoss =
+        payload.maxLoss === undefined || payload.maxLoss === null || payload.maxLoss === "" || maxLossNumber === 0
+          ? null
+          : maxLossNumber;
+      const stopLossNumber = Number(payload.stopLoss);
+      nextStopLoss =
+        payload.stopLoss !== undefined && payload.stopLoss !== null && payload.stopLoss !== "" && Number.isFinite(stopLossNumber) && stopLossNumber > 0
+          ? stopLossNumber
+          : undefined;
+      const takeProfit1Number = Number(payload.takeProfit1);
+      nextTakeProfit1 =
+        payload.takeProfit1 !== undefined && payload.takeProfit1 !== null && payload.takeProfit1 !== "" && Number.isFinite(takeProfit1Number) && takeProfit1Number > 0
+          ? takeProfit1Number
+          : undefined;
+      const takeProfit2Number = Number(payload.takeProfit2);
+      nextTakeProfit2 =
+        payload.takeProfit2 !== undefined && payload.takeProfit2 !== null && payload.takeProfit2 !== "" && Number.isFinite(takeProfit2Number) && takeProfit2Number > 0
+          ? takeProfit2Number
+          : undefined;
+      nextMaxLossCents = rawMaxLoss === null ? null : toCents(rawMaxLoss);
+      if (rawMaxLoss !== null && (!Number.isFinite(rawMaxLoss) || nextMaxLossCents === null || nextMaxLossCents <= 0)) {
+        return Response.json({ error: "最大亏损必须是安全范围内的正数" }, { status: 400 });
+      }
+      next.maxLossCents = nextMaxLossCents;
     }
-    // 记录最后修改时间（操作时间），与 POST 的 createdAt 同用上海时区 ISO
-    updates.updatedAt = shanghaiIso();
-    const [trade] = await db.update(tradeRecords).set(updates).where(eq(tradeRecords.id, id)).returning();
+
+    if (next.reason.length === 0 || next.reason.length > 200) {
+      return Response.json({ error: "请选择或填写交易原因" }, { status: 400 });
+    }
+    const priceTenThousandths = next.priceTenThousandths ?? 0;
+    if (
+      !Number.isFinite(priceTenThousandths) ||
+      priceTenThousandths <= 0 ||
+      !Number.isSafeInteger(priceTenThousandths) ||
+      !Number.isSafeInteger(next.quantity) ||
+      next.quantity <= 0 ||
+      !Number.isSafeInteger(priceTenThousandths * next.quantity)
+    ) {
+      return Response.json({ error: "价格和数量必须是有效的正数，且交易金额不能超出安全范围" }, { status: 400 });
+    }
+    if (!Number.isFinite(next.feeCents) || next.feeCents < 0 || !Number.isSafeInteger(next.feeCents)) {
+      return Response.json({ error: "费用必须是安全范围内的非负数" }, { status: 400 });
+    }
+    if (next.maxLossCents !== null && next.maxLossCents !== undefined && (!Number.isSafeInteger(next.maxLossCents) || next.maxLossCents <= 0)) {
+      return Response.json({ error: "最大亏损必须是安全范围内的非负数" }, { status: 400 });
+    }
+    const riskPerShareTenThousandths =
+      nextMaxLossCents === null || nextMaxLossCents === undefined
+        ? null
+        : Math.round(nextMaxLossCents * 100 / next.quantity);
+    if (
+      next.side === "买入" &&
+      riskPerShareTenThousandths !== null &&
+      riskPerShareTenThousandths >= priceTenThousandths
+    ) {
+      return Response.json({ error: "最大亏损必须小于本次买入金额" }, { status: 400 });
+    }
+    if (next.side === "买入" && nextStopLoss !== undefined && nextStopLoss >= priceTenThousandths / 10000) {
+      return Response.json({ error: "止损价必须低于买入价" }, { status: 400 });
+    }
+
+    const allTrades = await db.select().from(tradeRecords).where(eq(tradeRecords.userId, user.id));
+    const invalidSell = findInvalidSell(allTrades.map((t) => (t.id === id ? next : t)));
+    if (invalidSell) {
+      return Response.json({
+        error: `按交易日期排序后可卖数量不足：${invalidSell.symbol}可卖${invalidSell.availableQuantity}股，本次卖出${invalidSell.requestedQuantity}股`,
+      }, { status: 400 });
+    }
+
+    const updates: Partial<typeof tradeRecords.$inferInsert> = {
+      priceCents: next.priceCents,
+      priceMillis: next.priceMillis,
+      priceTenThousandths: next.priceTenThousandths,
+      quantity: next.quantity,
+      feeCents: next.feeCents,
+      reason: next.reason,
+      otherReason: next.otherReason,
+      tradeDate: next.tradeDate,
+      maxLossCents: next.maxLossCents,
+      updatedAt: shanghaiIso(),
+    };
+
+    let trade;
+    // 买入且风险字段被编辑时，删除该股票未确认的旧提醒并重新生成。
+    if (next.side === "买入" && riskEdited && (riskPerShareTenThousandths !== null || nextStopLoss !== undefined)) {
+      const priceMillis = next.priceMillis ?? Math.round(priceTenThousandths / 10);
+      const baseAlerts = buildMaxLossAlerts({
+        symbol: next.symbol,
+        name: next.name,
+        currentPriceMillis: priceMillis,
+        maxLossTenThousandths: riskPerShareTenThousandths ?? 0,
+        stopLoss: nextStopLoss,
+      });
+      const targets = baseAlerts.map((alert) => {
+        if (alert.type === "止盈一" && nextTakeProfit1 !== undefined) {
+          return { ...alert, targetTenThousandths: Math.round(toTenThousandths(nextTakeProfit1)) };
+        }
+        if (alert.type === "止盈二" && nextTakeProfit2 !== undefined) {
+          return { ...alert, targetTenThousandths: Math.round(toTenThousandths(nextTakeProfit2)) };
+        }
+        return alert;
+      }).map((alert) => ({
+        userId: user.id,
+        symbol: alert.symbol,
+        name: alert.name,
+        type: alert.type,
+        targetPriceCents: Math.round(alert.targetTenThousandths / 100),
+        targetPriceMillis: Math.round(alert.targetTenThousandths / 10),
+      }));
+      const [tradeRows] = await db.batch([
+        db.update(tradeRecords).set(updates).where(eq(tradeRecords.id, id)).returning(),
+        db.delete(alertRules).where(and(eq(alertRules.userId, user.id), eq(alertRules.symbol, next.symbol), isNull(alertRules.acknowledgedAt))),
+        db.insert(alertRules).values(targets),
+      ]);
+      trade = tradeRows[0];
+    } else {
+      [trade] = await db.update(tradeRecords).set(updates).where(eq(tradeRecords.id, id)).returning();
+    }
     return Response.json({ trade });
   } catch {
     return Response.json({ error: "交易记录更新失败" }, { status: 500 });
