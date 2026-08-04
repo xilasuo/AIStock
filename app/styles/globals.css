@@ -4823,6 +4823,32 @@ svg { display: block; }
 
 .reason-options label input:focus-visible + span { border-color: var(--accent); }
 
+/* 必选项标记（移动端尤其重要：被视觉隐藏的 radio 无法用原生校验给出可见提示） */
+.req-mark {
+  color: var(--down);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border: 1px solid color-mix(in srgb, var(--down) 40%, var(--line));
+  border-radius: 999px;
+  vertical-align: middle;
+}
+
+/* 未选择必选项时的可见错误高亮 */
+.reason-fieldset.is-error .reason-options {
+  outline: 2px solid var(--danger);
+  outline-offset: 3px;
+  border-radius: 10px;
+}
+
+.form-message--error {
+  color: var(--danger);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  margin: 8px 0 0;
+}
+
 .other-reason-field { margin-top: 12px; }
 
 .calculation-tip {

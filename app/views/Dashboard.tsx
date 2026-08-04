@@ -4478,8 +4478,10 @@ function TradeModal({ mode, stock, positions, analysisQuote, onClose, onSubmit }
   const takeProfit1Ref = useRef<HTMLInputElement>(null);
   const takeProfit2Ref = useRef<HTMLInputElement>(null);
   const maxLossRef = useRef<HTMLInputElement>(null);
+  const reasonFieldsetRef = useRef<HTMLFieldSetElement>(null);
   const [saving, setSaving] = useState(false);
   const [selectedReason, setSelectedReason] = useState("");
+  const [reasonError, setReasonError] = useState(false);
   const defaultPosition = mode === "sell" ? positions[0] : null;
   const symbol = stock?.code ?? stock?.symbol ?? defaultPosition?.symbol ?? "";
   const name = stock?.name ?? defaultPosition?.name ?? "";
@@ -4501,10 +4503,22 @@ function TradeModal({ mode, stock, positions, analysisQuote, onClose, onSubmit }
   }, [onClose]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     if (saving) return;
+    // 「为什么买/卖」的 radio 被视觉隐藏，原生 required 校验在移动端会作用到不可见元素，
+    // 导致提交无任何可见提示。改为显式校验并给出可见的错误提示。
+    if (!selectedReason) {
+      setReasonError(true);
+      reasonFieldsetRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    setReasonError(false);
     setSaving(true);
-    await onSubmit(event);
-    setSaving(false);
+    try {
+      await onSubmit(event);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -4557,8 +4571,11 @@ function TradeModal({ mode, stock, positions, analysisQuote, onClose, onSubmit }
               </>
             )}
           </div>
-          <fieldset>
-            <legend>为什么{mode === "buy" ? "买" : "卖"}？</legend>
+          <fieldset
+            ref={reasonFieldsetRef}
+            className={reasonError ? "reason-fieldset is-error" : "reason-fieldset"}
+          >
+            <legend>为什么{mode === "buy" ? "买" : "卖"}？<span className="req-mark">必选</span></legend>
             <div className="reason-options">
               {(mode === "buy" ? buyReasons : sellReasons).map((reason) => (
                 <label key={reason}>
@@ -4567,14 +4584,18 @@ function TradeModal({ mode, stock, positions, analysisQuote, onClose, onSubmit }
                     type="radio"
                     name="reason"
                     value={reason}
-                    required
                     checked={selectedReason === reason}
-                    onChange={(event) => setSelectedReason(event.currentTarget.value)}
+                    onChange={(event) => { setSelectedReason(event.currentTarget.value); setReasonError(false); }}
                   />
                   <span>{reason}</span>
                 </label>
               ))}
             </div>
+            {reasonError && (
+              <p className="form-message form-message--error" role="alert">
+                请先选择一项「为什么{mode === "buy" ? "买" : "卖"}」，才能保存。
+              </p>
+            )}
             {selectedReason === "其他" && (
               <Field label="补充说明（可选）" className="other-reason-field">
                 <Input name="otherReason" placeholder="请简要说明具体原因…" maxLength={200} />
@@ -4608,6 +4629,8 @@ function ReviewModal({ cycle, onClose, onSaved }: {
     summary.hasPlan ? (summary.withinPlan ? "yes" : "no") : null,
   );
   const [deviationReason, setDeviationReason] = useState("");
+  const [planError, setPlanError] = useState(false);
+  const planFieldsetRef = useRef<HTMLFieldSetElement>(null);
 
   function addTagFromInput() {
     const value = tagInput.trim().slice(0, 20);
@@ -4634,6 +4657,15 @@ function ReviewModal({ cycle, onClose, onSaved }: {
     if (saving) return;
     setSaving(true);
     setMessage("");
+    // 「有没有按计划执行」的 radio 被视觉隐藏，原生 required 校验在移动端会作用到不可见元素，
+    // 导致提交无任何可见提示。改为显式校验并给出可见的错误提示。
+    if (followedPlan == null) {
+      setPlanError(true);
+      planFieldsetRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      setSaving(false);
+      return;
+    }
+    setPlanError(false);
     const data = new FormData(event.currentTarget);
     try {
       await jsonRequest("/api/reviews", {
@@ -4679,7 +4711,21 @@ function ReviewModal({ cycle, onClose, onSaved }: {
           )}
           <Field label="为什么买？"><Textarea ref={firstInput} name="buyReason" defaultValue={buyReason} required maxLength={300} /></Field>
           <Field label="为什么卖？"><Textarea name="sellReason" defaultValue={sellReason} required maxLength={300} /></Field>
-          <fieldset><legend>有没有按计划执行？<small>{summary.hasPlan ? "程序已按计划止损自动预判，可修正" : "买入时未填计划亏损，请凭记忆判断"}</small></legend><div className="reason-options"><label><input className="visually-hidden" type="radio" name="followedPlan" value="yes" required checked={followedPlan === "yes"} onChange={() => setFollowedPlan("yes")} /><span>有，按计划</span></label><label><input className="visually-hidden" type="radio" name="followedPlan" value="no" required checked={followedPlan === "no"} onChange={() => setFollowedPlan("no")} /><span>没有</span></label></div></fieldset>
+          <fieldset
+            ref={planFieldsetRef}
+            className={planError ? "reason-fieldset is-error" : "reason-fieldset"}
+          >
+            <legend>有没有按计划执行？<span className="req-mark">必选</span><small>{summary.hasPlan ? "程序已按计划止损自动预判，可修正" : "买入时未填计划亏损，请凭记忆判断"}</small></legend>
+            <div className="reason-options">
+              <label><input className="visually-hidden" type="radio" name="followedPlan" value="yes" checked={followedPlan === "yes"} onChange={() => { setFollowedPlan("yes"); setPlanError(false); }} /><span>有，按计划</span></label>
+              <label><input className="visually-hidden" type="radio" name="followedPlan" value="no" checked={followedPlan === "no"} onChange={() => { setFollowedPlan("no"); setPlanError(false); }} /><span>没有</span></label>
+            </div>
+            {planError && (
+              <p className="form-message form-message--error" role="alert">
+                请先选择「有，按计划」或「没有」，才能保存复盘。
+              </p>
+            )}
+          </fieldset>
           {followedPlan === "no" && (
             <Field label="这次偏离计划在哪？" help="写清和计划的差异，便于「分析」视图统计纪律缺口（最多 300 字）">
               <Textarea name="deviationReason" value={deviationReason} maxLength={300} onChange={(event) => setDeviationReason(event.target.value)} placeholder="例如：触发止损后没执行，又扛了两天才割；临时追高，超出了原定买点。" />
