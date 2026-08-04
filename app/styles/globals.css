@@ -6359,33 +6359,50 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
 @media (max-width: 720px) {
   .scan-status-pill { right: 14px; bottom: 74px; padding: 4px 9px; }
 }
+/* —— 桌面端：从右滑出的对话侧栏（替代右下浮窗） —— */
 .assistant-fab-panel {
   background: transparent;
-  bottom: 84px;
   display: flex;
   flex-direction: column;
   position: fixed;
-  right: 22px;
-  /* 拖拽优化：与 FAB 同步位移，走合成层避免重排 */
-  touch-action: none;
-  will-change: transform;
-  width: min(400px, calc(100vw - 44px));
+  /* 贴右、占满视口高度；宽度固定 380，窄桌面再降 */
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 380px;
+  max-width: 90vw;
   z-index: 60;
+  /* 关闭时滑出屏幕右侧；is-open 时归零；走合成层避免重排 */
+  transform: translateX(100%);
+  transition: transform .25s cubic-bezier(.22, .61, .36, 1);
+  will-change: transform;
+  pointer-events: none; /* 关闭时让主页可点；打开时由子级承接 */
+}
+.assistant-fab-panel.is-open {
+  transform: translateX(0);
+  pointer-events: auto;
+}
+/* 移动端断点：侧栏不渲染（移动端走 .assistant-page 全屏） */
+@media (max-width: 768px) {
+  .assistant-fab-panel { display: none; }
 }
 
-/* —— 浮窗内助手面板：纸张 + 圆角，内部紧凑 —— */
+/* —— 侧栏内助手面板：纸张 + 圆角，内部紧凑 —— */
 .assistant-fab-panel .sa--floating {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: 0 4px 22px rgba(0, 0, 0, .08);
+  /* 贴右滑出：左圆右方；与侧栏外缘齐平 */
+  border-radius: 12px 0 0 12px;
+  box-shadow: -4px 0 22px rgba(0, 0, 0, .08);
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: 10px;
-  margin: 0;
-  max-height: min(82dvh, 760px);
+  margin: 8px 0 8px 0;
+  max-height: none; /* 侧栏父已占满高度，内部不再限制 */
   /* overflow 不再 hidden，让 .sa-linker__pop 等 popover 能正常溢出 */
   padding: 14px 16px 12px;
+  width: 100%;
 }
 .assistant-fab-panel .sa--floating .sa-head {
   padding: 0 2px;
@@ -6404,13 +6421,14 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
 /* —— 移动端全屏对话页：替代浮窗，占满视口 —— */
 .assistant-page {
   background: var(--surface);
-  display: flex;
+  display: none; /* 默认隐藏：仅当 .is-open 时整页覆盖 */
   flex-direction: column;
   inset: 0;
   position: fixed;
   /* 高于浮窗(60)与底部导航，确保整页覆盖、不被其它层透出 */
   z-index: 70;
 }
+.assistant-page.is-open { display: flex; }
 .assistant-page .sa--page {
   background: var(--surface);
   border: 0;

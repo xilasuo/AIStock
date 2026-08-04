@@ -2814,104 +2814,7 @@ function FloatingAssistantLauncher(
     return () => window.removeEventListener("mousedown", onMouseDown);
   }, [linkerOpen]);
 
-  // 拖拽定位：记录 FAB 当前固定的 left/top（视口坐标）。null 表示使用 CSS 默认右下角。
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
-  const fabRef = useRef<HTMLButtonElement | null>(null);
-  const pillRef = useRef<HTMLDivElement | null>(null);
-  const panelRef = useRef<HTMLDivElement | null>(null);
-  const dragState = useRef<{
-    pointerX: number;
-    pointerY: number;
-    fabLeft: number;
-    fabTop: number;
-    moved: boolean;
-  } | null>(null);
-  const draggedRef = useRef(false);
-
-  // 把 FAB 定位到指定视口坐标，并让面板跟随 FAB 但始终夹在视口内。
-  const applyPos = (left: number, top: number) => {
-    if (fabRef.current) {
-      fabRef.current.style.left = `${left}px`;
-      fabRef.current.style.top = `${top}px`;
-      fabRef.current.style.right = "auto";
-      fabRef.current.style.bottom = "auto";
-    }
-    if (panelRef.current) {
-      const margin = 8;
-      const pw = panelRef.current.offsetWidth || Math.min(400, window.innerWidth - 44);
-      const ph = panelRef.current.offsetHeight || Math.min(window.innerHeight * 0.82, 760);
-      let pLeft = left + 50 - pw;
-      let pTop = top - 12 - ph;
-      if (pTop < margin) pTop = top + 50 + 12;
-      if (pLeft < margin) pLeft = left;
-      pLeft = Math.max(margin, Math.min(window.innerWidth - pw - margin, pLeft));
-      pTop = Math.max(margin, Math.min(window.innerHeight - ph - margin, pTop));
-      panelRef.current.style.left = `${pLeft}px`;
-      panelRef.current.style.top = `${pTop}px`;
-      panelRef.current.style.right = "auto";
-      panelRef.current.style.bottom = "auto";
-    }
-    if (pillRef.current) {
-      const pw = pillRef.current.offsetWidth || 140;
-      const ph = pillRef.current.offsetHeight || 30;
-      const pLeft = left + 50 - pw;
-      const pTop = top - ph - 8;
-      pillRef.current.style.left = `${Math.max(8, pLeft)}px`;
-      pillRef.current.style.top = `${pTop}px`;
-      pillRef.current.style.right = "auto";
-      pillRef.current.style.bottom = "auto";
-    }
-  };
-
-  useEffect(() => {
-    if (pos) applyPos(pos.left, pos.top);
-  }, [pos]);
-
-  function handleFabPointerDown(event: React.PointerEvent<HTMLButtonElement>) {
-    if (event.button !== 0) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    const rect = event.currentTarget.getBoundingClientRect();
-    dragState.current = {
-      pointerX: event.clientX,
-      pointerY: event.clientY,
-      fabLeft: rect.left,
-      fabTop: rect.top,
-      moved: false,
-    };
-  }
-
-  function handleFabPointerMove(event: React.PointerEvent<HTMLButtonElement>) {
-    const state = dragState.current;
-    if (!state) return;
-    const dx = event.clientX - state.pointerX;
-    const dy = event.clientY - state.pointerY;
-    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
-      state.moved = true;
-      draggedRef.current = true;
-    }
-    const fabW = 50;
-    const fabH = 50;
-    const margin = 8;
-    const nextLeft = Math.max(margin, Math.min(window.innerWidth - fabW - margin, state.fabLeft + dx));
-    const nextTop = Math.max(margin, Math.min(window.innerHeight - fabH - margin, state.fabTop + dy));
-    applyPos(nextLeft, nextTop);
-  }
-
-  function handleFabPointerUp() {
-    const state = dragState.current;
-    dragState.current = null;
-    if (state?.moved) {
-      const fabW = 50;
-      const fabH = 50;
-      const margin = 8;
-      const rect = fabRef.current?.getBoundingClientRect();
-      if (rect) {
-        const left = Math.max(margin, Math.min(window.innerWidth - fabW - margin, rect.left));
-        const top = Math.max(margin, Math.min(window.innerHeight - fabH - margin, rect.top));
-        setPos({ left, top });
-      }
-    }
-  }
+  // 新形态：侧栏位置固定右侧，FAB / 胶囊不再需要拖动与定位同步
 
   const activeAnalysis = linked ?? analysis;
   const activePosition = linked ? (portfolio.positions.find((p) => p.symbol === linked.stock.code) ?? null) : position;
@@ -2950,17 +2853,8 @@ function FloatingAssistantLauncher(
     }
   }
 
-  const fabStyle: React.CSSProperties = pos
-    ? { left: pos.left, top: pos.top, right: "auto", bottom: "auto" }
-    : {};
-  const panelStyle: React.CSSProperties = pos
-    ? {
-        left: `clamp(8px, ${pos.left + 50}px - min(400px, 100vw - 44px), 100vw - min(400px, 100vw - 44px) - 8px)`,
-        top: `max(8px, ${pos.top}px - 12px - min(82vh, 760px))`,
-        right: "auto",
-        bottom: "auto",
-      }
-    : {};
+  // 旧形态遗留占位：当前侧栏由 CSS 固定右侧定位，不再需要 inline style
+
 
   // 股票关联下拉：浮窗与移动端全屏页共用，抽成变量避免两端重复
   const linkerSlot = (
@@ -3063,18 +2957,11 @@ function FloatingAssistantLauncher(
   return (
     <>
       <div
-        ref={pillRef}
         className={`scan-status-pill${hasScan ? "" : " is-empty"}${marketTone !== "flat" ? ` tone-${marketTone}` : ""}`}
         role="button"
         tabIndex={0}
         aria-label={hasScan ? `今日 ${signalCount} 只信号，市场${marketLabel}` : "暂无选股扫描结果"}
-        onClick={() => {
-          if (draggedRef.current) {
-            draggedRef.current = false;
-            return;
-          }
-          onToggle();
-        }}
+        onClick={onToggle}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
@@ -3088,8 +2975,14 @@ function FloatingAssistantLauncher(
           {hasScan && <em>· {marketLabel}</em>}
         </span>
       </div>
-      {open && isMobile ? (
-        <div className="assistant-page" role="dialog" aria-label="复盘助手">
+      {isMobile ? (
+        // 移动端：全屏对话页（始终挂载 SmartAssistant；锁滚动仅打开时）
+        <div
+          className={`assistant-page${open ? " is-open" : ""}`}
+          role="dialog"
+          aria-label="复盘助手"
+          aria-hidden={!open}
+        >
           <SmartAssistant
             page
             analysis={activeAnalysis}
@@ -3100,8 +2993,14 @@ function FloatingAssistantLauncher(
             headerSlot={linkerSlot}
           />
         </div>
-      ) : open ? (
-        <div ref={panelRef} className="assistant-fab-panel" role="dialog" aria-label="复盘助手" style={panelStyle}>
+      ) : (
+        // 桌面端：右滑出侧栏（始终挂载 SmartAssistant；transform 控制滑入；非模态、不挡主页）
+        <div
+          className={`assistant-fab-panel${open ? " is-open" : ""}`}
+          role="dialog"
+          aria-label="复盘助手"
+          aria-hidden={!open}
+        >
           <SmartAssistant
             floating
             analysis={activeAnalysis}
@@ -3112,22 +3011,11 @@ function FloatingAssistantLauncher(
             headerSlot={linkerSlot}
           />
         </div>
-      ) : null}
+      )}
       <button
-        ref={fabRef}
         type="button"
         className={`assistant-fab${open ? " is-open" : ""}`}
-        style={fabStyle}
-        onClick={() => {
-          if (draggedRef.current) {
-            draggedRef.current = false;
-            return;
-          }
-          onToggle();
-        }}
-        onPointerDown={handleFabPointerDown}
-        onPointerMove={handleFabPointerMove}
-        onPointerUp={handleFabPointerUp}
+        onClick={onToggle}
         aria-label={open ? "收起复盘助手" : "打开复盘助手"}
         title={open ? "收起助手" : "复盘助手"}
       >
