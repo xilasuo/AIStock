@@ -23,6 +23,7 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowLeftRight,
+  ArrowLeft,
   Bell,
   CalendarDays,
   ChevronRight,
@@ -264,6 +265,23 @@ const nextId = () => {
   }
   return `${Date.now().toString(36)}-${(assistantMessageCounter).toString(36)}`;
 };
+
+// 视口断点：≤ breakpoint 视为移动端。用于区分「PC 浮窗」与「移动端全屏对话页」。
+// 客户端组件内初始化即用 matchMedia 取值，避免首帧闪烁；并在断点变化时实时更新。
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== "undefined" && window.matchMedia(`(max-width: ${breakpoint}px)`).matches,
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia(`(max-width: ${breakpoint}px)`);
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, [breakpoint]);
+  return isMobile;
+}
 
 type Status = {
   deepseekConfigured: boolean;
@@ -2378,6 +2396,7 @@ function SmartAssistant(
     position,
     portfolioInsights,
     floating = false,
+    page = false,
     onClose,
     headerSlot,
     userId,
@@ -2386,6 +2405,8 @@ function SmartAssistant(
     position: Position | null;
     portfolioInsights: PortfolioInsights;
     floating?: boolean;
+    // 移动端全屏对话页模式：占满视口、头部显示返回箭头而非收起叉
+    page?: boolean;
     onClose?: () => void;
     headerSlot?: ReactNode;
     userId?: string | number;
@@ -2605,7 +2626,7 @@ function SmartAssistant(
   const showPrompts = primed && (asking || messages.filter((m) => m.role === "user").length === 0);
 
   return (
-    <section className={`sa${floating ? " sa--floating" : ""}`}>
+    <section className={`sa${floating ? " sa--floating" : ""}${page ? " sa--page" : ""}`}>
       <div className="sa-head">
         {headerSlot}
         <div className="sa-head__title">
@@ -2624,15 +2645,15 @@ function SmartAssistant(
               <Trash2 size={13} />
             </button>
           )}
-          {floating && onClose && (
+          {(floating || page) && onClose && (
             <button
               type="button"
-              className="sa-iconbtn sa-iconbtn--close"
+              className={`sa-iconbtn ${page ? "sa-iconbtn--back" : "sa-iconbtn--close"}`}
               onClick={onClose}
-              aria-label="收起助手"
-              title="收起"
+              aria-label={page ? "返回" : "收起助手"}
+              title={page ? "返回" : "收起"}
             >
-              <X size={14} />
+              {page ? <ArrowLeft size={16} /> : <X size={14} />}
             </button>
           )}
         </div>
@@ -2771,6 +2792,17 @@ function FloatingAssistantLauncher(
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!open) setLinkerOpen(false);
   }, [open]);
+
+  // 视口判断：移动端用全屏对话页，PC 用浮窗
+  const isMobile = useIsMobile();
+
+  // 移动端打开全屏页时锁背景滚动，避免 iOS 橡皮筋穿透到底层页面
+  useEffect(() => {
+    if (!open || !isMobile || typeof document === "undefined") return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, [open, isMobile]);
 
   // 点击选择器外部关闭
   useEffect(() => {
@@ -2930,6 +2962,104 @@ function FloatingAssistantLauncher(
       }
     : {};
 
+  // 股票关联下拉：浮窗与移动端全屏页共用，抽成变量避免两端重复
+  const linkerSlot = (
+    <div className="sa-linker" ref={linkerRef}>
+      <button
+        type="button"
+        className={`sa-linker__btn${linkerOpen ? " is-open" : ""}${linked ? " is-active" : ""}`}
+        onClick={() => setLinkerOpen((value) => !value)}
+        aria-expanded={linkerOpen}
+        aria-haspopup="dialog"
+        title={linked ? `已关联：${linked.stock.name}${linked.stock.code ? `（${linked.stock.code}）` : ""}` : "关联其它股票来分析问答"}
+      >
+        <ChevronDown size={12} className={`sa-linker__chev${linkerOpen ? " is-open" : ""}`} />
+        <span className="sa-linker__label">{linked ? "已关联" : "切换股票"}</span>
+      </button>
+      {linkerOpen && (
+        <div className="sa-linker__pop" role="dialog" aria-label="股票关联">
+          {watchlist.length > 0 && (
+            <div className="sa-linker__group">
+              <small>自选股</small>
+              <div className="sa-linker__chips">
+                {watchlist.map((item) => {
+                  const isActive = activeAnalysis?.stock.code === item.symbol;
+                  const labelText = item.name && item.name !== item.symbol ? item.name : item.symbol;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`sa-linker__chip${isActive ? " is-active" : ""}`}
+                      onClick={() => void linkStock(item.symbol)}
+                      disabled={linking}
+                      title={item.symbol}
+                    >
+                      <span className="sa-linker__chip-name">{labelText}</span>
+                      {labelText !== item.symbol && <span className="sa-linker__chip-code">{item.symbol}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {recentAnalyses.length > 0 && (
+            <div className="sa-linker__group">
+              <small>最近分析</small>
+              <div className="sa-linker__chips">
+                {recentAnalyses
+                  .filter((item) => !watchlist.some((w) => w.symbol === item.stock.code))
+                  .map((item) => {
+                    const isActive = activeAnalysis?.stock.code === item.stock.code;
+                    const labelText = item.stock.name && item.stock.name !== item.stock.code ? item.stock.name : item.stock.code;
+                    return (
+                      <button
+                        key={item.stock.code}
+                        type="button"
+                        className={`sa-linker__chip${isActive ? " is-active" : ""}`}
+                        onClick={() => void linkStock(item.stock.code)}
+                        disabled={linking}
+                        title={item.stock.code}
+                      >
+                        <span className="sa-linker__chip-name">{labelText}</span>
+                        {labelText !== item.stock.code && <span className="sa-linker__chip-code">{item.stock.code}</span>}
+                      </button>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
+          <div className="sa-linker__group">
+            <small>输入代码</small>
+            <input
+              placeholder={linking ? "分析中…" : "例如 600519"}
+              disabled={linking}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  const target = event.currentTarget;
+                  const v = target.value.trim();
+                  if (v) {
+                    void linkStock(v).then(() => { target.value = ""; });
+                  }
+                }
+              }}
+              aria-label="输入股票代码关联"
+            />
+          </div>
+          {linked && (
+            <button
+              type="button"
+              className="sa-linker__clear"
+              onClick={() => { setLinked(null); setLinkerOpen(false); }}
+            >
+              解除关联，回到当前页
+            </button>
+          )}
+          {linkError && <small className="sa-linker__error">{linkError}</small>}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <>
       <div
@@ -2958,7 +3088,19 @@ function FloatingAssistantLauncher(
           {hasScan && <em>· {marketLabel}</em>}
         </span>
       </div>
-      {open && (
+      {open && isMobile ? (
+        <div className="assistant-page" role="dialog" aria-label="复盘助手">
+          <SmartAssistant
+            page
+            analysis={activeAnalysis}
+            position={activePosition}
+            portfolioInsights={portfolioInsights}
+            userId={userId}
+            onClose={onToggle}
+            headerSlot={linkerSlot}
+          />
+        </div>
+      ) : open ? (
         <div ref={panelRef} className="assistant-fab-panel" role="dialog" aria-label="复盘助手" style={panelStyle}>
           <SmartAssistant
             floating
@@ -2967,105 +3109,10 @@ function FloatingAssistantLauncher(
             portfolioInsights={portfolioInsights}
             userId={userId}
             onClose={onToggle}
-            headerSlot={
-              <div className="sa-linker" ref={linkerRef}>
-                <button
-                  type="button"
-                  className={`sa-linker__btn${linkerOpen ? " is-open" : ""}${linked ? " is-active" : ""}`}
-                  onClick={() => setLinkerOpen((value) => !value)}
-                  aria-expanded={linkerOpen}
-                  aria-haspopup="dialog"
-                  title={linked ? `已关联：${linked.stock.name}${linked.stock.code ? `（${linked.stock.code}）` : ""}` : "关联其它股票来分析问答"}
-                >
-                  <ChevronDown size={12} className={`sa-linker__chev${linkerOpen ? " is-open" : ""}`} />
-                  <span className="sa-linker__label">{linked ? "已关联" : "切换股票"}</span>
-                </button>
-                {linkerOpen && (
-                  <div className="sa-linker__pop" role="dialog" aria-label="股票关联">
-                    {watchlist.length > 0 && (
-                      <div className="sa-linker__group">
-                        <small>自选股</small>
-                        <div className="sa-linker__chips">
-                          {watchlist.map((item) => {
-                            const isActive = activeAnalysis?.stock.code === item.symbol;
-                            const labelText = item.name && item.name !== item.symbol ? item.name : item.symbol;
-                            return (
-                              <button
-                                key={item.id}
-                                type="button"
-                                className={`sa-linker__chip${isActive ? " is-active" : ""}`}
-                                onClick={() => void linkStock(item.symbol)}
-                                disabled={linking}
-                                title={item.symbol}
-                              >
-                                <span className="sa-linker__chip-name">{labelText}</span>
-                                {labelText !== item.symbol && <span className="sa-linker__chip-code">{item.symbol}</span>}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                    {recentAnalyses.length > 0 && (
-                      <div className="sa-linker__group">
-                        <small>最近分析</small>
-                        <div className="sa-linker__chips">
-                          {recentAnalyses
-                            .filter((item) => !watchlist.some((w) => w.symbol === item.stock.code))
-                            .map((item) => {
-                              const isActive = activeAnalysis?.stock.code === item.stock.code;
-                              const labelText = item.stock.name && item.stock.name !== item.stock.code ? item.stock.name : item.stock.code;
-                              return (
-                                <button
-                                  key={item.stock.code}
-                                  type="button"
-                                  className={`sa-linker__chip${isActive ? " is-active" : ""}`}
-                                  onClick={() => void linkStock(item.stock.code)}
-                                  disabled={linking}
-                                  title={item.stock.code}
-                                >
-                                  <span className="sa-linker__chip-name">{labelText}</span>
-                                  {labelText !== item.stock.code && <span className="sa-linker__chip-code">{item.stock.code}</span>}
-                                </button>
-                              );
-                            })}
-                        </div>
-                      </div>
-                    )}
-                    <div className="sa-linker__group">
-                      <small>输入代码</small>
-                      <input
-                        placeholder={linking ? "分析中…" : "例如 600519"}
-                        disabled={linking}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            const target = event.currentTarget;
-                            const v = target.value.trim();
-                            if (v) {
-                              void linkStock(v).then(() => { target.value = ""; });
-                            }
-                          }
-                        }}
-                        aria-label="输入股票代码关联"
-                      />
-                    </div>
-                    {linked && (
-                      <button
-                        type="button"
-                        className="sa-linker__clear"
-                        onClick={() => { setLinked(null); setLinkerOpen(false); }}
-                      >
-                        解除关联，回到当前页
-                      </button>
-                    )}
-                    {linkError && <small className="sa-linker__error">{linkError}</small>}
-                  </div>
-                )}
-              </div>
-            }
+            headerSlot={linkerSlot}
           />
         </div>
-      )}
+      ) : null}
       <button
         ref={fabRef}
         type="button"

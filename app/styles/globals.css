@@ -6401,6 +6401,49 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
 .assistant-fab-panel .sa--floating .sa-form { margin-top: 2px; }
 .assistant-fab-panel .sa--floating .sa-msg { gap: 2px; }
 
+/* —— 移动端全屏对话页：替代浮窗，占满视口 —— */
+.assistant-page {
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  inset: 0;
+  position: fixed;
+  /* 高于浮窗(60)与底部导航，确保整页覆盖、不被其它层透出 */
+  z-index: 70;
+}
+.assistant-page .sa--page {
+  background: var(--surface);
+  border: 0;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  gap: 10px;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+.assistant-page .sa--page .sa-head {
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+  padding: 10px 14px;
+}
+.assistant-page .sa--page .sa-msgs {
+  flex: 1 1 auto;
+  max-height: none;
+  min-height: 0;
+  padding: 14px 14px 4px;
+}
+.assistant-page .sa--page .sa-prompts {
+  padding: 0 14px;
+}
+.assistant-page .sa--page .sa-form {
+  border-top: 1px solid var(--line);
+  margin: 0;
+  /* 适配 iPhone 底部安全区，避免输入区被圆角/Home 条遮挡 */
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+}
+
 /* —— 头部股票关联下拉 —— */
 .sa-linker {
   margin-left: auto;
