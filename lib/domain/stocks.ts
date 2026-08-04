@@ -86,10 +86,15 @@ export function isFundCode(code: string): boolean {
 export function resolveStock(query: string) {
   const clean = query.trim();
   if (/^\d{6}$/.test(clean)) {
-    // 基金代码优先返回产品名称，普通股票走本地全量列表，兜底用代码本身
+    // 基金代码优先返回产品名称，普通股票仅当在本地全量列表里才直接解析。
+    // 未知 6 位代码必须回退到腾讯 smartbox 校验（searchStockByName），否则形如
+    // 000456 这种根本不存在的代码会被当成“有效股票”继续拉行情，最终在 getKlines
+    // 因无数据抛错，向上暴露成含糊的 502「分析暂时不可用」。
     const etf = FUND_PROFILES[clean];
     if (etf) return { code: clean, name: etf.name };
-    return { code: clean, name: A_STOCK_LIST[clean] ?? clean };
+    const name = A_STOCK_LIST[clean];
+    if (name) return { code: clean, name };
+    return null;
   }
 
   // 本地常用股票名称直接解析，找不到再交给腾讯 smartbox API

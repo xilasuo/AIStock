@@ -924,7 +924,11 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
           </div>
         </header>
 
-        {error && <Banner tone="danger" onDismiss={() => setError("")}>{error}</Banner>}
+        {error && (
+          <div className="global-error-bar">
+            <Banner tone="danger" onDismiss={() => setError("")}>{error}</Banner>
+          </div>
+        )}
         {loading ? <LoadingState label="正在读取你的个人记录…" /> : (
           <>
             {view === "home" && (

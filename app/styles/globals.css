@@ -868,6 +868,16 @@ svg { display: block; }
 .holding-status.take { background: var(--green-soft); color: var(--green); }
 .holding-status.take i { background: var(--green); }
 
+/* 顶部全局错误条：与 .topbar 共享水平 padding，但自身限制最大宽度，
+   避免 22-30 个汉字的短错误横跨整个内容区显得空旷。 */
+.global-error-bar {
+  margin: 12px auto 0;
+  max-width: 1440px;
+  padding: 0 var(--space-7);
+}
+.global-error-bar > .banner {
+  max-width: 720px;
+}
 .trade-alerts-line { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
 .trade-alert {
   border-radius: 6px;
@@ -1525,11 +1535,19 @@ svg { display: block; }
 .verdict h3 { font-size: var(--fs-lg); font-weight: 600; line-height: 1.55; margin: 4px 0 2px; }
 .verdict p { color: var(--muted); font-size: var(--fs-2xs); margin: 0; }
 
-.evidence-panel,
+.evidence-panel {
+  margin-top: 24px;
+  margin-bottom: 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 22px 20px;
+}
+
 .evidence-grid {
   display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .evidence-heading,
@@ -1537,29 +1555,30 @@ svg { display: block; }
   align-items: flex-start;
   display: flex;
   justify-content: space-between;
-  margin-bottom: 14px;
+  margin-bottom: 18px;
 }
 
 .evidence-grid article {
   background: var(--surface-soft);
   border: 1px solid var(--line);
   border-radius: 10px;
-  padding: 12px;
+  padding: 16px 18px;
 }
 
 .evidence-grid article > div {
   align-items: center;
   display: flex;
   justify-content: space-between;
+  margin-bottom: 10px;
 }
 
 .evidence-grid article span,
 .evidence-grid article small { color: var(--muted); font-size: var(--fs-2xs); }
-.evidence-grid article b { border-radius: 999px; font-size: 10px; padding: 4px 6px; }
+.evidence-grid article b { border-radius: 999px; font-size: 10px; padding: 4px 8px; }
 .evidence-grid article b.high { background: var(--green-soft); color: var(--green); }
 .evidence-grid article b.medium { background: var(--amber-soft); color: var(--amber); }
-.evidence-grid article strong { display: block; font-size: var(--fs-sm); margin: 9px 0 6px; }
-.evidence-grid article p { color: var(--text-soft); font-size: var(--fs-2xs); line-height: 1.55; margin: 0 0 8px; }
+.evidence-grid article strong { display: block; font-size: var(--fs-sm); margin: 12px 0 8px; line-height: 1.4; }
+.evidence-grid article p { color: var(--text-soft); font-size: var(--fs-2xs); line-height: 1.6; margin: 0 0 10px; }
 
 .evidence-heading h3,
 .assistant-heading h3 { font-size: var(--fs-lg); margin: 3px 0 0; }
@@ -2524,27 +2543,78 @@ svg { display: block; }
 .strategy-block__body .markdown-body ul,
 .strategy-block__body .markdown-body ol { margin: 0 0 8px; padding-left: 18px; }
 .strategy-block__body .markdown-body li { margin-bottom: 4px; }
+.strategy-block__body .markdown-body hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 14px 0;
+}
+
+/* markdown 标题在策略块里复用统一的 md-h 视觉（与助手消息一致），
+   避免浏览器默认 h3 过大、与正文断层。同时给相邻同色块留出节段感。 */
+.strategy-block__body .markdown-body .md-h {
+  align-items: center;
+  color: var(--accent-ink);
+  display: flex;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  gap: 6px;
+  line-height: 1.4;
+  margin: 12px 0 4px;
+}
+.strategy-block__body .markdown-body .md-h:first-child { margin-top: 0; }
+.strategy-block__body .markdown-body .md-h::before {
+  align-self: center;
+  background: var(--accent);
+  border-radius: 2px;
+  content: "";
+  flex: 0 0 auto;
+  height: 12px;
+  width: 3px;
+}
+.strategy-block__body .markdown-body .md-h4,
+.strategy-block__body .markdown-body .md-h5,
+.strategy-block__body .markdown-body .md-h6 {
+  color: var(--text-soft);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+.strategy-block__body .markdown-body .md-h4::before,
+.strategy-block__body .markdown-body .md-h5::before,
+.strategy-block__body .markdown-body .md-h6::before {
+  height: 8px;
+  width: 2px;
+}
 
 .strategy-block__body .markdown-body table {
   border-collapse: collapse;
+  border-radius: 8px;
+  border-spacing: 0;
+  display: block;
   font-size: var(--fs-2xs);
-  margin: 0;
-  min-width: 100%;
-  width: max-content;
+  margin: 4px 0;
+  max-width: 100%;
+  overflow-x: auto;
+  width: 100%;
 }
 
 .strategy-block__body .markdown-body th,
 .strategy-block__body .markdown-body td {
-  border: 1px solid var(--line-strong);
-  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-left-width: 0;
+  border-top-width: 0;
+  padding: 7px 10px;
   text-align: left;
   vertical-align: top;
 }
+.strategy-block__body .markdown-body th:last-child,
+.strategy-block__body .markdown-body td:last-child { border-right-width: 0; }
+.strategy-block__body .markdown-body tr:last-child th,
+.strategy-block__body .markdown-body tr:last-child td { border-bottom-width: 0; }
 
 .strategy-block__body .markdown-body th {
   background: var(--surface-strong);
   color: var(--text-soft);
-  font-size: 10px;
+  font-size: var(--fs-2xs);
   font-weight: 600;
   letter-spacing: .02em;
   text-transform: uppercase;
@@ -2553,11 +2623,9 @@ svg { display: block; }
 
 .strategy-block__body .markdown-body td {
   background: var(--surface);
-  white-space: nowrap;
-}
-
-.strategy-block__body .markdown-body td:last-child {
-  white-space: normal;
+  /* 让 cell 内自然换行：避免长数字/长标签把列撑爆，让 AI 输出的窄表更可读 */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* 结论：高亮分区 */
