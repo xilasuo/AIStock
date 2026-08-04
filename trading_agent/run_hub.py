@@ -208,6 +208,97 @@ def _write_cloud_receipt(receipt: dict, out_dir: str):
         print(f"写出溯源凭证失败: {e}")
 
 
+def _write_scan_summary(payload: dict, profile: str, out_dir: str):
+    """轻量入选摘要（几 KB），供中枢报告步骤读取，避免整读 49KB scan_payload.json。"""
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+        sel = payload.get("selected", [])
+        summary = {
+            "generatedAt": payload.get("generatedAt"),
+            "period": payload.get("period"),
+            "universeSize": payload.get("universeSize"),
+            "selectedCount": payload.get("selectedCount"),
+            "profile": profile,
+            "marketState": payload.get("marketState"),
+            # 回测基准指标（来自 payload.backtest.baseMetrics），使中枢报告步骤
+            # 无需整读 49KB scan_payload.json 即可拿到收益/夏普等关键数字。
+            "backtest": payload.get("backtest", {}).get("baseMetrics", {}),
+            "selected": [
+                {
+                    "code": r.get("code"),
+                    "name": r.get("name"),
+                    "sector": r.get("sector"),
+                    "score": r.get("score"),
+                    "momentum": r.get("momentum"),
+                    "peTtm": r.get("peTtm"),
+                    "pb": r.get("pb"),
+                    "turnover": r.get("turnover"),
+                    "rsi": r.get("rsi"),
+                    "macd": r.get("macd"),
+                    "trend": r.get("trend"),
+                }
+                for r in sel
+            ],
+        }
+        path = os.path.join(out_dir, "scan_summary.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(summary, f, ensure_ascii=False, indent=2)
+        print(f"已写出入选摘要: {path}")
+    except Exception as e:  # noqa: BLE001
+        print(f"写出入选摘要失败: {e}")
+
+
+def _write_strategy_snapshot(cfg, receipt: dict, profile: str, out_dir: str):
+    """策略快照（关键参数提炼），供中枢报告步骤读取，避免二次拉取完整云端配置。"""
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+        s = getattr(cfg, "screener", None)
+        m = getattr(cfg, "market", None)
+        sig = getattr(cfg, "signal", None)
+        o = getattr(cfg, "optim", None)
+        sha = (receipt.get("config_sha256") or "")[:8]
+        snap = {
+            "profile": profile,
+            "source": receipt.get("source"),
+            "config_sha256_8": sha,
+            "fetched_at": receipt.get("fetched_at"),
+            "screener": {
+                "top_n": getattr(s, "top_n", None),
+                "max_per_sector": getattr(s, "max_per_sector", None),
+                "momentum_window": getattr(s, "momentum_window", None),
+                "w_momentum": getattr(s, "w_momentum", None),
+                "w_value": getattr(s, "w_value", None),
+                "w_liquidity": getattr(s, "w_liquidity", None),
+                "w_rsi": getattr(s, "w_rsi", None),
+                "w_macd": getattr(s, "w_macd", None),
+                "w_trend": getattr(s, "w_trend", None),
+                "w_size": getattr(s, "w_size", None),
+                "w_quality": getattr(s, "w_quality", None),
+                "w_fund_flow": getattr(s, "w_fund_flow", None),
+            },
+            "market": {
+                "enable": getattr(m, "enable", None),
+                "index_code": getattr(m, "index_code", None),
+                "ma_window": getattr(m, "ma_window", None),
+            },
+            "signal": {
+                "use_breakout_filter": getattr(sig, "use_breakout_filter", None),
+                "breakout_window": getattr(sig, "breakout_window", None),
+                "fast_ma": getattr(sig, "fast_ma", None),
+                "slow_ma": getattr(sig, "slow_ma", None),
+                "stop_loss_pct": getattr(sig, "stop_loss_pct", None),
+                "max_positions": getattr(sig, "max_positions", None),
+            },
+            "optim": {"enabled": getattr(o, "enabled", None)},
+        }
+        path = os.path.join(out_dir, "strategy_snapshot.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(snap, f, ensure_ascii=False, indent=2)
+        print(f"已写出策略快照: {path}")
+    except Exception as e:  # noqa: BLE001
+        print(f"写出策略快照失败: {e}")
+
+
 def apply_config(cfg: config.AppConfig, ov: dict):
     sc = cfg.screener
     if "top_n" in ov:
@@ -877,6 +968,10 @@ def main():
         json.dump(payload, f, ensure_ascii=False, indent=2, default=str)
     with open(os.path.join(out_dir, "signals_out.json"), "w", encoding="utf-8") as f:
         json.dump(signals, f, ensure_ascii=False, indent=2, default=str)
+
+    # P2: 输出轻量摘要/策略快照，供中枢报告步骤读取，避免整读 49KB scan_payload 与二次拉云端配置
+    _write_scan_summary(payload, profile, out_dir)
+    _write_strategy_snapshot(cfg, cloud_receipt, profile, out_dir)
 
     sel = payload.get("selected", [])
     bm = payload.get("backtest", {}).get("baseMetrics", {})

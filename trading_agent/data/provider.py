@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from datetime import date, timedelta
 import urllib.parse
 import urllib.request
 from abc import ABC, abstractmethod
@@ -143,7 +144,7 @@ def _em_kline(code: str, beg: str, end: str) -> list[dict]:
         rows.append({
             "date": p[0], "open": float(p[1]), "close": float(p[2]),
             "high": float(p[3]), "low": float(p[4]), "vol": float(p[5]),
-            "amount": float(p[6]), "amplitude": float(p[7]),
+            "amplitude": float(p[7]),
             "pct": float(p[8]), "turnover": float(p[10]) if p[10] not in ("", "-") else 0.0,
         })
     return rows
@@ -157,7 +158,7 @@ def _normalize_kline(raw: list[dict]) -> list[dict]:
             out.append({
                 "date": b["day"], "open": float(b["open"]), "close": float(b["close"]),
                 "high": float(b["high"]), "low": float(b["low"]),
-                "vol": float(b.get("volume", 0)), "amount": 0.0,
+                "vol": float(b.get("volume", 0)),
                 "amplitude": 0.0, "pct": 0.0, "turnover": 0.0,
             })
         else:  # 东财格式
@@ -165,7 +166,7 @@ def _normalize_kline(raw: list[dict]) -> list[dict]:
     return out
 
 
-def fetch_kline(code: str, beg: str = "20250101", end: str = "20500101") -> list[dict]:
+def fetch_kline(code: str, beg: str | None = None, end: str = "20500101") -> list[dict]:
     """获取日线 K 线（东财前复权为主，新浪未复权兜底）。
 
     返回: [{date, open, close, high, low, vol, amount, ...}, ...]（按日期升序）
@@ -174,6 +175,8 @@ def fetch_kline(code: str, beg: str = "20250101", end: str = "20500101") -> list
     统一以**东财前复权**（fqt=1）作为主数据源，避免与新浪未复权数据混用导致
     除权除息日的信号/回测失真。新浪未复权仅在东财失败时兜底。
     """
+    if beg is None:
+        beg = (date.today() - timedelta(days=620)).strftime("%Y%m%d")
     cached = _load_cache("kline", f"{code}_{beg}_{end}")
     if cached is not None:
         return cached
@@ -258,18 +261,23 @@ def fetch_fund_flow(code: str) -> float | None:
             "fields1": "f1,f2,f3,f7",
             "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64,f65",
         }
-        d = json.loads(_http_get(url, params))
+        # 短超时：该接口在部分网络环境不稳定，避免逐股长时间挂起拖累整体取数。
+        d = json.loads(_http_get(url, params, timeout=4))
         klines = (d.get("data") or {}).get("klines") or []
         if not klines:
+            _save_cache("fflow", code, {"main_net_inflow": None})  # 负缓存，避免重复挂起
             return None
         cells = klines[-1].split(",")
         # fields2 索引：f51=日期, f52=主力净流入额(元), f53=小单净流入 ...
         if len(cells) < 2:
+            _save_cache("fflow", code, {"main_net_inflow": None})
             return None
         val = float(cells[1] or 0)
         _save_cache("fflow", code, {"main_net_inflow": val})
         return val
     except Exception:
+        # 失败也缓存（负缓存），同一进程/短时重跑不再重复挂起。
+        _save_cache("fflow", code, {"main_net_inflow": None})
         return None
 
 
