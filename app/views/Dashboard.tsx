@@ -1006,6 +1006,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 onSearch={() => navigate("analysis")}
                 onAnalyze={(symbol) => void analyzeAndOpen(symbol)}
                 onSaved={() => void loadData()}
+                strategyScan={strategyScan}
               />
             )}
             {view === "trades" && (
@@ -1112,7 +1113,6 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
         recentAnalyses={recentAnalyses}
         fetchAnalysis={fetchAnalysis}
         userId={user.id}
-        strategyScan={strategyScan}
       />
       <ConfirmDialog
         open={confirming === "logout"}
@@ -2810,7 +2810,7 @@ function SmartAssistant(
 }
 
 function FloatingAssistantLauncher(
-  { open, onToggle, analysis, position, portfolioInsights, portfolio, watchlist, recentAnalyses, fetchAnalysis, userId, strategyScan }: {
+  { open, onToggle, analysis, position, portfolioInsights, portfolio, watchlist, recentAnalyses, fetchAnalysis, userId }: {
     open: boolean;
     onToggle: () => void;
     analysis: Analysis | null;
@@ -2821,7 +2821,6 @@ function FloatingAssistantLauncher(
     recentAnalyses: Analysis[];
     fetchAnalysis: (query: string, showResult?: boolean) => Promise<Analysis | null>;
     userId?: string | number;
-    strategyScan?: StrategyScanResponse | null;
   },
 ) {
   // 浮窗内关联的股票分析（与主页面 analysis 解耦，不影响主页视图）
@@ -2862,20 +2861,6 @@ function FloatingAssistantLauncher(
 
   const activeAnalysis = linked ?? analysis;
   const activePosition = linked ? (portfolio.positions.find((p) => p.symbol === linked.stock.code) ?? null) : position;
-
-  // 状态胶囊数据：今日信号数 + 市场风险度（复用 Dashboard 已拉取的 strategyScan）
-  const scanData = strategyScan?.scan;
-  const signalCount = scanData?.selected?.length ?? 0;
-  const marketState = scanData?.marketState?.state;
-  const marketLabel =
-    marketState === "bull" ? "偏多"
-    : marketState === "bear" ? "偏空"
-    : marketState === "neutral" ? "中性"
-    : marketState === "unknown" ? "未知"
-    : "—";
-  const marketTone: "up" | "down" | "flat" =
-    marketState === "bull" ? "up" : marketState === "bear" ? "down" : "flat";
-  const hasScan = !!scanData;
 
   async function linkStock(value: string) {
     const code = value.trim();
@@ -3011,25 +2996,6 @@ function FloatingAssistantLauncher(
 
   return (
     <>
-      <div
-        className={`scan-status-pill${hasScan ? "" : " is-empty"}${marketTone !== "flat" ? ` tone-${marketTone}` : ""}`}
-        role="button"
-        tabIndex={0}
-        aria-label={hasScan ? `今日 ${signalCount} 只信号，市场${marketLabel}` : "暂无选股扫描结果"}
-        onClick={onToggle}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            onToggle();
-          }
-        }}
-      >
-        <span className="scan-status-pill__dot" aria-hidden />
-        <span className="scan-status-pill__text">
-          {hasScan ? `${signalCount} 只信号` : "暂无扫描"}
-          {hasScan && <em>· {marketLabel}</em>}
-        </span>
-      </div>
       {isMobile ? (
         // 移动端：全屏对话页（始终挂载 SmartAssistant；锁滚动仅打开时）
         <div
@@ -3554,12 +3520,13 @@ const watchStatusMap: Record<"研究中" | "等待条件" | "已买入" | "暂�
   "暂停": { tone: "neutral", icon: NotebookPen, label: "暂停" },
 };
 
-function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved }: {
+function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved, strategyScan }: {
   items: WatchItem[];
   quotes: Record<string, QuoteEntry>;
   onSearch: () => void;
   onAnalyze: (symbol: string) => void;
   onSaved: () => void;
+  strategyScan?: StrategyScanResponse | null;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [message, setMessage] = useState("");
@@ -3645,6 +3612,21 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved }: {
         subtitle="每只股票都保留一个明确的等待条件。"
         actions={<Button variant="primary" iconLeft={<Plus size={16} />} onClick={onSearch}>查找股票</Button>}
       />
+      {(() => {
+        const scan = strategyScan?.scan;
+        const count = scan?.selected?.length ?? 0;
+        const ms = scan?.marketState?.state;
+        const label = ms === "bull" ? "偏多" : ms === "bear" ? "偏空" : ms === "neutral" ? "中性" : ms === "unknown" ? "未知" : "—";
+        const tone = ms === "bull" ? "up" : ms === "bear" ? "down" : "flat";
+        if (!scan) return null;
+        return (
+          <div className={`watch-scan-status${tone !== "flat" ? ` tone-${tone}` : ""}`}>
+            <span className="watch-scan-status__dot" aria-hidden />
+            <span>今日 <strong>{count}</strong> 只信号</span>
+            <em>· 市场{label}</em>
+          </div>
+        );
+      })()}
       {items.length ? (
         <div className="watch-cards">
           {items.map((item) => {
