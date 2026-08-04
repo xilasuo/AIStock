@@ -248,6 +248,9 @@ type AssistantMessage = {
   role: "user" | "assistant";
   content: string;
   mode?: "ai" | "fallback";
+  // 标记为开场迎新消息，渲染时跳过「复制 / 换一版」——迎新内容是固定模板，
+  // 重生成没有意义、复制也没有价值，只会让页面看起来更杂乱。
+  kind?: "primer";
   error?: boolean;
   // 当某条 assistant 消息是失败占位时，保留用户原始问题以便点"重试"复用
   pendingQuestion?: string;
@@ -2424,6 +2427,7 @@ function SmartAssistant(
     } else {
       setMessages([{
         role: "assistant",
+        kind: "primer",
         content: analysis
           ? `${analysis.stock.name}的当前数据已整理好。先记一笔持仓我能说得更准；想买、卖、加减仓随时问。`
           : "还没选中股票。可以先按账户和持仓说话；要谈某只票，先去「个股分析」跑一遍。",
@@ -2581,6 +2585,7 @@ function SmartAssistant(
     }
     setMessages([{
       role: "assistant",
+      kind: "primer",
       content: analysis
         ? `${analysis.stock.name}的当前数据已整理好。先记一笔持仓我能说得更准；想买、卖、加减仓随时问。`
         : "还没选中股票。可以先按账户和持仓说话；要谈某只票，先去「个股分析」跑一遍。",
@@ -2654,7 +2659,7 @@ function SmartAssistant(
               ) : (
                 <AssistantAnswer content={message.content} />
               )}
-              {!regen && (
+              {!regen && message.kind !== "primer" && (
                 <div className="sa-msg__meta">
                   {message.error ? (
                     message.pendingQuestion && (
