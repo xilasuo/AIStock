@@ -1067,6 +1067,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
           setConfirming(null);
         }}
       />
+    </div>
   );
 }
 
