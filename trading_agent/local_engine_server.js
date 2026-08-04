@@ -23,6 +23,32 @@ const DUMP = path.join(BASE, "dump_config.py");
 const PORT = Number(process.env.LOCAL_ENGINE_PORT || 8787);
 const HOST = process.env.LOCAL_ENGINE_HOST || "127.0.0.1";
 
+// 允许前端传递的字段白名单（与 app/api/strategy-scan/run/route.ts 的 ALLOWED_KEYS 保持一致）。
+// 守护进程直接收前端 body 转发给 run_hub.py，必须复用同一白名单，防止未知键直传引擎。
+const ALLOWED_KEYS = new Set([
+  "preset",
+  "top_n", "max_per_sector", "momentum_window",
+  "w_momentum", "w_value", "w_liquidity", "w_rsi", "w_macd", "w_trend", "w_size", "w_quality",
+  "w_fund_flow",
+  "rsi_window", "macd_fast", "macd_slow", "macd_signal", "vol_window",
+  "min_turnover_pct", "max_pe_ttm", "max_pb",
+  "boards", "st_filter", "mcap_min", "mcap_max",
+  "fast_ma", "slow_ma", "use_breakout_filter", "breakout_window", "stop_loss_pct", "max_positions",
+  "market_enable", "index_code", "ma_window", "mom_window", "short_mom_window",
+  "bull_ma_gap", "bear_ma_gap", "bull_mom", "bear_mom",
+  "strong_short_mom", "weak_short_mom", "vol_shrink_threshold",
+  "neutral_up_factor", "neutral_down_factor",
+  "optim_enabled",
+]);
+
+function sanitizeOverrides(body) {
+  const out = {};
+  for (const [k, v] of Object.entries(body || {})) {
+    if (ALLOWED_KEYS.has(k) && v !== null && v !== undefined) out[k] = v;
+  }
+  return out;
+}
+
 function resolvePython() {
   if (process.env.PYTHON_PATH) return process.env.PYTHON_PATH;
   for (const c of ["python3", "python", "py"]) {
@@ -87,6 +113,8 @@ const server = http.createServer((req, res) => {
             ["pre_market", "intraday", "post_market"].includes(parsed.profile)) {
           profile = parsed.profile;
         }
+        // 安全边界：只透传白名单内的字段，避免未知键直传 run_hub.py
+        overrides = sanitizeOverrides(overrides);
       } catch {
         overrides = {};
       }

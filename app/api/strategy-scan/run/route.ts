@@ -1,6 +1,6 @@
 import { requireApiUser } from "../../../../lib/auth/auth";
 import { execFileSync } from "child_process";
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import {
   SUPPORTS_EXEC,
   resolvePython,
@@ -9,14 +9,33 @@ import {
 import path from "path";
 
 /**
- * 计算项目根目录（延迟求值，避免在 Workers/Miniflare 模块顶层
- * 使用 import.meta.url/fileURLToPath 导致 "path must be string" 崩溃）。
+ * 探测项目根目录。
  *
- * 容器内 wrangler 运行时 cwd 为 /app/dist/server，trading_agent 在 /app，
- * 故向上三层即为项目根；本地真实 Node 部署同样适用。
+ * 写死的 `../../..` 在不同部署下会错位：本地真实 Node 部署 cwd 通常为项目根，
+ * 而容器内 wrangler 运行时 cwd 为 /app/dist/server（仅向上两层才是 /app）。
+ * 改用「是否存在 trading_agent/run_hub.py」作为锚点做多候选探测，
+ * 找不到时再兜底回退旧的三层假设，保证任意部署都能定位引擎目录。
  */
+function findProjectRoot(): string {
+  const candidates = [
+    process.cwd(),
+    path.resolve(process.cwd(), ".."),
+    path.resolve(process.cwd(), "..", ".."),
+    path.resolve(process.cwd(), "..", "..", ".."),
+    path.resolve(process.cwd(), "..", "..", "..", ".."),
+  ];
+  for (const c of candidates) {
+    try {
+      if (existsSync(path.join(c, "trading_agent", "run_hub.py"))) return c;
+    } catch {
+      // 忽略不可访问的路径
+    }
+  }
+  return path.resolve(process.cwd(), "..", "..", "..");
+}
+
 function projectRoot(): string {
-  return path.resolve(process.cwd(), "../../..");
+  return findProjectRoot();
 }
 
 /**

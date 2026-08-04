@@ -17,9 +17,9 @@ export type TradingPreferences = {
 };
 
 export const RISK_PRESETS: Record<RiskProfile, Omit<TradingPreferences, "disciplineNote">> = {
-  保守: { riskProfile: "保守", maxLossPercent: 1, maxConcentrationPercent: 15, maxPositionPercent: 50, enforceStopLoss: true },
-  平衡: { riskProfile: "平衡", maxLossPercent: 2, maxConcentrationPercent: 30, maxPositionPercent: 70, enforceStopLoss: true },
-  激进: { riskProfile: "激进", maxLossPercent: 4, maxConcentrationPercent: 50, maxPositionPercent: 90, enforceStopLoss: false },
+  保守: { riskProfile: "保守", maxLossPercent: 1, maxConcentrationPercent: 15, maxPositionPercent: 50, enforceStopLoss: true, stealthMode: false },
+  平衡: { riskProfile: "平衡", maxLossPercent: 2, maxConcentrationPercent: 30, maxPositionPercent: 70, enforceStopLoss: true, stealthMode: false },
+  激进: { riskProfile: "激进", maxLossPercent: 4, maxConcentrationPercent: 50, maxPositionPercent: 90, enforceStopLoss: false, stealthMode: false },
 };
 
 export const DEFAULT_PREFERENCES: TradingPreferences = {

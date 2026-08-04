@@ -4,17 +4,39 @@ import type { NextRequest } from "next/server";
 import {
   SUPPORTS_EXEC,
   resolvePython,
-  isExecNotImplemented,
 } from "../../../../lib/utils/pythonExec";
 import path from "path";
+import { existsSync } from "fs";
 import { env } from "cloudflare:workers";
 
 /**
- * 计算项目根目录（延迟求值，避免在 Workers/Miniflare 模块顶层
- * 使用 import.meta.url/fileURLToPath 导致 "path must be string" 崩溃）。
+ * 探测项目根目录。
+ *
+ * 写死的 `../../..` 在不同部署下会错位：本地真实 Node 部署 cwd 通常为项目根，
+ * 而容器内 wrangler 运行时 cwd 为 /app/dist/server（仅向上两层才是 /app）。
+ * 故改用「是否存在 trading_agent/run_hub.py」作为锚点做多候选探测，
+ * 找不到时再兜底回退旧的三层假设，保证任意部署都能定位引擎目录。
  */
+function findProjectRoot(): string {
+  const candidates = [
+    process.cwd(),
+    path.resolve(process.cwd(), ".."),
+    path.resolve(process.cwd(), "..", ".."),
+    path.resolve(process.cwd(), "..", "..", ".."),
+    path.resolve(process.cwd(), "..", "..", "..", ".."),
+  ];
+  for (const c of candidates) {
+    try {
+      if (existsSync(path.join(c, "trading_agent", "run_hub.py"))) return c;
+    } catch {
+      // 忽略不可访问的路径
+    }
+  }
+  return path.resolve(process.cwd(), "..", "..", "..");
+}
+
 function projectRoot(): string {
-  return path.resolve(process.cwd(), "../../..");
+  return findProjectRoot();
 }
 
 /**
@@ -176,19 +198,15 @@ export async function GET(req: Request) {
       return Response.json({ ok: true, config: cfg });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      // 沙箱禁 child_process / exec 不可用 -> 回退内置默认配置，保证前端可配置
-      if (isExecNotImplemented(msg)) {
-        return Response.json({
-          ok: true,
-          config: { profiles: FALLBACK_PROFILES },
-          note: "云端环境（沙箱）无法读取实时 YAML，已返回内置默认配置。实际选股由本地程序拉取本配置后执行。",
-        });
-      }
       console.error("[strategy-scan/config] error:", msg);
-      return Response.json(
-        { ok: false, error: `读取配置失败: ${msg}` },
-        { status: 500 },
-      );
+      // 真实 Node 下若 dump_config.py / python 不可用（文件缺失、环境异常等），
+      // 不再返回 500，而是回退内置默认配置，保证前端可正常配置与展示；
+      // 实际选股由本地程序拉取本配置（或已存云端配置）后执行。
+      return Response.json({
+        ok: true,
+        config: { profiles: FALLBACK_PROFILES },
+        note: `无法读取实时 YAML（${msg}），已返回内置默认配置。实际选股由本地程序拉取本配置后执行。`,
+      });
     }
   }
 
