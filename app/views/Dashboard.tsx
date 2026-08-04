@@ -231,6 +231,16 @@ type Analysis = {
   strategyWarning?: string;
 };
 
+/**
+ * 行情快照条目。
+ *
+ * 注意：写入 localStorage 时只保留 stock/quote/history 三个字段（见 writeKeyedCache 调用处），
+ * 因此刷新页面后从缓存恢复的对象并不具备完整 Analysis 的其余字段。此前该状态被标注为
+ * Record<string, Analysis>，属于类型契约破坏——类型声称字段存在而运行时为 undefined。
+ * 这里显式收窄为实际持久化的字段集合，让类型与运行时一致。
+ */
+type QuoteEntry = Pick<Analysis, "stock" | "quote" | "history">;
+
 type Position = ReturnType<typeof calculatePortfolio>["positions"][number];
 
 type AssistantMessage = {
@@ -357,7 +367,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   // 最近分析与行情快照从 localStorage 恢复，刷新页面时避免首屏空白；
   // 行情快照 TTL 较短（10 分钟），过期数据会在后续轮询中被自动覆盖。
   const [recentAnalyses, setRecentAnalyses] = useState<Analysis[]>(() => readCache<Analysis[]>("recent") ?? []);
-  const [quotes, setQuotes] = useState<Record<string, Analysis>>(() => readKeyedCache<Analysis>("quotes", 10 * 60 * 1000) ?? {});
+  const [quotes, setQuotes] = useState<Record<string, QuoteEntry>>(() => readKeyedCache<QuoteEntry>("quotes", 10 * 60 * 1000) ?? {});
   const [trades, setTrades] = useState<Trade[]>([]);
   const [watchlist, setWatchlist] = useState<WatchItem[]>([]);
   const [alerts, setAlerts] = useState<AlertRule[]>([]);
@@ -1335,7 +1345,7 @@ function Home({
 }: {
   portfolio: ReturnType<typeof calculatePortfolio>;
   portfolioInsights: PortfolioInsights;
-  quotes: Record<string, Analysis>;
+  quotes: Record<string, QuoteEntry>;
   alerts: AlertRule[];
   pendingReviews: TradeCycle[];
   trades: Trade[];
@@ -3549,7 +3559,7 @@ const watchStatusMap: Record<"研究中" | "等待条件" | "已买入" | "暂�
 
 function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved }: {
   items: WatchItem[];
-  quotes: Record<string, Analysis>;
+  quotes: Record<string, QuoteEntry>;
   onSearch: () => void;
   onAnalyze: (symbol: string) => void;
   onSaved: () => void;

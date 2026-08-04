@@ -6384,7 +6384,7 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
   gap: 10px;
   margin: 0;
   max-height: min(82dvh, 760px);
-  overflow: hidden;
+  /* overflow 不再 hidden，让 .sa-linker__pop 等 popover 能正常溢出 */
   padding: 14px 16px 12px;
 }
 .assistant-fab-panel .sa--floating .sa-head {
