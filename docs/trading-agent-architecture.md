@@ -228,5 +228,5 @@ AGENT_BIND_PORT=8080
 
 - 结果为历史数据分析 / 回测 / 模拟，不构成投资建议。**执行回写默认 dry-run 安全**，真实下单需显式开启 `enable_writeback` 且 `dry_run=False`。
 - `WestockConnector` / `TdxConnector` 已实现，连接后由 `config.ConnectorsConfig` 启用；未配置则自动退回腾讯/东财直连，保持零连接可跑。
-- 微信 / App 提醒：云端部署实际采用 **WorkBuddy 智能体邮箱（agent-mail）** 中转个人微信（零额外账号，已启用 `nphr6414@agent.qq.com`）；`connectors/push.py` 的企业微信 Webhook（`WECOM_WEBHOOK_URL`）为可选代码路径，未配置企业微信时不用。个人微信也可选 Server酱 / PushPlus 等第三方 relay。
+- 微信 / App 提醒：云端部署实际采用 **WorkBuddy 智能体邮箱（agent-mail）** 中转个人微信（零额外账号，具体地址见 `.env` / WorkBuddy 面板）；`connectors/push.py` 的企业微信 Webhook（`WECOM_WEBHOOK_URL`）为可选代码路径，未配置企业微信时不用。个人微信也可选 Server酱 / PushPlus 等第三方 relay。
 - **Cloudflare Workers 沙箱禁止 handler 内 `fs.writeFile('/data/...')`**（`operation not permitted`）。扫描/回写结果一律存 D1（`strategy_scan` / `strategy_writeback`），切勿改回裸文件写入。

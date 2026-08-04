@@ -19,7 +19,7 @@
 |------|------|--------|
 | **本地 PC · 计算引擎** `trading_agent` | 你的电脑 | 选股 / 信号 / 回测 / 优化（纯计算） |
 | **WorkBuddy · 中枢** | WorkBuddy 应用 | 取行情数据、编排流程、定时触发、发邮件 |
-| **云端 AIStock** | 服务器 `http://120.48.87.170:9003` | 展示「策略扫描」「回写结果」页面 |
+| **云端 AIStock** | 服务器 `http://<SERVER_HOST>:9003` | 展示「策略扫描」「回写结果」页面 |
 
 数据流：`WorkBuddy 取数 → 注入 trading_agent 引擎 → 引擎算出结果 → 推云端 + 发邮箱`。
 
@@ -32,7 +32,7 @@
 - 代码仓库已在本地：`D:/code/AICode/AIStock`（或自行 `git clone`）。
 - **Python 3.13**。`trading_agent` 只依赖 Python 标准库，**不需要 `pip install` 任何东西**。
   - 若命令行里 `python`/`python3` 指向 3.13 可直接用；
-  - 本机有 WorkBuddy 管理的 Python，也可用完整路径：`C:\Users\xilasuo\.workbuddy\binaries\python\versions\3.13.12\python.exe`。
+  - 本机有 WorkBuddy 管理的 Python，也可用完整路径：`<PYTHON_3_13_PATH>`。
 
 ### 1.2 配置 `.env`（PC 侧关心的几项）
 
@@ -40,9 +40,9 @@
 
 ```dotenv
 # 云端复盘 App 接收地址（把选股结果推到服务器）
-CLOUD_SCAN_URL=http://120.48.87.170:9003/api/strategy-scan
+CLOUD_SCAN_URL=http://<SERVER_HOST>:9003/api/strategy-scan
 CLOUD_SCAN_TOKEN=<与云端 STRATEGY_PUSH_TOKEN 相同的字符串>
-CLOUD_WRITEBACK_URL=http://120.48.87.170:9003/api/writeback-signals
+CLOUD_WRITEBACK_URL=http://<SERVER_HOST>:9003/api/writeback-signals
 
 # 个人微信推送（可选，二选一；不填则只走邮箱）
 # WX_PUSH_DRIVER=servercan
@@ -64,7 +64,7 @@ CLOUD_WRITEBACK_URL=http://120.48.87.170:9003/api/writeback-signals
 
 ### 1.4 智能体邮箱（已开通）
 
-WorkBuddy 智能体邮箱已开通：**`nphr6414@agent.qq.com`**。每日选股摘要会发到这里，手机邮件 App 即可收。
+WorkBuddy 智能体邮箱已开通（具体地址见 `.env` / WorkBuddy 面板）。每日选股摘要会发到这里，手机邮件 App 即可收。
 
 ---
 
@@ -78,7 +78,7 @@ WorkBuddy 智能体邮箱已开通：**`nphr6414@agent.qq.com`**。每日选股�
 2. 用 `tdx-connector` / `westock-mcp` 取最新 K 线与估值；
 3. 写成 `trading_agent/prefetched.json`；
 4. 运行 `run_hub.py` 跑引擎（选股 → 信号 → 回测 → 优化）；
-5. 推送云端「策略扫描」「回写结果」两页，并往 `nphr6414@agent.qq.com` 发邮件摘要。
+5. 推送云端「策略扫描」「回写结果」两页，并往智能体邮箱发邮件摘要。
 
 **你早上打开邮箱看一眼即可。**
 
@@ -95,8 +95,8 @@ WorkBuddy 会按上面的流程跑一遍并回报结果。
 
 | 渠道 | 位置 | 内容 |
 |------|------|------|
-| **邮箱** | `nphr6414@agent.qq.com` | 选股摘要（标题「盘前选股 YYYY-MM-DD」，含入选标的/PE/PB/动量 + 回测） |
-| **云端 App** | `http://120.48.87.170:9003/` → 登录 → 「策略扫描」「回写结果」 | 完整扫描结果 + 候选回写信号（标注「模拟 dry-run」） |
+| **邮箱** | 智能体邮箱 | 选股摘要（标题「盘前选股 YYYY-MM-DD」，含入选标的/PE/PB/动量 + 回测） |
+| **云端 App** | `http://<SERVER_HOST>:9003/` → 登录 → 「策略扫描」「回写结果」 | 完整扫描结果 + 候选回写信号（标注「模拟 dry-run」） |
 | **本地文件** | `trading_agent/scan_payload.json`、`signals_out.json`、`reports/` | 引擎原始产出，方便本地查看/调试 |
 
 ---
@@ -148,11 +148,11 @@ WorkBuddy 每日 09:00 自动化（或你手动说一句触发）
 跑完 `run_hub.py`（第 5 节命令）后，终端会打印：
 
 ```
-扫描推送 成功 (HTTP 200) -> http://120.48.87.170:9003/api/strategy-scan
-回写推送 成功 (HTTP 200) -> http://120.48.87.170:9003/api/writeback-signals
+扫描推送 成功 (HTTP 200) -> http://<SERVER_HOST>:9003/api/strategy-scan
+回写推送 成功 (HTTP 200) -> http://<SERVER_HOST>:9003/api/writeback-signals
 ```
 
-看到两个 `HTTP 200` 即推送成功；随后打开 `http://120.48.87.170:9003/` 登录，看「策略扫描」「回写结果」两个视图即为当天真实数据。
+看到两个 `HTTP 200` 即推送成功；随后打开 `http://<SERVER_HOST>:9003/` 登录，看「策略扫描」「回写结果」两个视图即为当天真实数据。
 
 ---
 
@@ -181,9 +181,9 @@ WorkBuddy 每日 09:00 自动化（或你手动说一句触发）
 cd D:/code/AICode/AIStock/trading_agent
 
 # 设置环境变量（token 须与云端一致）
-export CLOUD_SCAN_URL=http://120.48.87.170:9003/api/strategy-scan
+export CLOUD_SCAN_URL=http://<SERVER_HOST>:9003/api/strategy-scan
 export CLOUD_SCAN_TOKEN=<你的token>
-export CLOUD_WRITEBACK_URL=http://120.48.87.170:9003/api/writeback-signals
+export CLOUD_WRITEBACK_URL=http://<SERVER_HOST>:9003/api/writeback-signals
 
 # 跑引擎并推送
 python run_hub.py --prefetched prefetched.json

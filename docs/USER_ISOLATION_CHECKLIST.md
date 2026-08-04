@@ -36,7 +36,9 @@ git pull origin main
 - 云端 D1 控制台 / `wrangler d1 execute` 执行 `SELECT user_id FROM strategy_config LIMIT 1;` 不报 "no such column" 即通过。
 - 或直接跑下方「验证」：若接口正常返回、且 `scope` 字段出现，说明迁移成功。
 
-## 四、逐项验证（curl，替换 `<SERVER_URL>` 为 `http://120.48.87.170:9003`）
+## 四、逐项验证（curl，替换 `<SERVER_URL>` 为实际地址）
+
+## 四、逐项验证（curl，替换 `<SERVER_URL>` 为实际地址）
 
 ### 0. 准备：登录取会话 cookie
 
