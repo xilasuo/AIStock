@@ -163,7 +163,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: var(--accent-soft, #eceff2);
+  background: var(--accent-soft, #eef0ec);
   color: var(--accent-ink, #2c4a64);
   border-radius: 999px;
   padding: 3px 10px;

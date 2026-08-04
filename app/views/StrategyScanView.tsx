@@ -679,16 +679,16 @@ export function StrategyScanView({
           {scan.selected.map((s) => (
             <div
               key={s.code}
-              style={{ borderBottom: "1px solid #e5e7eb", paddingBottom: 8 }}
+              style={{ borderBottom: "1px solid var(--line)", paddingBottom: 8 }}
             >
               <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
                 <span style={{ fontWeight: 600 }}>{s.name}</span>
-                <span style={{ color: "#6b7280", fontSize: 12 }}>{s.code}</span>
-                <span style={{ marginLeft: "auto", color: "#1d4ed8", fontSize: 12 }}>
+                <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{s.code}</span>
+                <span style={{ marginLeft: "auto", color: "var(--accent-ink)", fontSize: 12 }}>
                   得分 {(s.score ?? 0).toFixed(2)}
                 </span>
               </div>
-              <div style={{ marginTop: 4, fontSize: 13, color: "#374151" }}>
+              <div style={{ marginTop: 4, fontSize: 13, color: "var(--text-soft)" }}>
                 {s.rationale || "—"}
               </div>
             </div>

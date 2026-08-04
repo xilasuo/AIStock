@@ -49,9 +49,9 @@ export type ScreenerOverrides = {
 export type RiskTier = "保守" | "平衡" | "激进";
 
 export const RISK_TIERS: { key: RiskTier; label: string; hint: string; color: string }[] = [
-  { key: "保守", label: "保守", hint: "低风险 · 重估值/质量/规模，避开追涨", color: "#16a34a" },
-  { key: "平衡", label: "平衡", hint: "中等风险 · 经典趋势/动量/动能", color: "#2563eb" },
-  { key: "激进", label: "激进", hint: "高风险 · 高动量/高换手，追涨题材", color: "#dc2626" },
+  { key: "保守", label: "保守", hint: "低风险 · 重估值/质量/规模，避开追涨", color: "#1f8a63" },
+  { key: "平衡", label: "平衡", hint: "中等风险 · 经典趋势/动量/动能", color: "#3a5a78" },
+  { key: "激进", label: "激进", hint: "高风险 · 高动量/高换手，追涨题材", color: "#c2434f" },
 ];
 
 export const RISK_TIER_LABEL: Record<RiskTier, string> = {

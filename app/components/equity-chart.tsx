@@ -65,7 +65,7 @@ export function EquityCurveChart({ title, points, height = 220 }: EquityCurveCha
 
     const series = chart.addSeries(AreaSeries, {
       lineColor: cssVar("--accent", "#3a5a78"),
-      topColor: cssVar("--accent-soft", "#eceff2"),
+      topColor: cssVar("--accent-soft", "#eef0ec"),
       bottomColor: "transparent",
       lineWidth: 2,
       priceFormat: {

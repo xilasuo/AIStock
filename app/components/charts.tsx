@@ -42,8 +42,16 @@ export function BarList({
 }
 
 const DONUT_PALETTE = [
-  "var(--accent)", "#5b8def", "#e0a458", "#7bc47f", "#c879b8",
-  "#6cc5c0", "#d98b6b", "#9b8cff", "#b5c967", "#e07979",
+  "var(--accent)",   // 钢蓝（主色）
+  "var(--amber)",    // 琥珀
+  "#5e7d99",         // 雾蓝
+  "#b58a4a",         // 暗金
+  "#6f9b86",         // 雾绿
+  "#a86b62",         // 陶土
+  "#7e7596",         // 灰紫
+  "#c4a878",         // 沙褐
+  "#8a9bab",         // 石板蓝
+  "#9c8f6f",         // 橄榄褐
 ];
 
 export function DonutChart({
