@@ -2935,10 +2935,9 @@ svg { display: block; }
   50%      { box-shadow: 0 0 0 6px rgba(194, 67, 79, 0); }
 }
 
-/* 移动端：复制按钮更紧凑，语音按钮方形优先 */
+/* 移动端：复制按钮更紧凑 */
 @media (max-width: 560px) {
   .assistant-bubble__copy { padding: 2px 6px; }
-  .assistant-mic { height: 44px; width: 44px; }
 }
 
 .assistant-bubble.assistant .markdown-body ul,

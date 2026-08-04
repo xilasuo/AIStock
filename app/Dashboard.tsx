@@ -433,6 +433,14 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     window.setTimeout(() => setToast(""), 2600);
   }, []);
 
+  const clearLocalCache = useCallback(() => {
+    // 清空浏览器本地保存的最近分析与行情快照缓存
+    removeCache("quotes");
+    removeCache("recent");
+    setRecentAnalyses([]);
+    flash("本地分析缓存已清空");
+  }, [flash]);
+
   const loadData = useCallback(async () => {
     try {
       const [tradeData, watchData, alertData, reviewData, statusData, accountData, preferencesData] = await Promise.all([
@@ -959,6 +967,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 preferences={preferences}
                 onSavePreferences={savePreferences}
                 onImported={loadData}
+                onClearCache={() => setConfirming("clearCache")}
                 currentUser={user}
               />
             )}
@@ -1045,7 +1054,19 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
           window.location.href = signOutUrl;
         }}
       />
-    </div>
+      <ConfirmDialog
+        open={confirming === "clearCache"}
+        eyebrow="确认操作"
+        title="清空本地分析缓存？"
+        message="将清除浏览器中保存的最近 6 条分析记录与行情快照，不影响服务器上的交易、关注、复盘等数据。确定要清空吗？"
+        confirmLabel="确认清空"
+        tone="danger"
+        onCancel={() => setConfirming(null)}
+        onConfirm={() => {
+          clearLocalCache();
+          setConfirming(null);
+        }}
+      />
   );
 }
 
@@ -2527,9 +2548,18 @@ function SmartAssistant(
   }
 
   // —— 语音输入 ——
+  // 语音按钮仅桌面端展示：移动端浏览器对 Web Speech API 支持差/不稳定，且后端只收文本
   const speechSupported =
     typeof window !== "undefined" &&
     ("webkitSpeechRecognition" in window || "SpeechRecognition" in window);
+  const [isDesktop, setIsDesktop] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)");
+    const sync = () => setIsDesktop(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
 
@@ -2697,7 +2727,7 @@ function SmartAssistant(
         ))}
       </div>
       <form className="assistant-form" onSubmit={submit}>
-        {speechSupported && (
+        {speechSupported && isDesktop && (
           <button
             type="button"
             className={`assistant-mic${listening ? " is-listening" : ""}`}
@@ -4026,6 +4056,7 @@ function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferenc
   onDeleteFlow: (flowId: number) => Promise<void>;
   onSavePreferences: (next: TradingPreferences) => Promise<void>;
   onImported: () => void;
+  onClearCache: () => void;
   currentUser: User;
 }) {
   const notificationState = typeof window !== "undefined" && "Notification" in window ? Notification.permission : "unsupported";
@@ -4099,6 +4130,15 @@ function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferenc
       text: "交易数据保存在私有数据库中，可随时下载JSON备份。",
       state: "默认私有",
       tone: "green",
+    },
+    {
+      id: "cache",
+      Icon: Trash2,
+      title: "本地缓存",
+      caption: "浏览器分析缓存",
+      text: "浏览器本地保存的最近分析（最多6条）与行情快照，仅用于刷新页面免首屏空白。清空不影响服务器上的交易、关注、复盘等数据。",
+      state: "可清空",
+      tone: "neutral",
     },
   ];
 
@@ -4256,6 +4296,13 @@ function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferenc
                     <h3>导出个人数据</h3>
                     <p>备份包含交易、关注、提醒与复盘，不包含任何API密钥。</p>
                     <a className="btn btn--primary" href="/api/export">下载JSON备份</a>
+                  </div>
+                )}
+                {card.id === "cache" && (
+                  <div className="settings-card__panel">
+                    <h3>清空本地分析缓存</h3>
+                    <p>浏览器本地保存的最近分析（最多6条，7天自动过期）与行情快照（10分钟）仅用于刷新页面时免首屏空白。清空后不影响服务器上的交易、关注、复盘等数据，重新分析会自动重新生成。</p>
+                    <Button variant="danger" onClick={onClearCache}>清空本地缓存</Button>
                   </div>
                 )}
                 {card.id === "risk" && (

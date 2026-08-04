@@ -1,0 +1,8 @@
+{
+  "name": "每日选股中枢编排（盘前·邮箱+企业微信推送）",
+  "prompt": "【整段粘贴同目录 automation_prompt.txt 的内容；并把其中 {{ENV_FILE}} / {{PY_BIN}} / {{TA_DIR}} 三个占位符替换为真实路径】",
+  "scheduleType": "recurring",
+  "rrule": "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=8;BYMINUTE=0",
+  "cwds": ["{{TA_DIR}}"],
+  "status": "ACTIVE"
+}
