@@ -51,7 +51,6 @@ Thumbs.db
 # ---- personal IDE / agent data (不共享的个人开发数据) ----
 .codebuddy/
 .workbuddy/
-/docs/
 
 # ---- local runtime data ----
 # deploy.sh 中说明数据目录为 $PROJECT_DIR/data (D1 SQLite)，属本地运行产物
