@@ -34,6 +34,8 @@ export type ScanSelected = {
   riskAdjMomentum?: number;
   trend?: number;
   factors?: Record<string, number>;
+  /** 入选理由（解释性，screener 生成）；旧 payload 可能缺失，故可选 */
+  rationale?: string;
   /** 行业（行业分散约束）；旧 payload 可能缺失，故可选 */
   sector?: string;
   /** 主力净流入占流通市值千分比（正值=主力净流入）；数据源未提供则缺失 */
@@ -595,6 +597,33 @@ export function StrategyScanView({
             })}
           </tbody>
         </table>
+        </div>
+      </Card>
+
+      {/* ② 解释性：为什么选这些票 */}
+      <Card>
+        <CardHeader
+          title="为什么选这些票"
+          desc="基于多因子归一化贡献自动生成入选理由，一眼看懂每只票的核心驱动。"
+        />
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {scan.selected.map((s) => (
+            <div
+              key={s.code}
+              style={{ borderBottom: "1px solid #e5e7eb", paddingBottom: 8 }}
+            >
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                <span style={{ fontWeight: 600 }}>{s.name}</span>
+                <span style={{ color: "#6b7280", fontSize: 12 }}>{s.code}</span>
+                <span style={{ marginLeft: "auto", color: "#1d4ed8", fontSize: 12 }}>
+                  得分 {(s.score ?? 0).toFixed(2)}
+                </span>
+              </div>
+              <div style={{ marginTop: 4, fontSize: 13, color: "#374151" }}>
+                {s.rationale || "—"}
+              </div>
+            </div>
+          ))}
         </div>
       </Card>
 

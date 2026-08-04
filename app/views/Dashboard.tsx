@@ -30,7 +30,6 @@ import {
   Upload,
   Check,
   Copy,
-  Mic,
   Trash2,
   CheckCircle2,
   MessageCircle,
@@ -1047,6 +1046,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
         recentAnalyses={recentAnalyses}
         fetchAnalysis={fetchAnalysis}
         userId={user.id}
+        strategyScan={strategyScan}
       />
       <ConfirmDialog
         open={confirming === "logout"}
@@ -2298,19 +2298,6 @@ const SECTION_LABELS: Record<string, string> = {
   next: "下一步",
 };
 
-// 语音识别的最小类型声明（规避 @types/dom 在不同环境下的差异）
-interface SpeechRecognitionLike {
-  lang: string;
-  interimResults: boolean;
-  continuous: boolean;
-  onresult: ((event: { resultIndex: number; results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }> }) => void) | null;
-  onend: (() => void) | null;
-  onerror: (() => void) | null;
-  start: () => void;
-  stop: () => void;
-}
-type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
-
 function AssistantAnswer({ content }: { content: string }) {
   const sections = useMemo(() => splitAssistantSections(content), [content]);
   const isStructured = sections.length >= 2 && sections.some((s) => s.kind !== "other");
@@ -2379,7 +2366,6 @@ function SmartAssistant(
   const [primed, setPrimed] = useState(false);
   const [assistantMode, setAssistantMode] = useState<"ai" | "fallback" | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
-  const lastInterim = useRef("");
   const stockCode = analysis?.stock.code ?? "";
 
   const scrollToBottom = useCallback((smooth = true) => {
@@ -2574,58 +2560,6 @@ function SmartAssistant(
     setAssistantMode(null);
   }
 
-  // —— 语音输入 ——
-  // 语音按钮仅桌面端展示：移动端浏览器对 Web Speech API 支持差/不稳定，且后端只收文本
-  const speechSupported =
-    typeof window !== "undefined" &&
-    ("webkitSpeechRecognition" in window || "SpeechRecognition" in window);
-  const [isDesktop, setIsDesktop] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia("(min-width: 768px)");
-    const sync = () => setIsDesktop(mq.matches);
-    sync();
-    mq.addEventListener("change", sync);
-    return () => mq.removeEventListener("change", sync);
-  }, []);
-  const [listening, setListening] = useState(false);
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-
-  function toggleSpeech() {
-    if (listening) {
-      recognitionRef.current?.stop();
-      return;
-    }
-    const SR = (window as unknown as { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor }).SpeechRecognition
-      ?? (window as unknown as { webkitSpeechRecognition?: SpeechRecognitionCtor }).webkitSpeechRecognition;
-    if (!SR) return;
-    const rec = new SR();
-    rec.lang = "zh-CN";
-    rec.interimResults = true;
-    rec.continuous = false;
-    rec.onresult = (event: { resultIndex: number; results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }> }) => {
-      let transcript = "";
-      for (let i = event.resultIndex; i < event.results.length; i += 1) {
-        transcript += event.results[i][0].transcript;
-      }
-      setQuestion((prev) => {
-        // 只在首次或空闲时替换，避免与手动输入冲突
-        if (!prev || prev === lastInterim.current) return transcript;
-        return prev;
-      });
-      lastInterim.current = transcript;
-    };
-    rec.onend = () => { setListening(false); lastInterim.current = ""; };
-    rec.onerror = () => { setListening(false); lastInterim.current = ""; };
-    recognitionRef.current = rec;
-    lastInterim.current = "";
-    try {
-      rec.start();
-      setListening(true);
-    } catch {
-      setListening(false);
-    }
-  }
-
   const prompts = analysis
     ? (position
       ? ["当前仓位是否允许加仓？", "结合我的成本怎么看？", "主要风险是什么？"]
@@ -2754,22 +2688,11 @@ function SmartAssistant(
         ))}
       </div>
       <form className="assistant-form" onSubmit={submit}>
-        {speechSupported && isDesktop && (
-          <button
-            type="button"
-            className={`assistant-mic${listening ? " is-listening" : ""}`}
-            onClick={toggleSpeech}
-            aria-label={listening ? "停止语音输入" : "语音输入"}
-            title={listening ? "正在聆听，点击停止" : "语音输入"}
-          >
-            <Mic size={16} />
-          </button>
-        )}
         <input
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
           maxLength={300}
-          placeholder={listening ? "正在聆听…" : (analysis ? `继续问${analysis.stock.name}…` : "问账户、持仓或收益…")}
+          placeholder={analysis ? `继续问${analysis.stock.name}…` : "问账户、持仓或收益…"}
           aria-label="向复盘助手提问"
         />
         <Button variant="primary" type="submit" disabled={asking || !question.trim()}>{asking ? "思考中…" : "发送"}</Button>
@@ -2780,7 +2703,7 @@ function SmartAssistant(
 }
 
 function FloatingAssistantLauncher(
-  { open, onToggle, analysis, position, portfolioInsights, portfolio, watchlist, recentAnalyses, fetchAnalysis, userId }: {
+  { open, onToggle, analysis, position, portfolioInsights, portfolio, watchlist, recentAnalyses, fetchAnalysis, userId, strategyScan }: {
     open: boolean;
     onToggle: () => void;
     analysis: Analysis | null;
@@ -2791,6 +2714,7 @@ function FloatingAssistantLauncher(
     recentAnalyses: Analysis[];
     fetchAnalysis: (query: string, showResult?: boolean) => Promise<Analysis | null>;
     userId?: string | number;
+    strategyScan?: StrategyScanResponse | null;
   },
 ) {
   // 浮窗内关联的股票分析（与主页面 analysis 解耦，不影响主页视图）
@@ -2801,6 +2725,7 @@ function FloatingAssistantLauncher(
   // 拖拽定位：记录 FAB 当前固定的 left/top（视口坐标）。null 表示使用 CSS 默认右下角。
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const fabRef = useRef<HTMLButtonElement | null>(null);
+  const pillRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const dragState = useRef<{
     pointerX: number;
@@ -2836,6 +2761,17 @@ function FloatingAssistantLauncher(
       panelRef.current.style.top = `${pTop}px`;
       panelRef.current.style.right = "auto";
       panelRef.current.style.bottom = "auto";
+    }
+    // 状态胶囊跟随 FAB：右对齐其右缘、置于其上方 8px，拖拽时实时跟随
+    if (pillRef.current) {
+      const pw = pillRef.current.offsetWidth || 140;
+      const ph = pillRef.current.offsetHeight || 30;
+      const pLeft = left + 50 - pw;
+      const pTop = top - ph - 8;
+      pillRef.current.style.left = `${Math.max(8, pLeft)}px`;
+      pillRef.current.style.top = `${pTop}px`;
+      pillRef.current.style.right = "auto";
+      pillRef.current.style.bottom = "auto";
     }
   };
 
@@ -2895,6 +2831,20 @@ function FloatingAssistantLauncher(
   const activeAnalysis = linked ?? analysis;
   const activePosition = linked ? (portfolio.positions.find((p) => p.symbol === linked.stock.code) ?? null) : position;
 
+  // 状态胶囊数据：今日信号数 + 市场风险度（复用 Dashboard 已拉取的 strategyScan）
+  const scanData = strategyScan?.scan;
+  const signalCount = scanData?.selected?.length ?? 0;
+  const marketState = scanData?.marketState?.state;
+  const marketLabel =
+    marketState === "bull" ? "偏多"
+    : marketState === "bear" ? "偏空"
+    : marketState === "neutral" ? "中性"
+    : marketState === "unknown" ? "未知"
+    : "—";
+  const marketTone: "up" | "down" | "flat" =
+    marketState === "bull" ? "up" : marketState === "bear" ? "down" : "flat";
+  const hasScan = !!scanData;
+
   async function linkStock(value: string) {
     const code = value.trim();
     if (!code) return;
@@ -2927,6 +2877,32 @@ function FloatingAssistantLauncher(
 
   return (
     <>
+      <div
+        ref={pillRef}
+        className={`scan-status-pill${hasScan ? "" : " is-empty"}${marketTone !== "flat" ? ` tone-${marketTone}` : ""}`}
+        role="button"
+        tabIndex={0}
+        aria-label={hasScan ? `今日 ${signalCount} 只信号，市场${marketLabel}` : "暂无选股扫描结果"}
+        onClick={() => {
+          if (draggedRef.current) {
+            draggedRef.current = false;
+            return;
+          }
+          onToggle();
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onToggle();
+          }
+        }}
+      >
+        <span className="scan-status-pill__dot" aria-hidden />
+        <span className="scan-status-pill__text">
+          {hasScan ? `${signalCount} 只信号` : "暂无扫描"}
+          {hasScan && <em>· {marketLabel}</em>}
+        </span>
+      </div>
       {open && (
         <div ref={panelRef} className="assistant-fab-panel" role="dialog" aria-label="复盘助手" style={panelStyle}>
           <SmartAssistant

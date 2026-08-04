@@ -98,6 +98,69 @@ def _median(xs: list[float]) -> float:
     return s[m] if len(s) % 2 else (s[m - 1] + s[m]) / 2.0
 
 
+# —— 入选理由（解释性）——
+# 把归一化因子贡献翻译成一句人话，让用户一眼看懂「为什么选它」。
+# 与前端「为什么选这些票」卡片配套；缺失/异常时优雅降级为评分句。
+_FACTOR_PHRASE_FN = {
+    "momentum": lambda r: (lambda m: (
+        f"动量强劲（{m * 100:.1f}%）" if m > 0.08 else
+        f"动量温和（{m * 100:.1f}%）" if m > 0.03 else
+        f"动量偏弱（{m * 100:.1f}%）" if m > 0 else
+        f"动量走弱（{m * 100:.1f}%）"
+    ))(r.get("momentum") or 0),
+    "rsi": lambda r: (lambda v: (
+        f"RSI超卖（{v:.0f}）" if v <= 35 else
+        f"RSI超买（{v:.0f}）" if v >= 70 else
+        f"RSI中性（{v:.0f}）"
+    ))(r.get("rsi") or 50),
+    "macd": lambda r: (lambda v: (
+        "MACD金叉" if v >= 0.6 else "MACD走弱" if v <= 0.4 else "MACD平稳"
+    ))(r.get("macd") or 0.5),
+    "trend": lambda r: (lambda v: (
+        "站上均线（趋势向上）" if v >= 0.6 else "跌破均线" if v <= 0.4 else "均线缠绕"
+    ))(r.get("trend") or 0.5),
+    "value": lambda r: (
+        f"估值偏低（PE {r.get('pe_ttm') or 0:.1f}/PB {r.get('pb') or 0:.1f}）"
+        if r.get("pe_ttm") and r.get("pb") else "估值合理"
+    ),
+    "liquidity": lambda r: f"成交活跃（换手 {(r.get('turnover') or 0):.1f}%）",
+    "fund_flow": lambda r: (
+        (f"主力净流入（{r['fund_flow_pct']:.1f}‰）" if r["fund_flow_pct"] > 0
+         else f"主力净流出（{r['fund_flow_pct']:.1f}‰）")
+        if r.get("fund_flow_pct") is not None else None
+    ),
+    "quality": lambda r: (
+        f"盈利质量高（ROE {r['roe']:.1f}%）" if r.get("roe") is not None else
+        f"高股息（{r['dividend_yield']:.1f}%）" if r.get("dividend_yield") is not None else
+        None
+    ),
+    "size": lambda r: None,  # 规模中性，不单列
+}
+
+
+def _build_rationale(r):
+    """根据归一化因子贡献生成一句话入选理由。"""
+    contrib = r.get("factor_scores") or {}
+    if not contrib:
+        return ""
+    ranked = sorted(contrib.items(), key=lambda kv: kv[1], reverse=True)
+    # 取贡献分 >= 0.5 的因子；不足 2 个则退而取前 2 名（相对最强项）
+    top = [k for k, v in ranked if v >= 0.5]
+    if len(top) < 2:
+        top = [k for k, _ in ranked[:2]]
+    phrases = []
+    for k in top:
+        fn = _FACTOR_PHRASE_FN.get(k)
+        if not fn:
+            continue
+        p = fn(r)
+        if p:
+            phrases.append(p)
+    if not phrases:
+        return f"多因子综合评分 {r.get('score', 0):.2f}"
+    return " + ".join(phrases) + f"｜综合评分 {r.get('score', 0):.2f}"
+
+
 def screen(cfg: config.AppConfig, codes: list[str], dp=None, top_n_override: int | None = None) -> list[dict]:
     """返回按综合得分降序排列的候选标的列表（含因子明细）。
 
@@ -312,6 +375,7 @@ def screen(cfg: config.AppConfig, codes: list[str], dp=None, top_n_override: int
             score += (w / total_w) * v
         r["score"] = round(score, 6)
         r["factor_scores"] = contrib
+        r["rationale"] = _build_rationale(r)
 
     rows.sort(key=lambda r: r["score"], reverse=True)
 

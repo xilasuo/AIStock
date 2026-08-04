@@ -245,6 +245,8 @@ def write_scan_json(result: dict, cfg: config.AppConfig) -> str:
             "macd": round(float(r.get("macd", 0.0)), 4),
             "trend": round(float(r.get("trend", 0.0)), 4),
             "factors": {k: float(v) for k, v in (r.get("factor_scores") or {}).items()},
+            # —— 入选理由（解释性）：screener 生成的一句话入选逻辑 ——
+            "rationale": r.get("rationale") or "",
             # —— 质量因子（接数据源后才有；ROE / 股息率）——
             "roe": (float(r["roe"]) if r.get("roe") is not None else None),
             "dividendYield": (float(r["dividend_yield"]) if r.get("dividend_yield") is not None else None),
