@@ -7,9 +7,9 @@
  * 可用数据源（国内网络稳定可达者优先）：
  *   1) 腾讯证券 qt.gtimg.cn —— 主源（个股实时、PE/PB、指数；push2 被掐后的可靠替代）
  *   2) 东方财富 emweb / datacenter —— 财务主指标(ROE/毛利/净利)、行业/简介（域可达）
- *   3) 新浪财经 —— 实时行情后备
+ *   3) 新浪财经 —— 实时行情后备；新浪财报三表（免费、零 key）兜底营收同比/利润同比/资产负债率
  *   4) 东方财富 push2 / push2his —— 兜底（部分网络环境被掐，TLS 建连后 HTTP 超时）
- *   5) 麦蕊（可选增强层，仅配置 token）—— ROE/净利/行业/简介等基本面深度字段
+ *   5) 麦蕊（可选增强层，仅配置 token）—— ROE/净利/行业/简介等基本面深度字段；营收/利润/负债率麦蕊优先，缺失时由新浪三表免费兜底
  *
  * 关于描述中另两家数据源在「本项目实际运行时」的可行性：
  *   - AKShare（_em 分支）：它本身不是数据源，只是抓取东方财富/新浪/交易所官网的公开网页接口。
@@ -471,13 +471,189 @@ async function eastmoneyFundamentals(code: string): Promise<EmFundamentals> {
   }
 }
 
+// 新浪财报三表（免费、零 key、国内稳定可达）兜底：补充「营收同比 / 利润同比 / 资产负债率」。
+// 这三项旧实现只有麦蕊一个付费源，麦蕊限流/断网即恒为空，导致前端助手总报"基本面缺失"。
+// 新浪 getFinanceReport2022 同时给出营业收入/净利润原始值与 item_tongbi(同比)，
+// 资产负债表给出资产总计/负债合计，可算资产负债率。彻底摆脱对麦蕊的单点依赖。
+type SinaItem = { item_title?: string; item_value?: unknown; item_tongbi?: unknown };
+type SinaPeriod = { data?: SinaItem[] };
+type SinaStatements = {
+  revenueGrowth: number | null;
+  profitGrowth: number | null;
+  debtRatio: number | null;
+  grossMargin: number | null;
+  profitMargin: number | null;
+  roe: number | null;
+};
+
+// 新浪三表科目名在「一般企业 / 银行(金融)」两套模板下不一致，必须按别名依次匹配，
+// 否则银行股会整片取空。实测差异：
+//   利润表  一般企业: 营业总收入 / 营业收入 / 营业成本 / 归属于母公司所有者的净利润
+//           银行:     营业收入(无营业总收入) / 无营业成本(用营业支出) / 归属于母公司的净利润
+//   负债表  一般企业: 归属于母公司股东权益合计
+//           银行:     归属于母公司股东的权益
+const SINA_REVENUE = ["营业总收入", "营业收入"];
+const SINA_REVENUE_FOR_COST = ["营业收入", "营业总收入"];
+const SINA_OP_COST = ["营业成本"];
+const SINA_NET_PROFIT = ["净利润", "归属于母公司所有者的净利润", "归属于母公司的净利润"];
+const SINA_PARENT_NET = ["归属于母公司所有者的净利润", "归属于母公司的净利润", "净利润"];
+// 归母净资产在三套模板下各有写法（保险还有第三种），按「归母口径优先、合计口径兜底」排序。
+const SINA_PARENT_EQUITY = [
+  "归属于母公司股东权益合计", // 一般企业
+  "归属于母公司的股东权益合计", // 保险
+  "归属于母公司股东的权益", // 银行
+  "所有者权益(或股东权益)合计",
+  "所有者权益合计",
+  "股东权益",
+];
+
+function indexSinaItems(items: SinaItem[]): Record<string, SinaItem> {
+  const m: Record<string, SinaItem> = {};
+  for (const it of items) if (it.item_title) m[it.item_title] = it;
+  return m;
+}
+
+/** 按别名列表依次取第一个存在且可解析为数字的科目值。
+ * 注意：新浪把「所有者权益」「流动资产」这类分组标题也放在 data 里，其 item_value 为空串，
+ * 而 Number("") === 0 会被误判为有效值 0 并提前截断别名链，故此处显式跳过空串。 */
+function pickSinaNum(items: Record<string, SinaItem>, titles: string[]): number | null {
+  for (const t of titles) {
+    const raw = items[t]?.item_value;
+    if (raw == null || (typeof raw === "string" && raw.trim() === "")) continue;
+    const v = num(raw);
+    if (v != null) return v;
+  }
+  return null;
+}
+
+/** 归母净利润 TTM（滚动12个月）。
+ * 新浪报告期为「本年累计」口径：Q1=3个月、H1=6个月、Q3=9个月、年报=12个月，
+ * 直接拿累计数除以净资产会严重低估 ROE，必须先还原成年度口径。
+ * 优先用 TTM = 本期累计 + 去年全年 − 去年同期累计（最准）；
+ * 缺少去年数据时退化为简单年化 累计×(12/月数)。 */
+function sinaParentNetTtm(
+  list: Record<string, SinaPeriod>,
+  latest: string,
+): number | null {
+  const cur = pickSinaNum(indexSinaItems(list[latest]?.data ?? []), SINA_PARENT_NET);
+  if (cur == null) return null;
+  const mmdd = latest.slice(4);
+  if (mmdd === "1231") return cur;
+  const y = Number(latest.slice(0, 4));
+  if (Number.isFinite(y)) {
+    const lastFull = pickSinaNum(indexSinaItems(list[`${y - 1}1231`]?.data ?? []), SINA_PARENT_NET);
+    const lastSame = pickSinaNum(indexSinaItems(list[`${y - 1}${mmdd}`]?.data ?? []), SINA_PARENT_NET);
+    if (lastFull != null && lastSame != null) return cur + lastFull - lastSame;
+  }
+  const months: Record<string, number> = { "0331": 3, "0630": 6, "0930": 9 };
+  const m = months[mmdd];
+  return m ? cur * (12 / m) : null;
+}
+
+/** 从新浪利润表 report_list 计算某科目同比增长（%）。
+ * 优先用最新期的 item_tongbi（新浪已算好的同比，小数如 0.0634 表示 +6.34%）；
+ * 缺失时回退「同 MMDD 的去年同期」手动算 (cur-prev)/|prev|*100。 */
+function sinaYoyGrowth(
+  list: Record<string, SinaPeriod>,
+  periods: string[],
+  titles: string[],
+): number | null {
+  const latest = periods[periods.length - 1];
+  const items = indexSinaItems(list[latest]?.data ?? []);
+  let found: SinaItem | null = null;
+  for (const t of titles) { if (items[t]) { found = items[t]; break; } }
+  if (!found) return null;
+  const tb = num(found.item_tongbi);
+  if (tb != null) return tb * 100; // 新浪 tongbi 为小数比例
+  const y = Number(latest.slice(0, 4)) - 1;
+  const prevPeriod = `${y}${latest.slice(4)}`;
+  const prevItems = indexSinaItems(list[prevPeriod]?.data ?? []);
+  let prev: SinaItem | null = null;
+  for (const t of titles) { if (prevItems[t]) { prev = prevItems[t]; break; } }
+  const curV = num(found.item_value);
+  const prevV = num(prev?.item_value);
+  if (curV == null || prevV == null || prevV === 0) return null;
+  return ((curV - prevV) / Math.abs(prevV)) * 100;
+}
+
+async function sinaFinancialStatements(code: string): Promise<SinaStatements> {
+  const paper = (code.startsWith("6") ? "sh" : "sz") + code.replace(/\.(SS|SZ|SH|BJ)$/i, "");
+  const base = "https://quotes.sina.cn/cn/api/openapi.php/CompanyFinanceService.getFinanceReport2022";
+  const empty: SinaStatements = {
+    revenueGrowth: null,
+    profitGrowth: null,
+    debtRatio: null,
+    grossMargin: null,
+    profitMargin: null,
+    roe: null,
+  };
+  const headers = { "user-agent": UA, Referer: "https://quotes.sina.cn/" };
+  try {
+    const [lrbRes, fzbRes] = await Promise.all([
+      fetch(`${base}?${new URLSearchParams({ paperCode: paper, source: "lrb", type: "0", page: "1", num: "8" })}`, { headers, signal: AbortSignal.timeout(TIMEOUT) }),
+      fetch(`${base}?${new URLSearchParams({ paperCode: paper, source: "fzb", type: "0", page: "1", num: "8" })}`, { headers, signal: AbortSignal.timeout(TIMEOUT) }),
+    ]);
+    if (!lrbRes.ok || !fzbRes.ok) return empty;
+    const lrbJson = (await lrbRes.json()) as { result?: { data?: { report_list?: Record<string, SinaPeriod> } } };
+    const fzbJson = (await fzbRes.json()) as { result?: { data?: { report_list?: Record<string, SinaPeriod> } } };
+    const lrbList = lrbJson?.result?.data?.report_list ?? {};
+    const fzbList = fzbJson?.result?.data?.report_list ?? {};
+    const lrbPeriods = Object.keys(lrbList).sort();
+    const fzbPeriods = Object.keys(fzbList).sort();
+    if (lrbPeriods.length === 0 || fzbPeriods.length === 0) return empty;
+
+    const latestFzbPeriod = fzbPeriods[fzbPeriods.length - 1];
+    const fzbItems = indexSinaItems(fzbList[latestFzbPeriod]?.data ?? []);
+    const totalAssets = num(fzbItems["资产总计"]?.item_value);
+    const totalLiab = num(fzbItems["负债合计"]?.item_value);
+    const debtRatio = totalAssets && totalLiab != null ? totalLiab / totalAssets : null;
+
+    const revenueGrowth = sinaYoyGrowth(lrbList, lrbPeriods, SINA_REVENUE);
+    const profitGrowth = sinaYoyGrowth(lrbList, lrbPeriods, SINA_NET_PROFIT);
+
+    // 毛利率 / 净利率 / ROE：原本只有麦蕊 + 已失效的东财财务主指标两条路，
+    // 东财 RPT_F10_FIN_MAININDICATOR 实测已下线（返回「报表配置不存在」），
+    // 故这里用同一份新浪三表直接算，作为无 token 也可用的免费兜底。
+    const latestLrbPeriod = lrbPeriods[lrbPeriods.length - 1];
+    const lrbItems = indexSinaItems(lrbList[latestLrbPeriod]?.data ?? []);
+    const revenue = pickSinaNum(lrbItems, SINA_REVENUE);
+    const revenueForCost = pickSinaNum(lrbItems, SINA_REVENUE_FOR_COST);
+    const opCost = pickSinaNum(lrbItems, SINA_OP_COST);
+    const netProfit = pickSinaNum(lrbItems, SINA_NET_PROFIT);
+    // 银行/保险无「营业成本」科目，毛利率对其本就无意义 → 保持 null，不硬凑。
+    const grossMargin =
+      revenueForCost != null && revenueForCost !== 0 && opCost != null
+        ? ((revenueForCost - opCost) / revenueForCost) * 100
+        : null;
+    // 净利率用同一报告期的累计口径相除，无需年化。
+    const profitMargin =
+      revenue != null && revenue !== 0 && netProfit != null ? (netProfit / revenue) * 100 : null;
+    // ROE = 归母净利润(TTM) / 归母股东权益(期末)。用期末净资产近似平均净资产，
+    // 与东财/麦蕊的「加权 ROE」会有小幅出入，作为兜底量级足够。
+    const parentEquity = pickSinaNum(fzbItems, SINA_PARENT_EQUITY);
+    const parentNetTtm = sinaParentNetTtm(lrbList, latestLrbPeriod);
+    const roe =
+      parentEquity != null && parentEquity > 0 && parentNetTtm != null
+        ? (parentNetTtm / parentEquity) * 100
+        : null;
+
+    return { revenueGrowth, profitGrowth, debtRatio, grossMargin, profitMargin, roe };
+  } catch {
+    return empty;
+  }
+}
+
 /** 基本面资料。
  * 东方财富对 A 股的名称/总市值/PE/PB 更可靠优先；
- * roe/profitMargin/businessSummary/industry 优先用麦蕊（仅配置 token 时），否则由东方财富财务主指标兜底；
- * grossMargin/operatingCashflow/sector 由东方财富「财务主指标」免费接口补充（国内稳定可达）。 */
+ * businessSummary/industry 优先用麦蕊（仅配置 token 时），否则由东方财富 f100 兜底；
+ * operatingCashflow/sector 由东方财富「财务主指标」补充。
+ * 以下六项已全部接入新浪财报三表免费兜底，不再单点依赖付费麦蕊：
+ *   ROE / 毛利率 / 净利率        —— 麦蕊 → 东财财务主指标(实测已下线) → 新浪三表现算
+ *   营收同比 / 利润同比 / 负债率 —— 麦蕊 → 新浪三表
+ * 背景：旧实现下麦蕊限流或断网时这些字段恒为空，前端助手因此总是开口就说"基本面缺失"。 */
 export async function getProfile(code: string): Promise<StockProfile> {
   const mairuiEnabled = await isMairuiEnabled();
-  const [em, tencent, mairui, mairuiRealtime, emF100, emFund] = await Promise.all([
+  const [em, tencent, mairui, mairuiRealtime, emF100, emFund, sina] = await Promise.all([
     eastmoneyProfile(code),
     tencentProfile(code),
     // 麦蕊为可选增强源，异常时静默降级为 null，交由下方东财兜底。
@@ -486,6 +662,8 @@ export async function getProfile(code: string): Promise<StockProfile> {
     mairuiEnabled ? getMairuiRealtime(code).catch(() => null) : Promise.resolve(null),
     eastmoneyF100Profile(code),
     eastmoneyFundamentals(code),
+    // 新浪财报三表免费兜底：补充营收/利润同比与资产负债率（麦蕊单点失败时的兜底）。
+    sinaFinancialStatements(code).catch(() => null),
   ]);
   // PE/PB 麦蕊优先（原生 A 股源、国内稳定）→ 腾讯 → 东财。
   const pe = mairuiRealtime?.pe ?? tencent.pe ?? em.pe ?? null;
@@ -499,20 +677,21 @@ export async function getProfile(code: string): Promise<StockProfile> {
     marketCap: em.marketCap ?? null,
     pe,
     pb,
-    // 麦蕊(配置 token 时)优先，否则东方财富财务主指标兜底（无 token 也能填）。
-    roe: mairui?.roe ?? emFund.roe ?? null,
-    // 东方财富财务主指标免费接口兜底（无 token 也可用）。
-    grossMargin: emFund.grossMargin,
-    profitMargin: mairui?.profitMargin ?? emFund.profitMargin ?? null,
+    // ROE/毛利率/净利率：麦蕊(配置 token 时)优先 → 东财财务主指标 → 新浪三表现算。
+    // 东财 RPT_F10_FIN_MAININDICATOR 实测已下线（恒返回空），新浪兜底才是当前真正生效的免费源。
+    roe: mairui?.roe ?? emFund.roe ?? sina?.roe ?? null,
+    grossMargin: emFund.grossMargin ?? sina?.grossMargin ?? null,
+    profitMargin: mairui?.profitMargin ?? emFund.profitMargin ?? sina?.profitMargin ?? null,
     operatingCashflow: emFund.operatingCashflow,
     sector: emFund.sector,
     // 行业/简介：麦蕊优先 → 东方财富 f100 兜底（国内稳定）
     industry: mairui?.industry ?? emF100.industry ?? null,
     businessSummary: mairui?.businessSummary ?? emF100.businessSummary ?? null,
-    // 麦蕊 cwzb 提供的营收/利润同比与资产负债率（仅配置 token 时可能有，缺失为 null）
-    revenueGrowth: mairui?.revenueGrowth ?? null,
-    profitGrowth: mairui?.profitGrowth ?? null,
-    debtRatio: mairui?.debtRatio ?? null,
+    // 营收同比/利润同比/资产负债率：麦蕊优先，缺失时由新浪财报三表免费兜底
+    // （旧实现只有麦蕊一个源，麦蕊限流/断网即恒为空，导致前端助手总报"基本面缺失"）。
+    revenueGrowth: mairui?.revenueGrowth ?? sina?.revenueGrowth ?? null,
+    profitGrowth: mairui?.profitGrowth ?? sina?.profitGrowth ?? null,
+    debtRatio: mairui?.debtRatio ?? sina?.debtRatio ?? null,
     profileError,
   };
 }
