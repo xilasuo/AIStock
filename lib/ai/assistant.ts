@@ -324,6 +324,32 @@ export function splitAssistantSections(text: string): AssistantSection[] {
     return sections;
   }
 
+  // 写法 3：标题裸行独立成段（AI 没按 prompt 加 ### 前缀的兜底）
+  // 匹配行首行尾就是关键词的整行，例如 `依据` / `风险与缺口` / `下一步`
+  // 同时把「首个裸标题之前」的开场文本收纳成结论段，避免结论内容被吞进下一段
+  const bareRe = /^(结论|依据|风险与缺口|风险|下一步|下一步操作)\s*$/gm;
+  const bareMatches = [...raw.matchAll(bareRe)];
+  if (bareMatches.length >= 2) {
+    const sections: AssistantSection[] = [];
+    const firstBareStart = bareMatches[0].index!;
+    if (firstBareStart > 0) {
+      const headText = raw.slice(0, firstBareStart).trim();
+      if (headText) {
+        sections.push({ title: "结论", body: headText, kind: "conclusion" });
+      }
+    }
+    for (let i = 0; i < bareMatches.length; i += 1) {
+      const m = bareMatches[i];
+      const title = m[1].trim();
+      const start = m.index! + m[0].length;
+      const end = i + 1 < bareMatches.length ? (bareMatches[i + 1] as RegExpMatchArray).index! : raw.length;
+      const body = raw.slice(start, end).trim();
+      const kind = SECTION_HEADERS.find((h) => h.test.test(title))?.kind ?? "other";
+      sections.push({ title, body, kind });
+    }
+    return sections;
+  }
+
   // 兜底：整段返回
   return [{ title: "", body: raw, kind: "other" }];
 }

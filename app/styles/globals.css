@@ -3020,6 +3020,106 @@ svg { display: block; }
 
 .assistant-disclaimer { color: var(--muted); display: block; font-size: var(--fs-2xs); margin-top: 8px; }
 
+/* —— AssistantAnswer 结构化卡片（结论 / 依据 / 风险与缺口 / 下一步） —— */
+.assistant-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.assistant-section {
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.assistant-section__head {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--accent-ink);
+  display: flex;
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  gap: 8px;
+  padding: 8px 12px;
+  text-align: left;
+  width: 100%;
+}
+
+.assistant-section--conclusion .assistant-section__head { cursor: default; }
+
+.assistant-section__title {
+  color: var(--accent-ink);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding-left: 10px;
+  position: relative;
+}
+
+.assistant-section__title::before {
+  background: var(--accent);
+  border-radius: 2px;
+  content: "";
+  height: 12px;
+  left: 0;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+}
+
+.assistant-section__badge {
+  border-radius: 999px;
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  margin-left: auto;
+  padding: 2px 8px;
+}
+
+.assistant-section__badge.tone-warn {
+  background: color-mix(in srgb, var(--red) 14%, var(--surface));
+  color: var(--red);
+}
+
+.assistant-section__badge.tone-act {
+  background: color-mix(in srgb, var(--green) 14%, var(--surface));
+  color: var(--green);
+}
+
+.assistant-section__badge.tone-neutral {
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  color: var(--text-soft);
+}
+
+.assistant-section__chevron {
+  color: var(--muted);
+  flex: 0 0 auto;
+  transition: transform 0.18s ease;
+}
+
+.assistant-section__chevron.is-open { transform: rotate(90deg); }
+
+.assistant-section__body {
+  border-top: 1px solid var(--line);
+  padding: 8px 12px 10px;
+}
+
+.assistant-section__body > .markdown-body > :first-child { margin-top: 0; }
+.assistant-section__body > .markdown-body > :last-child { margin-bottom: 0; }
+
+.assistant-section--conclusion.tone-warn {
+  background: color-mix(in srgb, var(--red) 6%, var(--surface));
+  border-color: color-mix(in srgb, var(--red) 24%, var(--line));
+}
+.assistant-section--conclusion.tone-act {
+  background: color-mix(in srgb, var(--green) 6%, var(--surface));
+  border-color: color-mix(in srgb, var(--green) 24%, var(--line));
+}
+
 /* 分析区段锚点导航 */
 .analysis-tabs {
   align-items: center;
