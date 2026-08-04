@@ -76,7 +76,7 @@ import {
 } from "../../lib/domain/domain";
 import type { SectorHeatmap as SectorHeatmapData } from "../../lib/market/sectors";
 import { calculatePortfolioInsights, type PortfolioInsights } from "../../lib/domain/portfolio-insights";
-import { calculateTradeStatistics } from "../../lib/domain/trade-statistics";
+import { calculateBuySummary, calculateTradeStatistics } from "../../lib/domain/trade-statistics";
 import { TAKE_PROFIT_1_R, TAKE_PROFIT_2_R } from "../../lib/domain/trade-import";
 import { baseCloseSince, resolveStock, type Oscillators } from "../../lib/domain/stocks";
 import {
@@ -397,6 +397,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   const [preferences, setPreferences] = useState<TradingPreferences | null>(null);
   const [strategyScan, setStrategyScan] = useState<StrategyScanResponse | null>(null);
   const [tradeMode, setTradeMode] = useState<TradeMode | null>(null);
+  const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
   const [reviewCycleEndTradeId, setReviewCycleEndTradeId] = useState<number | null>(null);
   const [settingsSection, setSettingsSection] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -744,37 +745,57 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     const form = event.currentTarget;
     const data = new FormData(form);
     const side = tradeMode === "sell" ? "卖出" : "买入";
-    const payload = {
-      symbol: String(data.get("symbol")),
-      name: String(data.get("name")),
-      side,
+    const basePayload = {
       price: Number(data.get("price")),
       quantity: Number(data.get("quantity")),
       tradeDate: String(data.get("tradeDate")),
       reason: String(data.get("reason")),
       otherReason: String(data.get("otherReason") || ""),
-      maxLoss: Number(data.get("maxLoss") || 0),
       fee: Number(data.get("fee") || 0),
-      stopLoss: data.get("stopLoss") ? Number(data.get("stopLoss")) : undefined,
-      takeProfit1: data.get("takeProfit1") ? Number(data.get("takeProfit1")) : undefined,
-      takeProfit2: data.get("takeProfit2") ? Number(data.get("takeProfit2")) : undefined,
     };
 
     try {
-      const saved = await jsonRequest<{ trade: Trade }>("/api/trades", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      if (editingTrade) {
+        const payload: Record<string, unknown> = { id: editingTrade.id, ...basePayload };
+        if (editingTrade.side === "买入") {
+          const maxLossRaw = data.get("maxLoss");
+          payload.maxLoss = maxLossRaw && String(maxLossRaw).trim() ? Number(maxLossRaw) : "";
+        }
+        await jsonRequest<{ trade: Trade }>("/api/trades", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        setEditingTrade(null);
+        setTradeMode(null);
+        await loadData();
+        flash(`${editingTrade.name}的交易记录已更新`);
+      } else {
+        const payload = {
+          symbol: String(data.get("symbol")),
+          name: String(data.get("name")),
+          side,
+          ...basePayload,
+          maxLoss: Number(data.get("maxLoss") || 0),
+          stopLoss: data.get("stopLoss") ? Number(data.get("stopLoss")) : undefined,
+          takeProfit1: data.get("takeProfit1") ? Number(data.get("takeProfit1")) : undefined,
+          takeProfit2: data.get("takeProfit2") ? Number(data.get("takeProfit2")) : undefined,
+        };
+        const saved = await jsonRequest<{ trade: Trade }>("/api/trades", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+        });
 
-      setTradeMode(null);
-      await loadData();
-      flash(`${payload.name}的${side}记录已保存`);
-      if (side === "卖出") {
-        const closedCycle = buildTradeCycles([...trades, saved.trade]).find(
-          (cycle) => cycle.endTradeId === saved.trade.id
-        );
-        if (closedCycle?.endTradeId) setReviewCycleEndTradeId(closedCycle.endTradeId);
+        setTradeMode(null);
+        await loadData();
+        flash(`${payload.name}的${side}记录已保存`);
+        if (side === "卖出") {
+          const closedCycle = buildTradeCycles([...trades, saved.trade]).find(
+            (cycle) => cycle.endTradeId === saved.trade.id
+          );
+          if (closedCycle?.endTradeId) setReviewCycleEndTradeId(closedCycle.endTradeId);
+        }
       }
     } catch (saveError) {
       flash(saveError instanceof Error ? saveError.message : "交易记录保存失败");
@@ -1060,13 +1081,14 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
         })}
       </nav>
 
-      {tradeMode && (
+      {(tradeMode || editingTrade) && (
         <TradeModal
-          mode={tradeMode}
+          mode={tradeMode ?? (editingTrade?.side === "卖出" ? "sell" : "buy")}
           stock={currentTradeStock}
+          editTrade={editingTrade}
           positions={portfolio.positions}
-          analysisQuote={tradeMode === "buy" ? analysis?.quote ?? null : null}
-          onClose={() => setTradeMode(null)}
+          analysisQuote={tradeMode === "buy" && !editingTrade ? analysis?.quote ?? null : null}
+          onClose={() => { setTradeMode(null); setEditingTrade(null); }}
           onSubmit={saveTrade}
           onSwitchStock={async (symbol) => { await fetchAnalysis(symbol, true); }}
         />
@@ -3798,6 +3820,9 @@ function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, on
     initialCapitalCents,
   ), [trades, capitalFlows, reviews, initialCapitalCents]);
 
+  // 按股票汇总买入次数、买入金额、当前持仓等
+  const buySummary = useMemo(() => calculateBuySummary(trades), [trades]);
+
   // 已完成的交易周期显示在上方，便于先看结果再补复盘；其余按交易日期倒序
   const sortedTrades = [...trades].sort((a, b) => {
     const cycleA = cycleByTradeId.get(a.id);
@@ -3905,6 +3930,39 @@ function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, on
           </strong>
         </div>
       </div>
+      {buySummary.length > 0 && (
+        <section className="panel buy-summary-panel">
+          <div className="panel-head">
+            <h3>按股票汇总买入</h3>
+            <small>共 {buySummary.length} 只标的，按买入次数降序</small>
+          </div>
+          <div className="buy-summary-head">
+            <span>股票</span>
+            <span>买入次数</span>
+            <span>买入股数</span>
+            <span>买入金额</span>
+            <span>卖出次数</span>
+            <span>当前持仓</span>
+            <span>已实现盈亏</span>
+          </div>
+          {buySummary.map((item) => (
+            <div className="buy-summary-row" key={item.symbol}>
+              <span>
+                <b>{item.name}</b>
+                <small>{item.symbol}</small>
+              </span>
+              <span><strong>{item.buyCount}</strong><small>次</small></span>
+              <span><strong>{item.buyQuantity.toLocaleString("zh-CN")}</strong><small>股</small></span>
+              <span><strong>{money(item.buyAmountCents)}</strong></span>
+              <span><strong>{item.sellCount}</strong><small>次</small></span>
+              <span><strong>{item.currentPosition > 0 ? item.currentPosition.toLocaleString("zh-CN") : "—"}</strong>{item.currentPosition > 0 && <small>股</small>}</span>
+              <span className={item.realizedCents >= 0 ? "up" : "down"}>
+                <strong>{item.realizedCents !== 0 ? money(item.realizedCents) : "—"}</strong>
+              </span>
+            </div>
+          ))}
+        </section>
+      )}
       {stats.totalTrades > 0 && (
         <section className="panel trade-analytics">
           <div className="panel-head">
@@ -4506,9 +4564,11 @@ function CapitalSettings({ initialCapitalCents, capitalFlows, onSave, onAddFlow,
   );
 }
 
-function TradeModal({ mode, stock, positions, analysisQuote, onClose, onSubmit, onSwitchStock }: {
+function TradeModal({ mode, stock, editTrade, positions, analysisQuote, onClose, onSubmit, onSwitchStock }: {
   mode: TradeMode;
   stock: { code?: string; symbol?: string; name: string } | null;
+  /** 传入时进入编辑模式：股票代码/名称/方向只读，其余字段回显原值 */
+  editTrade?: Trade | null;
   positions: ReturnType<typeof calculatePortfolio>["positions"];
   /** 买入时当前分析的技术位（支撑位 / 1R / 2R 目标），用于"采用技术面建议" */
   analysisQuote: { support?: number; target1?: number; target2?: number } | null;
@@ -4525,11 +4585,17 @@ function TradeModal({ mode, stock, positions, analysisQuote, onClose, onSubmit, 
   const maxLossRef = useRef<HTMLInputElement>(null);
   const reasonFieldsetRef = useRef<HTMLFieldSetElement>(null);
   const [saving, setSaving] = useState(false);
-  const [selectedReason, setSelectedReason] = useState("");
+  const [selectedReason, setSelectedReason] = useState(editTrade?.reason ?? "");
   const [reasonError, setReasonError] = useState(false);
+  const isEdit = !!editTrade;
   const defaultPosition = mode === "sell" ? positions[0] : null;
-  const symbol = stock?.code ?? stock?.symbol ?? defaultPosition?.symbol ?? "";
-  const name = stock?.name ?? defaultPosition?.name ?? "";
+  const symbol = editTrade?.symbol ?? stock?.code ?? stock?.symbol ?? defaultPosition?.symbol ?? "";
+  const name = editTrade?.name ?? stock?.name ?? defaultPosition?.name ?? "";
+  const defaultPrice = editTrade?.priceTenThousandths ? String(editTrade.priceTenThousandths / 10000) : "";
+  const defaultQuantity = editTrade?.quantity ? String(editTrade.quantity) : "";
+  const defaultFee = editTrade ? String((editTrade.feeCents ?? 0) / 100) : "0";
+  const defaultTradeDate = editTrade?.tradeDate ?? localIsoDate();
+  const defaultMaxLoss = editTrade?.side === "买入" && editTrade?.maxLossCents ? String((editTrade.maxLossCents / 100).toFixed(2)) : "";
 
   // 一键采用技术面建议：把支撑位填止损、1R/2R 填止盈，并清空 maxLoss（改用技术面止损位）
   function applyTechSuggestion() {
@@ -4569,10 +4635,11 @@ function TradeModal({ mode, stock, positions, analysisQuote, onClose, onSubmit, 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="modal" role="dialog" aria-modal="true" aria-labelledby="trade-modal-title">
-        <header><div><span className="eyebrow">{mode === "buy" ? "写下当时的决定" : "记录真实的退出"}</span><h2 id="trade-modal-title">记录{mode === "buy" ? "买入" : "卖出"}</h2></div><IconButton label="关闭" onClick={onClose}><X size={18} /></IconButton></header>
+        <header><div><span className="eyebrow">{isEdit ? "修改记录" : (mode === "buy" ? "写下当时的决定" : "记录真实的退出")}</span><h2 id="trade-modal-title">{isEdit ? `编辑${mode === "buy" ? "买入" : "卖出"}记录` : `记录${mode === "buy" ? "买入" : "卖出"}`}</h2></div><IconButton label="关闭" onClick={onClose}><X size={18} /></IconButton></header>
         <form onSubmit={submit}>
           <div className="form-grid">
-            <Field label="股票代码"><Input ref={firstInput} name="symbol" defaultValue={symbol} pattern="\d{6}" required onBlur={(event) => {
+            <Field label="股票代码"><Input ref={firstInput} name="symbol" defaultValue={symbol} pattern="\d{6}" required disabled={isEdit} readOnly={isEdit} onBlur={(event) => {
+              if (isEdit) return;
               const code = event.currentTarget.value.trim();
               const resolved = resolveStock(code);
               if (resolved && resolved.name !== resolved.code && nameInputRef.current) {
@@ -4583,14 +4650,14 @@ function TradeModal({ mode, stock, positions, analysisQuote, onClose, onSubmit, 
                 void onSwitchStock(code);
               }
             }} /></Field>
-            <Field label="股票名称"><Input ref={nameInputRef} name="name" defaultValue={name} required maxLength={30} /></Field>
-            <Field label={mode === "buy" ? "买入价格" : "卖出价格"}><Input name="price" type="number" min="0" step="any" required /></Field>
-            <Field label="数量（股）"><Input name="quantity" type="number" min="1" step="1" required /></Field>
-            <Field label="交易日期"><Input name="tradeDate" type="date" defaultValue={localIsoDate()} max={localIsoDate()} required /></Field>
-            <Field label="总费用（可选）"><Input name="fee" type="number" min="0" step="0.01" defaultValue="0" /></Field>
+            <Field label="股票名称"><Input ref={nameInputRef} name="name" defaultValue={name} required maxLength={30} disabled={isEdit} readOnly={isEdit} /></Field>
+            <Field label={mode === "buy" ? "买入价格" : "卖出价格"}><Input name="price" type="number" min="0" step="any" defaultValue={defaultPrice} required /></Field>
+            <Field label="数量（股）"><Input name="quantity" type="number" min="1" step="1" defaultValue={defaultQuantity} required /></Field>
+            <Field label="交易日期"><Input name="tradeDate" type="date" defaultValue={defaultTradeDate} max={localIsoDate()} required /></Field>
+            <Field label="总费用（可选）"><Input name="fee" type="number" min="0" step="0.01" defaultValue={defaultFee} /></Field>
             {mode === "buy" && (
               <>
-                {analysisQuote && (analysisQuote.support != null || analysisQuote.target1 != null || analysisQuote.target2 != null) && (
+                {!isEdit && analysisQuote && (analysisQuote.support != null || analysisQuote.target1 != null || analysisQuote.target2 != null) && (
                   <div className="tech-suggestion">
                     <div className="tech-suggestion__head">
                       <span><Zap size={13} /> 技术面自动建议</span>
@@ -4606,18 +4673,24 @@ function TradeModal({ mode, stock, positions, analysisQuote, onClose, onSubmit, 
                     <p className="tech-suggestion__note">来自该股当前分析的支撑位与 1R/2R 目标，点「一键采用」填入下方；可再手动改。</p>
                   </div>
                 )}
-                <Field label="止损价（元，可选）" help="留空时按下方「最多接受亏损」反推；也可点上方「技术面建议」用支撑位自动填入，系统据此设止损并算止盈。">
-                  <Input ref={stopLossRef} name="stopLoss" type="number" min="0" step="any" placeholder="技术面支撑位或自定" />
-                </Field>
+                {!isEdit && (
+                  <Field label="止损价（元，可选）" help="留空时按下方「最多接受亏损」反推；也可点上方「技术面建议」用支撑位自动填入，系统据此设止损并算止盈。">
+                    <Input ref={stopLossRef} name="stopLoss" type="number" min="0" step="any" placeholder="技术面支撑位或自定" />
+                  </Field>
+                )}
                 <Field label="最多接受亏损（元）" help={`如果判断错了，这笔交易最多愿意亏多少钱？请填你能实际执行的金额。系统会用「成本价 − 最多接受亏损 ÷ 股数」生成止损价，并按 ${TAKE_PROFIT_1_R}/${TAKE_PROFIT_2_R} 倍风险自动生成止盈一、止盈二。`}>
-                  <Input ref={maxLossRef} name="maxLoss" type="number" min="0" step="0.01" placeholder="例如 500" />
+                  <Input ref={maxLossRef} name="maxLoss" type="number" min="0" step="0.01" defaultValue={defaultMaxLoss} placeholder="例如 500" />
                 </Field>
-                <Field label="止盈价一（元，可选）" help={`留空则按 ${TAKE_PROFIT_1_R} 倍风险自动推算；填写后覆盖系统推算。`}>
-                  <Input ref={takeProfit1Ref} name="takeProfit1" type="number" min="0" step="any" placeholder={`留空则按 ${TAKE_PROFIT_1_R}R 推算`} />
-                </Field>
-                <Field label="止盈价二（元，可选）" help={`留空则按 ${TAKE_PROFIT_2_R} 倍风险自动推算；填写后覆盖系统推算。`}>
-                  <Input ref={takeProfit2Ref} name="takeProfit2" type="number" min="0" step="any" placeholder={`留空则按 ${TAKE_PROFIT_2_R}R 推算`} />
-                </Field>
+                {!isEdit && (
+                  <>
+                    <Field label="止盈价一（元，可选）" help={`留空则按 ${TAKE_PROFIT_1_R} 倍风险自动推算；填写后覆盖系统推算。`}>
+                      <Input ref={takeProfit1Ref} name="takeProfit1" type="number" min="0" step="any" placeholder={`留空则按 ${TAKE_PROFIT_1_R}R 推算`} />
+                    </Field>
+                    <Field label="止盈价二（元，可选）" help={`留空则按 ${TAKE_PROFIT_2_R} 倍风险自动推算；填写后覆盖系统推算。`}>
+                      <Input ref={takeProfit2Ref} name="takeProfit2" type="number" min="0" step="any" placeholder={`留空则按 ${TAKE_PROFIT_2_R}R 推算`} />
+                    </Field>
+                  </>
+                )}
               </>
             )}
           </div>
@@ -4648,7 +4721,7 @@ function TradeModal({ mode, stock, positions, analysisQuote, onClose, onSubmit, 
             )}
             {selectedReason === "其他" && (
               <Field label="补充说明（可选）" className="other-reason-field">
-                <Input name="otherReason" placeholder="请简要说明具体原因…" maxLength={200} />
+                <Input name="otherReason" defaultValue={editTrade?.otherReason ?? ""} placeholder="请简要说明具体原因…" maxLength={200} />
               </Field>
             )}
           </fieldset>

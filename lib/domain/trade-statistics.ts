@@ -9,7 +9,7 @@
  *
  * 对标：TraderVue / Edgewonk 的绩效面板。
  */
-import { buildTradeCycles, type CapitalFlow, type Trade } from "./domain";
+import { buildTradeCycles, calculatePortfolio, type CapitalFlow, type Trade } from "./domain";
 
 export type TagStat = {
   tag: string;
@@ -31,6 +31,18 @@ export type SymbolStat = {
   realizedCents: number;
   trades: number;
   winRate: number;
+};
+
+export type BuySummaryStat = {
+  symbol: string;
+  name: string;
+  buyCount: number;
+  buyQuantity: number;
+  buyAmountCents: number;
+  sellCount: number;
+  sellQuantity: number;
+  currentPosition: number;
+  realizedCents: number;
 };
 
 export type EquityPoint = {
@@ -110,6 +122,54 @@ function monthKey(iso: string): string {
 
 function safeDivide(numerator: number, denominator: number): number {
   return denominator === 0 ? 0 : numerator / denominator;
+}
+
+/** 按股票汇总买入记录：买入次数、买入股数/金额、卖出次数、当前持仓、已实现盈亏。
+ * 与按周期统计的 bySymbol 不同，这里基于原始交易流水统计，包含持仓中的标的。
+ * 已实现盈亏复用 domain 的移动平均成本算法，与持仓逻辑保持一致。
+ */
+export function calculateBuySummary(trades: Trade[]): BuySummaryStat[] {
+  const bySymbol = new Map<string, Trade[]>();
+  for (const trade of trades) {
+    const list = bySymbol.get(trade.symbol) ?? [];
+    list.push(trade);
+    bySymbol.set(trade.symbol, list);
+  }
+
+  const stats: BuySummaryStat[] = [];
+  for (const [symbol, list] of bySymbol.entries()) {
+    const summary = list.reduce(
+      (acc, trade) => {
+        if (trade.side === "买入") {
+          acc.buyCount += 1;
+          acc.buyQuantity += trade.quantity;
+          const priceTenThousandths =
+            trade.priceTenThousandths ?? (trade.priceMillis ?? trade.priceCents * 10) * 10;
+          acc.buyAmountCents += Math.round((priceTenThousandths * trade.quantity) / 100) + trade.feeCents;
+        } else {
+          acc.sellCount += 1;
+          acc.sellQuantity += trade.quantity;
+        }
+        return acc;
+      },
+      {
+        symbol,
+        name: list[0]?.name ?? symbol,
+        buyCount: 0,
+        buyQuantity: 0,
+        buyAmountCents: 0,
+        sellCount: 0,
+        sellQuantity: 0,
+        currentPosition: 0,
+        realizedCents: 0,
+      },
+    );
+    const portfolio = calculatePortfolio(list);
+    summary.currentPosition = portfolio.positions[0]?.quantity ?? 0;
+    summary.realizedCents = portfolio.realizedCents;
+    stats.push(summary);
+  }
+  return stats.sort((a, b) => b.buyCount - a.buyCount || b.buyAmountCents - a.buyAmountCents);
 }
 
 export function calculateTradeStatistics(

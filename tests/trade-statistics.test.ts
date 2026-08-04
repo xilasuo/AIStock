@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { calculateTradeStatistics, type ReviewInput } from "../lib/domain/trade-statistics.ts";
+import { calculateBuySummary, calculateTradeStatistics, type ReviewInput } from "../lib/domain/trade-statistics.ts";
 import type { CapitalFlow, Trade } from "../lib/domain/domain.ts";
 
 function trade(overrides: Partial<Trade> & Pick<Trade, "id" | "symbol" | "side" | "priceCents" | "quantity" | "tradeDate">): Trade {
@@ -101,6 +101,28 @@ test("计划执行度：按计划与偏离计划的盈亏及胜率", () => {
   assert.equal(stats.planAdherence.deviatedRealizedCents, 10000);
   assert.equal(stats.planAdherence.followedWinRate, 0.5);
   assert.equal(stats.planAdherence.deviatedWinRate, 0.5);
+});
+
+test("按股票汇总买入次数与持仓", () => {
+  const trades: Trade[] = [
+    trade({ id: 1, symbol: "600000", name: "A股", side: "买入", priceCents: 1000, quantity: 100, tradeDate: "2026-01-02" }),
+    trade({ id: 2, symbol: "600000", name: "A股", side: "买入", priceCents: 1100, quantity: 100, tradeDate: "2026-01-03" }),
+    trade({ id: 3, symbol: "600000", name: "A股", side: "卖出", priceCents: 1200, quantity: 100, tradeDate: "2026-01-10" }),
+    trade({ id: 4, symbol: "600001", name: "B股", side: "买入", priceCents: 2000, quantity: 100, tradeDate: "2026-01-03" }),
+  ];
+  const summary = calculateBuySummary(trades);
+  assert.equal(summary.length, 2);
+  const a = summary.find((item) => item.symbol === "600000");
+  assert.ok(a);
+  assert.equal(a.buyCount, 2);
+  assert.equal(a.buyQuantity, 200);
+  assert.equal(a.buyAmountCents, 100000 + 110000);
+  assert.equal(a.sellCount, 1);
+  assert.equal(a.currentPosition, 100);
+  const b = summary.find((item) => item.symbol === "600001");
+  assert.ok(b);
+  assert.equal(b.buyCount, 1);
+  assert.equal(b.currentPosition, 100);
 });
 
 test("连胜与连亏统计", () => {
