@@ -59,6 +59,8 @@ type ScanGridItem = {
 };
 type Scan = {
   generatedAt: string;
+  /** 本次扫描所属时段档位：pre_market / intraday / post_market，用于结果区标注「盘前/盘中/盘后」 */
+  profile?: string;
   period: { beg: string; end: string };
   universeSize: number;
   selectedCount: number;
@@ -105,6 +107,13 @@ type Scan = {
     equityCurve: Array<{ date: string; value: number }>;
   };
   disclaimer: string;
+};
+
+/** 时段档位 → 中文标签（与 run_hub --profile / 配置面板档位一致） */
+const PROFILE_LABEL: Record<string, string> = {
+  pre_market: "盘前",
+  intraday: "盘中",
+  post_market: "盘后",
 };
 
 function pct(x: number | undefined | null): string {
@@ -408,7 +417,7 @@ export function StrategyScanView({
       <SectionHeader
         eyebrow="文件桥接"
         title="策略扫描"
-        subtitle={`候选池 ${scan.universeSize} 只 → 选出 ${scan.selectedCount} 只 ｜ 生成于 ${scan.generatedAt}`}
+        subtitle={`【${PROFILE_LABEL[scan.profile ?? "pre_market"] ?? "盘前"}】候选池 ${scan.universeSize} 只 → 选出 ${scan.selectedCount} 只 ｜ 生成于 ${scan.generatedAt}`}
         desc="由 trading_agent 回测引擎生成，经文件桥同步到本页展示。"
       />
 

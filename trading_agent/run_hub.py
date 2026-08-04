@@ -867,6 +867,10 @@ def main():
     else:
         signals = _build_signals(payload, klines)
 
+    # 记录本次扫描所属时段档位（盘前/盘中/盘后），便于前端结果区标注来源，
+    # 也随 scan_payload.json 推送云端后在「文件桥接」展示时保留档位信息。
+    payload["profile"] = profile
+
     out_dir = args.out_dir
     os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, "scan_payload.json"), "w", encoding="utf-8") as f:
