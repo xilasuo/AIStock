@@ -2432,6 +2432,7 @@ function SmartAssistant(
     onClose,
     headerSlot,
     userId,
+    onFetchStock,
   }: {
     analysis: Analysis | null;
     position: Position | null;
@@ -2442,6 +2443,8 @@ function SmartAssistant(
     onClose?: () => void;
     headerSlot?: ReactNode;
     userId?: string | number;
+    /** 全局模式下若用户问某持仓股，前端先静默拉取数据再发问 */
+    onFetchStock?: (code: string) => Promise<{ analysis: Analysis; position: Position | null } | null>;
   },
 ) {
   const [question, setQuestion] = useState("");
@@ -2548,13 +2551,26 @@ function SmartAssistant(
     setAsking(true);
     setRegeneratingId(replaceId ? null : regeneratingId);
     try {
+      // 全局模式：若用户问某只持仓股，先静默拉取行情数据再发问，避免 AI 因缺数据只能回"数据缺失"
+      let context = buildContext();
+      if (analysis === null && onFetchStock && portfolioInsights.positions.length > 0) {
+        const matched = portfolioInsights.positions.find((p) =>
+          clean.includes(p.name) || clean.includes(p.symbol)
+        );
+        if (matched) {
+          const fetched = await onFetchStock(matched.symbol);
+          if (fetched) {
+            context = buildAnalysisContext(fetched.analysis, fetched.position, portfolioInsights);
+          }
+        }
+      }
       const result = await jsonRequest<{ answer: string; mode: "ai" | "fallback" }>("/api/assistant", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           question: clean,
           messages: messages.slice(-8),
-          context: buildContext(),
+          context,
         }),
       });
       setMessages((current) => [...current, {
@@ -2881,6 +2897,17 @@ function FloatingAssistantLauncher(
     }
   }
 
+  // 静默拉取持仓股数据：全局模式下用户问某只票时自动触发，先拉数据再给 AI
+  async function onFetchStock(code: string) {
+    const result = await fetchAnalysis(code, false);
+    if (result) {
+      setLinked(result);
+      const pos = portfolio.positions.find((p) => p.symbol === code) ?? null;
+      return { analysis: result, position: pos };
+    }
+    return null;
+  }
+
   // 旧形态遗留占位：当前侧栏由 CSS 固定右侧定位，不再需要 inline style
 
 
@@ -3019,6 +3046,7 @@ function FloatingAssistantLauncher(
             userId={userId}
             onClose={onToggle}
             headerSlot={linkerSlot}
+            onFetchStock={onFetchStock}
           />
         </div>
       ) : (
@@ -3037,6 +3065,7 @@ function FloatingAssistantLauncher(
             userId={userId}
             onClose={onToggle}
             headerSlot={linkerSlot}
+            onFetchStock={onFetchStock}
           />
         </div>
       )}
