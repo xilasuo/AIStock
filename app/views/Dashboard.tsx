@@ -2727,22 +2727,22 @@ function SmartAssistant(
             <span className="sa-dots"><span /><span /><span /></span>
           </div>
         )}
+        {showPrompts && prompts.length > 0 && (
+          <div className="sa-prompts" role="group" aria-label="推荐提问">
+            {prompts.map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                className="sa-prompt"
+                disabled={asking}
+                onClick={() => void ask(prompt)}
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
-      {showPrompts && prompts.length > 0 && (
-        <div className="sa-prompts" role="group" aria-label="推荐提问">
-          {prompts.map((prompt) => (
-            <button
-              key={prompt}
-              type="button"
-              className="sa-prompt"
-              disabled={asking}
-              onClick={() => void ask(prompt)}
-            >
-              {prompt}
-            </button>
-          ))}
-        </div>
-      )}
       <form className="sa-form" onSubmit={submit}>
         <input
           value={question}
