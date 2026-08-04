@@ -1,4 +1,4 @@
-import { requireApiUser, requireApiUserOrPushToken } from "../../../../lib/auth";
+import { requireApiUser, requireApiUserOrPushToken, getAuthenticatedUser } from "../../../../lib/auth";
 import { execFileSync } from "child_process";
 import type { NextRequest } from "next/server";
 import {
@@ -34,32 +34,53 @@ function dumpScript(): string {
   return path.join(projectRoot(), "trading_agent", "dump_config.py");
 }
 
-// 云端持久化配置：前端「保存配置」写入 D1（strategy_config 表，只保留最新一行），
-// GET 优先读取它。与 strategy_scan（扫描结果）分离，避免配置污染扫描结果渲染。
-// workerd 沙箱禁止 fs 写入，故使用已挂载持久卷的 D1，容器重建不丢。
-async function readStoredConfig(): Promise<Record<string, unknown> | null> {
+// 云端持久化配置：前端「保存配置」写入 D1（strategy_config 表，按 user_id 隔离），
+// GET 优先读取当前登录用户本人的配置。与 strategy_scan（扫描结果）分离，避免配置
+// 污染扫描结果渲染。workerd 沙箱禁止 fs 写入，故使用已挂载持久卷的 D1，容器重建不丢。
+//
+// 隔离语义：
+//  - userId 非 null：读取/写入该登录用户本人配置行。
+//  - userId 为 null（仅持共享令牌、无登录身份，或管理员维护全局默认）：
+//    读取 user_id IS NULL 的「全局默认」行（即老库遗留单条配置）。
+// 读取链：本人配置 -> 全局默认（user_id IS NULL）-> 下方 YAML / FALLBACK_CONFIG。
+async function readStoredConfig(userId: number | null): Promise<Record<string, unknown> | null> {
   try {
     if (!env.DB) return null;
-    const row = (await env.DB.prepare(
-      "SELECT payload FROM strategy_config ORDER BY id DESC LIMIT 1"
+    const parse = (payload?: string): Record<string, unknown> | null => {
+      if (!payload) return null;
+      try {
+        const data = JSON.parse(payload);
+        return data && typeof data === "object" && "config" in data
+          ? (data as { config: Record<string, unknown> }).config
+          : (data as Record<string, unknown>);
+      } catch {
+        return null;
+      }
+    };
+    if (userId != null) {
+      const row = (await env.DB.prepare(
+        "SELECT payload FROM strategy_config WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1"
+      ).bind(userId).first()) as { payload?: string } | null;
+      const cfg = parse(row?.payload);
+      if (cfg) return cfg;
+    }
+    // 本人无配置 -> 回退全局默认行（user_id IS NULL）
+    const g = (await env.DB.prepare(
+      "SELECT payload FROM strategy_config WHERE user_id IS NULL ORDER BY updated_at DESC LIMIT 1"
     ).first()) as { payload?: string } | null;
-    if (!row?.payload) return null;
-    const data = JSON.parse(row.payload);
-    return data && typeof data === "object" && "config" in data
-      ? (data as { config: Record<string, unknown> }).config
-      : (data as Record<string, unknown>);
+    return parse(g?.payload);
   } catch {
     return null;
   }
 }
 
-async function saveStoredConfig(config: unknown): Promise<void> {
+async function saveStoredConfig(userId: number | null, config: unknown): Promise<void> {
   if (!env.DB) throw new Error("数据库暂不可用");
   const payload = JSON.stringify({ savedAt: new Date().toISOString(), config });
-  // 只保留最新一行
+  // 每用户保留自己最新一行；全局默认行以 user_id IS NULL 标识。
   await env.DB.batch([
-    env.DB.prepare("DELETE FROM strategy_config"),
-    env.DB.prepare("INSERT INTO strategy_config (payload) VALUES (?)").bind(payload),
+    env.DB.prepare("DELETE FROM strategy_config WHERE user_id IS ?").bind(userId),
+    env.DB.prepare("INSERT INTO strategy_config (user_id, payload) VALUES (?, ?)").bind(userId, payload),
   ]);
 }
 
@@ -118,10 +139,18 @@ export async function GET(req: Request) {
   const unauthorized = await requireApiUserOrPushToken(req);
   if (unauthorized) return unauthorized;
 
-  // 优先返回前端已保存的云端配置；读不到才走 exec / 回退默认。
-  const stored = await readStoredConfig();
+  // 解析当前登录身份：有会话则取本人配置，仅持共享令牌（无登录身份）则回退全局默认。
+  const user = await getAuthenticatedUser();
+
+  // 优先返回该用户本人（或全局默认）已保存的云端配置；读不到才走 exec / 回退默认。
+  const stored = await readStoredConfig(user ? user.id : null);
   if (stored) {
-    return Response.json({ ok: true, config: stored, saved: true });
+    return Response.json({
+      ok: true,
+      config: stored,
+      saved: true,
+      scope: user ? "user" : "global",
+    });
   }
 
   if (SUPPORTS_EXEC) {
@@ -162,12 +191,17 @@ export async function GET(req: Request) {
   });
 }
 
-// 保存前端提交的选股前置条件配置到云端持久文件。
+// 保存前端提交的选股前置条件配置到云端持久文件（按当前登录用户隔离写入）。
 export async function POST(req: NextRequest) {
   try {
     const unauthorized = await requireApiUser();
     if (unauthorized) return unauthorized;
   } catch {
+    return Response.json({ ok: false, error: "未授权" }, { status: 401 });
+  }
+
+  const user = await getAuthenticatedUser();
+  if (!user) {
     return Response.json({ ok: false, error: "未授权" }, { status: 401 });
   }
 
@@ -188,7 +222,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    await saveStoredConfig(config);
+    // 保存写入当前登录用户本人隔离行（user_id = 本人 id）。
+    await saveStoredConfig(user.id, config);
     return Response.json({ ok: true, saved: true, config });
   } catch (e) {
     return Response.json(

@@ -225,6 +225,11 @@ export async function ensureSchema() {
         ),
       ]);
     }
+
+    // 1.6) 选股前置条件配置表按用户隔离：加可空 user_id 列。
+    // 老库遗留的单条全局配置 user_id 为 NULL，自动成为「全局默认」回退；
+    // 各登录用户保存自己的配置时 user_id = 本人 id，互不覆盖。
+    await addColumnIfMissing("strategy_config", "user_id", "user_id INTEGER");
     await db.batch([
       db.prepare(
         `CREATE UNIQUE INDEX IF NOT EXISTS account_settings_user_idx ON account_settings(user_id)`,

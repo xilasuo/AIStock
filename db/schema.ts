@@ -191,8 +191,11 @@ export const strategyWriteback = sqliteTable("strategy_writeback", {
 
 // 云端「选股前置条件」配置（网页保存 / 本地 trading_agent 拉取）。
 // 与 strategy_scan（扫描结果）分离，避免配置数据污染扫描结果渲染。
+// 注意：user_id 可空。NULL 表示「全局默认」行（遗留单条配置 / 管理员维护），
+// 作为未单独保存过个人配置用户的回退；非 NULL 则为该登录用户本人隔离的配置。
 export const strategyConfig = sqliteTable("strategy_config", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id"),
   payload: text("payload").notNull(),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });

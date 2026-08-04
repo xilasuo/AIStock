@@ -6,6 +6,9 @@
   - 本地程序（可调用 Python 引擎的真实 Node/PC 环境）启动时可拉取该
     云端配置，作为 overrides 传入 run_hub.py；不提供则回退本地
     strategy_config.yaml（参看 run_hub.py 的 --cloud-config-url 说明）。
+  - 多用户隔离：GET 按登录会话身份返回「本人」配置（仅持共享令牌、无登录
+    身份时回退全局默认）。故必须以 CLOUD_CFG_USER/CLOUD_CFG_PASS 登录，
+    拉到的才是该账号本人设置的条件，而非他人或全局默认。
 
 用法：
   # 推荐：所有私密信息写入项目根 .env（CLOUD_BASE_URL / CLOUD_CFG_USER /
