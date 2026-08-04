@@ -71,3 +71,75 @@ export function removeCache(key: string): void {
     /* ignore */
   }
 }
+
+/**
+ * 多值字典缓存（如行情快照 quotes）：与 readCache/writeCache 的「单值单时间戳」不同，
+ * 这里按「单只 key 独立时间戳」存储，读取时逐项剔除过期数据，避免某一只股票长期
+ * 显示陈旧行情；同时限制条目数并对体积做保护，避免无限增长撑爆 localStorage。
+ *
+ * 约定：写入的 value 应已裁剪为展示必需字段（如 stock/quote/history），否则体积过大时
+ * 会被 2MB 保护直接放弃写入。
+ */
+const KEYED_CACHE_MAX_ENTRIES = 60;
+
+export function writeKeyedCache<T>(
+  key: string,
+  entries: Record<string, T>,
+  maxEntries: number = KEYED_CACHE_MAX_ENTRIES,
+): void {
+  if (!isClient()) return;
+  try {
+    const now = Date.now();
+    const codes = Object.keys(entries).slice(-maxEntries);
+    const payload: Record<string, { ts: number; data: T }> = {};
+    for (const code of codes) payload[code] = { ts: now, data: entries[code] };
+    const raw = JSON.stringify({ ts: now, data: payload });
+    // 单个缓存文件超过 2MB 直接放弃，避免撑爆 localStorage（约 5MB）
+    if (raw.length > 2 * 1024 * 1024) return;
+    window.localStorage.setItem(buildKey(key), raw);
+  } catch {
+    /* 配额不足等异常静默忽略 */
+  }
+}
+
+/** 读取多值字典缓存，逐项剔除过期 key；无有效数据返回 null。剔除了过期项会回写精简缓存。 */
+export function readKeyedCache<T>(
+  key: string,
+  ttlMs: number,
+  maxEntries: number = KEYED_CACHE_MAX_ENTRIES,
+): Record<string, T> | null {
+  if (!isClient()) return null;
+  try {
+    const raw = window.localStorage.getItem(buildKey(key));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as {
+      ts: number;
+      data: Record<string, { ts: number; data: T } | T>;
+    };
+    const now = Date.now();
+    const result: Record<string, T> = {};
+    let changed = false;
+    for (const [code, wrapped] of Object.entries(parsed.data ?? {})) {
+      if (wrapped == null) continue;
+      // 兼容旧格式：旧缓存直接把值作为 data（无内层 {ts,data}），用外层 ts 判定过期
+      const isWrapped = typeof wrapped === "object" && "ts" in wrapped && "data" in wrapped;
+      const entryTs = isWrapped ? (wrapped as { ts: number }).ts : parsed.ts;
+      const entryData = isWrapped ? (wrapped as { data: T }).data : (wrapped as T);
+      if (entryData == null) continue;
+      if (now - entryTs > ttlMs) {
+        changed = true;
+        continue;
+      }
+      result[code] = entryData;
+    }
+    if (Object.keys(result).length === 0) {
+      window.localStorage.removeItem(buildKey(key));
+      return null;
+    }
+    // 剔除了过期项则回写精简后的缓存，避免缓存体积只增不减
+    if (changed) writeKeyedCache(key, result, maxEntries);
+    return result;
+  } catch {
+    return null;
+  }
+}

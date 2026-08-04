@@ -89,7 +89,7 @@ import {
 import type { AssistantContext } from "../../lib/ai/assistant";
 import { splitAssistantSections, conclusionTone } from "../../lib/ai/assistant";
 import { formatDateShanghai, formatDateTimeShanghai } from "../../lib/utils/time";
-import { readCache, writeCache, removeCache } from "../../lib/utils/client-cache";
+import { readCache, writeCache, removeCache, readKeyedCache, writeKeyedCache } from "../../lib/utils/client-cache";
 
 type View = "home" | "watchlist" | "trades" | "settings" | "analytics" | "analysis" | "scan" | "writeback";
 type TradeMode = "buy" | "sell";
@@ -356,7 +356,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   // 最近分析与行情快照从 localStorage 恢复，刷新页面时避免首屏空白；
   // 行情快照 TTL 较短（10 分钟），过期数据会在后续轮询中被自动覆盖。
   const [recentAnalyses, setRecentAnalyses] = useState<Analysis[]>(() => readCache<Analysis[]>("recent") ?? []);
-  const [quotes, setQuotes] = useState<Record<string, Analysis>>(() => readCache<Record<string, Analysis>>("quotes", "quote") ?? {});
+  const [quotes, setQuotes] = useState<Record<string, Analysis>>(() => readKeyedCache<Analysis>("quotes", 10 * 60 * 1000) ?? {});
   const [trades, setTrades] = useState<Trade[]>([]);
   const [watchlist, setWatchlist] = useState<WatchItem[]>([]);
   const [alerts, setAlerts] = useState<AlertRule[]>([]);
@@ -532,7 +532,13 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       quoteFetchedAt.current[result.stock.code] = Date.now();
       setQuotes((current) => {
         const next = { ...current, [result.stock.code]: result };
-        writeCache("quotes", next);
+        // 写入缓存时只保留展示必需字段（stock/quote/history），避免单文件撑爆 localStorage
+        // 导致缓存静默失效；逐项 TTL 与条目上限在 writeKeyedCache 内保证。
+        const trimmed: Record<string, Pick<Analysis, "stock" | "quote" | "history">> = {};
+        for (const [code, item] of Object.entries(next)) {
+          trimmed[code] = { stock: item.stock, quote: item.quote, history: item.history };
+        }
+        writeKeyedCache("quotes", trimmed, 60);
         return next;
       });
       if (showResult) {
@@ -670,6 +676,9 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     // 将选股榜单行数据暂存，供 fetchAnalysis 携带至 AI 分析接口
     pendingScreenerContext.current = screenerContext ?? null;
     navigate("analysis", symbol);
+    // 关键修复：从选股榜单/关注/持仓列表点「分析」时，必须真正拉取该股票的分析，
+    // 否则 analysis 仍是上一次的股票，「记录买入」对话框的技术面建议（支撑位/1R/2R）会停留在旧股票。
+    await fetchAnalysis(symbol, true);
   }
 
   async function addWatch(stock = analysis?.stock) {
@@ -915,7 +924,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 watchlist={watchlist}
                 recentAnalyses={recentAnalyses}
                 initialSymbol={searchParams.get("symbol") ?? ""}
-                onPickRecent={(item) => setAnalysis(item)}
+                onPickRecent={(item) => void fetchAnalysis(item.stock.code, true)}
                 onRemoveRecent={removeRecentAnalysis}
                 onAnalyze={analyzeStock}
                 onReanalyze={reanalyzeStock}
@@ -1025,6 +1034,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
           analysisQuote={tradeMode === "buy" ? analysis?.quote ?? null : null}
           onClose={() => setTradeMode(null)}
           onSubmit={saveTrade}
+          onSwitchStock={async (symbol) => { await fetchAnalysis(symbol, true); }}
         />
       )}
       {reviewCycle && (
@@ -4463,7 +4473,7 @@ function CapitalSettings({ initialCapitalCents, capitalFlows, onSave, onAddFlow,
   );
 }
 
-function TradeModal({ mode, stock, positions, analysisQuote, onClose, onSubmit }: {
+function TradeModal({ mode, stock, positions, analysisQuote, onClose, onSubmit, onSwitchStock }: {
   mode: TradeMode;
   stock: { code?: string; symbol?: string; name: string } | null;
   positions: ReturnType<typeof calculatePortfolio>["positions"];
@@ -4471,6 +4481,8 @@ function TradeModal({ mode, stock, positions, analysisQuote, onClose, onSubmit }
   analysisQuote: { support?: number; target1?: number; target2?: number } | null;
   onClose: () => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
+  /** 对话框内手动切换到另一只股票时，重新拉取该股票的技术位（支撑位/1R/2R） */
+  onSwitchStock?: (symbol: string) => void | Promise<void>;
 }) {
   const firstInput = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -4528,9 +4540,14 @@ function TradeModal({ mode, stock, positions, analysisQuote, onClose, onSubmit }
         <form onSubmit={submit}>
           <div className="form-grid">
             <Field label="股票代码"><Input ref={firstInput} name="symbol" defaultValue={symbol} pattern="\d{6}" required onBlur={(event) => {
-              const resolved = resolveStock(event.currentTarget.value);
+              const code = event.currentTarget.value.trim();
+              const resolved = resolveStock(code);
               if (resolved && resolved.name !== resolved.code && nameInputRef.current) {
                 nameInputRef.current.value = resolved.name;
+              }
+              // 手动改成另一只股票时，重新拉取该股票的技术位，避免技术面建议停留在旧股票
+              if (onSwitchStock && /^\d{6}$/.test(code) && code !== (stock?.code ?? stock?.symbol)) {
+                void onSwitchStock(code);
               }
             }} /></Field>
             <Field label="股票名称"><Input ref={nameInputRef} name="name" defaultValue={name} required maxLength={30} /></Field>
