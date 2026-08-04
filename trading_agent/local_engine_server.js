@@ -73,27 +73,33 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // POST /run —— 用传入的 overrides 跑引擎
+  // POST /run —— 用传入的 overrides（+可选 profile 档位）跑引擎
   if (req.method === "POST" && (req.url === "/run" || (req.url && req.url.startsWith("/run?")))) {
     let body = "";
     req.on("data", (c) => (body += c));
     req.on("end", () => {
       let overrides = {};
+      let profile = "pre_market";
       try {
-        overrides = JSON.parse(body || "{}");
+        const parsed = JSON.parse(body || "{}");
+        overrides = parsed.overrides && typeof parsed.overrides === "object" ? parsed.overrides : parsed;
+        if (typeof parsed.profile === "string" &&
+            ["pre_market", "intraday", "post_market"].includes(parsed.profile)) {
+          profile = parsed.profile;
+        }
       } catch {
         overrides = {};
       }
       try {
         const py = resolvePython();
         const ovStr = JSON.stringify(overrides);
-        execFileSync(py, [RUN, "--prefetched", PRE, "--overrides", ovStr], {
+        execFileSync(py, [RUN, "--prefetched", PRE, "--profile", profile, "--overrides", ovStr], {
           cwd: BASE,
           timeout: 60000,
           encoding: "utf-8",
         });
         const payload = JSON.parse(fs.readFileSync(PAYLOAD, "utf-8"));
-        sendJson(res, 200, { ok: true, scan: payload, appliedOverrides: overrides });
+        sendJson(res, 200, { ok: true, scan: payload, appliedOverrides: overrides, appliedProfile: profile });
       } catch (e) {
         sendJson(res, 500, { ok: false, error: "引擎执行失败: " + msgOf(e) });
       }

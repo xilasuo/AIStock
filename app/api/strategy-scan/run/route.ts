@@ -81,6 +81,12 @@ export async function POST(req: Request) {
 
   const overrides = sanitizeOverrides(body);
   const overridesStr = JSON.stringify(overrides);
+  // 时段档位：决定拉取云端哪一档配置、以及跑哪套选股条件
+  const PROFILES = ["pre_market", "intraday", "post_market"];
+  const profile =
+    typeof body.profile === "string" && PROFILES.includes(body.profile)
+      ? body.profile
+      : "pre_market";
 
   // 路径 A：真实 Node 运行时，直接执行
   if (SUPPORTS_EXEC) {
@@ -92,7 +98,7 @@ export async function POST(req: Request) {
       const python = resolvePython();
       const stdout = execFileSync(
         python,
-        [RUN_HUB, "--prefetched", PREFETCHED, "--overrides", overridesStr],
+        [RUN_HUB, "--prefetched", PREFETCHED, "--profile", profile, "--overrides", overridesStr],
         {
           cwd: path.join(PROJECT_ROOT, "trading_agent"),
           timeout: 60_000, // 60s 超时（含回测+优化）
@@ -107,6 +113,7 @@ export async function POST(req: Request) {
         ok: true,
         scan: payload,
         appliedOverrides: overrides,
+        appliedProfile: profile,
         engineLog: stdout.slice(-200),
       });
     } catch (e: unknown) {

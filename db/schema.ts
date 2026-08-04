@@ -171,6 +171,7 @@ export const strategyFeedback = sqliteTable("strategy_feedback", {
   verdict: text("verdict", { enum: ["有效", "无效"] }).notNull().default("有效"),
   note: text("note").notNull().default(""),
   source: text("source").notNull().default("web"),
+  factors: text("factors").notNull().default(""),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 

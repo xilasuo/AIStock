@@ -272,14 +272,14 @@ export function StrategyScanView({
     };
   }, [initialData, load]);
 
-  async function submitFeedback(symbol: string, name: string, verdict: "有效" | "无效") {
+  async function submitFeedback(symbol: string, name: string, verdict: "有效" | "无效", factors?: Record<string, number>) {
     if (feedbackBusy) return;
     setFeedbackBusy(symbol + verdict);
     try {
       const res = await fetch("/api/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol, name, verdict, source: "web" }),
+        body: JSON.stringify({ symbol, name, verdict, source: "web", factors: factors ?? {} }),
       });
       if (res.ok) setFeedback((prev) => ({ ...prev, [symbol]: verdict }));
     } finally {
@@ -287,9 +287,48 @@ export function StrategyScanView({
     }
   }
 
-  async function handleRunInteractive(overrides: ScreenerOverrides) {
+  // 反馈优化：把历史「有效/无效」评价反向作用到因子权重，写回云端配置，下次扫描生效。
+  const [optimizeBusy, setOptimizeBusy] = useState(false);
+  const [optimizeResult, setOptimizeResult] = useState<{
+    ok: boolean;
+    adjusted?: boolean;
+    note?: string;
+    up?: number;
+    down?: number;
+    usedFeedback?: number;
+    newWeights?: Record<string, number>;
+  } | null>(null);
+  // 当前扫描所属的时段档位（用于把反馈优化作用到正确的档位权重）
+  const [scanProfile, setScanProfile] = useState<string>("pre_market");
+  async function optimizeFromFeedback() {
+    if (optimizeBusy) return;
+    setOptimizeBusy(true);
+    setOptimizeResult(null);
+    try {
+      const res = await fetch("/api/feedback/optimize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile: scanProfile }),
+      });
+      const json = (await res.json()) as {
+        ok: boolean;
+        adjusted?: boolean;
+        note?: string;
+        up?: number;
+        down?: number;
+        usedFeedback?: number;
+        newWeights?: Record<string, number>;
+      };
+      if (json.ok) setOptimizeResult(json);
+    } finally {
+      setOptimizeBusy(false);
+    }
+  }
+
+  async function handleRunInteractive(overrides: ScreenerOverrides, profile?: string) {
     setScanBusy(true);
     setScanError("");
+    setScanProfile(profile || "pre_market");
     try {
       // 90 秒超时（略大于后端 60s 超时，给网络留余量）
       const ctrl = new AbortController();
@@ -297,7 +336,7 @@ export function StrategyScanView({
       const res = await fetch("/api/strategy-scan/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(overrides),
+        body: JSON.stringify(profile ? { ...overrides, profile } : overrides),
         signal: ctrl.signal,
       }).finally(() => window.clearTimeout(timer));
       const json = (await res.json()) as { ok?: boolean; scan?: Scan; error?: string; code?: string };
@@ -474,6 +513,16 @@ export function StrategyScanView({
       )}
 
       <Card>
+        <div className="scan-feedback-bar">
+          <button type="button" className="optimize-btn" disabled={optimizeBusy} onClick={optimizeFromFeedback}>
+            {optimizeBusy ? "优化中…" : "用反馈优化权重"}
+          </button>
+          {optimizeResult && (
+            <span className={`scan-optimize-note ${optimizeResult.adjusted ? "is-adjusted" : ""}`}>
+              {optimizeResult.note}
+            </span>
+          )}
+        </div>
         <CardHeader title="选股榜单（多因子打分）" desc="风险调整动量 + 趋势 + 估值 + RSI/MACD 技术确认 + 流动性/规模/资金流，加权打分取 Top N；行业分散约束限制单行业最多入选数。" />
         {scan.screenerMeta && (() => {
           const applied = scan.screenerMeta.applied || {};
@@ -551,7 +600,7 @@ export function StrategyScanView({
                       type="button"
                       className={`scan-feedback__btn scan-feedback__btn--up ${verdictOf(feedback, s.code) === "有效" ? "is-active" : ""}`}
                       disabled={feedbackBusy === s.code + "有效"}
-                      onClick={() => submitFeedback(s.code, s.name, "有效")}
+                      onClick={() => submitFeedback(s.code, s.name, "有效", s.factors)}
                     >
                       有效
                     </button>
@@ -559,7 +608,7 @@ export function StrategyScanView({
                       type="button"
                       className={`scan-feedback__btn scan-feedback__btn--down ${verdictOf(feedback, s.code) === "无效" ? "is-active" : ""}`}
                       disabled={feedbackBusy === s.code + "无效"}
-                      onClick={() => submitFeedback(s.code, s.name, "无效")}
+                      onClick={() => submitFeedback(s.code, s.name, "无效", s.factors)}
                     >
                       无效
                     </button>

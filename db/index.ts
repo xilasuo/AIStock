@@ -241,6 +241,10 @@ export async function ensureSchema() {
     // 以登录会话推送的结果 user_id = 本人 id，前端「回写结果」页按登录用户只展示本人结果。
     await addColumnIfMissing("strategy_writeback", "user_id", "user_id INTEGER");
 
+    // 1.9) 用户反馈表：增加 factors 列，存储被评价标的的因子贡献明细，
+    // 供 optimizer 计算「哪些因子在用户认可的信号里更重要」，反向调整权重。
+    await addColumnIfMissing("strategy_feedback", "factors", "factors TEXT NOT NULL DEFAULT ''");
+
     await db.batch([
       db.prepare(
         `CREATE UNIQUE INDEX IF NOT EXISTS account_settings_user_idx ON account_settings(user_id)`,

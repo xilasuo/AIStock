@@ -52,12 +52,21 @@ export async function POST(req: Request) {
   const name = String(b.name ?? "").trim();
   const note = String(b.note ?? "").trim().slice(0, 500);
   const source = String(b.source ?? "web").trim().slice(0, 20);
+  // 因子贡献明细（前端选股结果里的 factors）：供 optimizer 反向调权重。
+  let factors = "";
+  if (b.factors && typeof b.factors === "object") {
+    try {
+      factors = JSON.stringify(b.factors);
+    } catch {
+      factors = "";
+    }
+  }
 
   try {
     const user = await getCurrentUser();
     await ensureSchema();
     const db = getDb();
-    await db.insert(strategyFeedback).values({ userId: user.id, symbol, name, verdict, note, source });
+    await db.insert(strategyFeedback).values({ userId: user.id, symbol, name, verdict, note, source, factors });
     return Response.json({ ok: true });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

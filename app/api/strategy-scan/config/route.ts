@@ -86,6 +86,7 @@ async function saveStoredConfig(userId: number | null, config: unknown): Promise
 
 // 云端/沙箱回退用的默认配置（与 trading_agent/strategy_config.yaml 默认值同步）。
 // 仅用于「配置展示与编辑」，不参与实际选股计算。
+// 改为按「时段档位」分档：pre_market(盘前/突破) / intraday(盘中/动量追涨) / post_market(盘后/均线多头)。
 const FALLBACK_CONFIG = {
   screener: {
     top_n: 8,
@@ -135,6 +136,14 @@ const FALLBACK_CONFIG = {
   },
 };
 
+// 三时段分档默认（pre_market 用突破、intraday 用强势追涨、post_market 用均线多头）。
+// GET 在「无云端存储配置」或「沙箱禁 exec」时返回此分档结构，保证前端可按时段配置。
+const FALLBACK_PROFILES: Record<string, Record<string, unknown>> = {
+  pre_market: { ...FALLBACK_CONFIG, preset: "breakout" },
+  intraday: { ...FALLBACK_CONFIG, preset: "momentum_chase" },
+  post_market: { ...FALLBACK_CONFIG, preset: "ma_golden" },
+};
+
 export async function GET(req: Request) {
   const unauthorized = await requireApiUserOrPushToken(req);
   if (unauthorized) return unauthorized;
@@ -171,7 +180,7 @@ export async function GET(req: Request) {
       if (isExecNotImplemented(msg)) {
         return Response.json({
           ok: true,
-          config: FALLBACK_CONFIG,
+          config: { profiles: FALLBACK_PROFILES },
           note: "云端环境（沙箱）无法读取实时 YAML，已返回内置默认配置。实际选股由本地程序拉取本配置后执行。",
         });
       }

@@ -122,8 +122,12 @@ def load_prefetched(path: str):
     return klines, quotes, hot, codes, raw.get("config", {})
 
 
-def pull_cloud_overrides(url: str, user: str, password: str):
+def pull_cloud_overrides(url: str, user: str, password: str, profile: str = "pre_market"):
     """登录云端并拉取策略扫描配置，摊平为 overrides；同时返回溯源凭证 receipt。
+
+    profile: 时段档位（pre_market/intraday/post_market）。云端配置可能为分档结构
+    {profiles:{pre_market:{...},intraday:{...},post_market:{...}}}，此时只提取该档
+    的配置再摊平；旧全局结构（无 profiles 键）视为 pre_market 档，向后兼容。
 
     返回 (overrides: dict, cookie: str|None, receipt: dict)。云端不执行引擎、只维护配置；
     本地程序（含 WorkBuddy 中枢调用的 run_hub）以此先拉取云端配置再执行。
@@ -175,6 +179,12 @@ def pull_cloud_overrides(url: str, user: str, password: str):
         receipt["note"] = f"云端返回异常（HTTP {status}），已回退本地 strategy_config.yaml"
         return {}, cookie, receipt
     nested = obj.get("config") or {}
+    # 分档提取：云端配置为 {profiles:{...}} 时只取当前档；旧结构（无 profiles）视为 pre_market 档
+    is_profiles = isinstance(nested, dict) and isinstance(nested.get("profiles"), dict)
+    if is_profiles:
+        profiles = nested["profiles"]
+        chosen = profiles.get(profile) or profiles.get("pre_market") or {}
+        nested = chosen if isinstance(chosen, dict) else {}
     try:
         receipt["config_sha256"] = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     except Exception:  # noqa: BLE001
@@ -182,7 +192,7 @@ def pull_cloud_overrides(url: str, user: str, password: str):
     overrides = pcc.to_overrides(nested)
     receipt["config_keys"] = sorted(overrides.keys())
     receipt["source"] = "cloud"
-    receipt["note"] = "策略配置已从云端拉取并应用"
+    receipt["note"] = "策略配置已从云端拉取并应用" + (f" [profile={profile}]" if is_profiles else "")
     return overrides, cookie, receipt
 
 
@@ -716,6 +726,10 @@ def main():
     ap.add_argument("--out-dir", default=os.path.dirname(os.path.abspath(__file__)))
     ap.add_argument("--overrides", default=None,
                     help="JSON 字符串，含 screener/signal/market/optim 覆盖参数（优先级高于 prefetched.config）")
+    ap.add_argument("--profile", default="pre_market",
+                    choices=["pre_market", "intraday", "post_market"],
+                    help="时段档位：pre_market(盘前) / intraday(盘中) / post_market(盘后)。"
+                         "拉取云端配置时只应用该档的条件，避免三时段共用一份全局配置互相干扰。")
     ap.add_argument("--scan-url", default=os.environ.get("CLOUD_SCAN_URL") or "")
     ap.add_argument("--scan-token", default=os.environ.get("CLOUD_SCAN_TOKEN") or "")
     ap.add_argument("--push-url", default=os.environ.get("CLOUD_WRITEBACK_URL") or "")
@@ -782,34 +796,43 @@ def main():
         except json.JSONDecodeError as e:
             print(f"--overrides JSON 解析失败: {e}，忽略")
 
-    # 解析策略预设：preset 作为「配方基线」，显式字段（prefetched/CLI）覆盖预设
-    merged = presets.resolve_preset(cli_ov)
-    if cli_ov.get("preset"):
-        print(f"已套用策略预设: {cli_ov.get('preset')}")
-    # 最终优先级：prefetched 内嵌 config < 预设基线 < 显式覆盖
+    profile = getattr(args, "profile", None) or "pre_market"
+
+    # 云端配置拉取（按 profile 取对应档，云端只配不跑，本地拉取后执行）：
+    # 优先级介于 strategy_config.yaml 与 prefetched/CLI 之间，
+    # 即「云端条件可用，本地 prefetched/CLI 仍可覆盖」。
+    cloud_receipt = None
+    cloud_cookie = None
+    cloud_ov: dict = {}
+    if args.cloud_config_url:
+        cloud_ov, cloud_cookie, cloud_receipt = pull_cloud_overrides(
+            args.cloud_config_url, args.cloud_user, args.cloud_pass, profile)
+        if cloud_ov:
+            print(f"已套用云端配置(profile={profile}, {args.cloud_config_url}): {list(cloud_ov.keys())}")
+        else:
+            print(f"[云端配置] 来源={cloud_receipt['source']} | {cloud_receipt.get('note','')}")
+
+    # 解析策略预设：云端 profile 配置 + CLI 显式覆盖共同决定基线；
+    # preset 作为「配方基线」，显式字段（云端 profile / CLI）覆盖预设。
+    # 优先级（低->高）：云端 profile 配置 < CLI 显式覆盖；preset 基线被显式字段覆盖。
+    eff = {**cloud_ov, **cli_ov}
+    merged = presets.resolve_preset(eff)
+    if eff.get("preset"):
+        print(f"已套用策略预设: {eff.get('preset')} (profile={profile})")
+    # 最终优先级（低->高）：prefetched 内嵌 config < 预设基线 < 云端 profile 显式字段 < CLI 显式覆盖
+    # （云端 profile / CLI 的显式字段会覆盖预设基线中同名项；预设只填补未显式指定的字段）
     ov = {**prefetched_cfg, **merged}
 
     cfg = config.AppConfig()
     cfg.universe = codes
-    # 持久默认：strategy_config.yaml（优先级低于 prefetched/preset/显式 overrides）
+    # 持久默认：strategy_config.yaml（优先级低于 prefetched/云端/CLI）
     yaml_ov = config.load_strategy_config()
     if yaml_ov:
         apply_config(cfg, yaml_ov)
         print(f"已套用 strategy_config.yaml: {list(yaml_ov.keys())}")
 
-    # 云端配置拉取（云端只配不跑，本地拉取后执行）：
-    # 优先级介于 strategy_config.yaml 与 prefetched/CLI 之间，
-    # 即「云端条件可用，本地 prefetched/CLI 仍可覆盖」。
-    cloud_receipt = None
-    cloud_cookie = None
-    if args.cloud_config_url:
-        cloud_ov, cloud_cookie, cloud_receipt = pull_cloud_overrides(
-            args.cloud_config_url, args.cloud_user, args.cloud_pass)
-        if cloud_ov:
-            apply_config(cfg, cloud_ov)
-            print(f"已套用云端配置({args.cloud_config_url}): {list(cloud_ov.keys())}")
-        else:
-            print(f"[云端配置] 来源={cloud_receipt['source']} | {cloud_receipt.get('note','')}")
+    if cloud_ov:
+        apply_config(cfg, cloud_ov)
     if cloud_receipt is None:
         cloud_receipt = {
             "source": "local-fallback",

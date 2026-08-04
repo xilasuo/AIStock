@@ -1883,6 +1883,46 @@ svg { display: block; }
   color: var(--accent-ink);
 }
 
+/* 反馈优化工具条 */
+.scan-feedback-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.optimize-btn {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  padding: 6px 16px;
+  transition: filter var(--dur-fast) var(--ease-standard), opacity var(--dur-fast) var(--ease-standard);
+  white-space: nowrap;
+}
+
+.optimize-btn:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.optimize-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.scan-optimize-note {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+
+.scan-optimize-note.is-adjusted {
+  color: var(--accent-ink);
+}
+
 .scan-action-btn:disabled {
   cursor: default;
   opacity: 0.5;
@@ -1934,6 +1974,58 @@ svg { display: block; }
   letter-spacing: -0.01em;
   margin: 0;
   color: var(--text);
+}
+
+/* ---- 时段档位标签页（盘前/盘中/盘后各自独立条件）---- */
+.screener-profile-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.screener-profile-tabs {
+  display: inline-flex;
+  gap: 6px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.screener-profile-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 5px 12px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  line-height: 1.2;
+}
+
+.screener-profile-tab:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.screener-profile-tab.is-active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.screener-profile-tab__sub {
+  font-size: 10.5px;
+  font-weight: 500;
+  opacity: 0.75;
+  font-family: var(--font-mono, ui-monospace, monospace);
 }
 
 .screener-muted {

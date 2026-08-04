@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 /* ----------------------------- 类型 ----------------------------- */
 export type ScreenerOverrides = {
@@ -59,6 +59,19 @@ export const RISK_TIER_LABEL: Record<RiskTier, string> = {
   平衡: "平衡",
   激进: "激进",
 };
+
+/** 时段档位（与 run_hub --profile 对应）：盘前/盘中/盘后各自独立选股条件 */
+export const SCAN_PROFILES: { key: string; label: string; preset: string; hint: string }[] = [
+  { key: "pre_market", label: "盘前", preset: "breakout", hint: "突破稳健 · 盘前选股，偏持有" },
+  { key: "intraday", label: "盘中", preset: "momentum_chase", hint: "强势追涨 · 盘中动量扫描" },
+  { key: "post_market", label: "盘后", preset: "ma_golden", hint: "均线多头 · 盘后次日观察池" },
+];
+
+/** 取某档位的默认嵌套配置（用其预设基线 + 默认参数） */
+function defaultNestedFor(p: string): Record<string, unknown> {
+  const preset = SCAN_PROFILES.find((x) => x.key === p)?.preset || "";
+  return toNested({ ...DEFAULTS, preset });
+}
 
 /** 经典短线策略预设（与 trading_agent/strategy/presets.py 保持同步） */
 export const STRATEGY_PRESETS: {
@@ -506,12 +519,15 @@ export function ScreenerConfigPanel({
   onRun,
   busy,
 }: {
-  onRun: (overrides: ScreenerOverrides) => Promise<void>;
+  onRun: (overrides: ScreenerOverrides, profile?: string) => Promise<void>;
   busy: boolean;
 }) {
   const [ov, setOv] = useState<ScreenerOverrides>({ ...DEFAULTS });
   const [showWeights, setShowWeights] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState<string>("");
+  const [profile, setProfile] = useState<string>("pre_market");
+  // 保留云端拉取到的完整配置（含其他档位），保存时只更新当前档、不丢其他档
+  const rawConfigRef = useRef<Record<string, unknown> | null>(null);
 
   // 挂载时拉取云端持久配置作为默认，使网页与 CLI 共用同一份持久配置
   useEffect(() => {
@@ -520,9 +536,21 @@ export function ScreenerConfigPanel({
       .then((r) => r.json() as { ok?: boolean; config?: Record<string, unknown> })
       .then((data) => {
         if (cancelled || !data?.ok || !data?.config) return;
-        const cfg = fromNested(data.config as Record<string, unknown>);
-        setOv((prev) => ({ ...DEFAULTS, ...prev, ...cfg }));
-        if (typeof cfg.preset === "string" && cfg.preset) setSelectedPreset(cfg.preset);
+        rawConfigRef.current = data.config as Record<string, unknown>;
+        const cfg = data.config as Record<string, unknown>;
+        // 分档结构：取当前档（默认 pre_market）的配置
+        let pCfg: Record<string, unknown> = {};
+        if (cfg.profiles && typeof cfg.profiles === "object") {
+          const profiles = cfg.profiles as Record<string, unknown>;
+          pCfg = (profiles[profile] as Record<string, unknown>) ||
+                 (profiles.pre_market as Record<string, unknown>) || {};
+        } else {
+          // 旧全局结构：视作 pre_market 档
+          pCfg = cfg;
+        }
+        const flat = fromNested(pCfg);
+        setOv((prev) => ({ ...DEFAULTS, ...prev, ...flat }));
+        if (typeof flat.preset === "string" && flat.preset) setSelectedPreset(flat.preset);
       })
       .catch(() => {
         /* 读取失败则保留 DEFAULTS */
@@ -530,7 +558,7 @@ export function ScreenerConfigPanel({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 保存当前配置到云端（POST /api/strategy-scan/config）
   const [saving, setSaving] = useState(false);
@@ -539,14 +567,31 @@ export function ScreenerConfigPanel({
     setSaving(true);
     setSaveMsg(null);
     try {
+      const all = rawConfigRef.current || {};
+      let next: Record<string, unknown>;
+      if (all && all.profiles && typeof all.profiles === "object") {
+        // 已是分档结构：只更新当前档，保留其他档
+        next = { ...all, profiles: { ...(all.profiles as Record<string, unknown>), [profile]: toNested(ov) } };
+      } else {
+        // 旧全局结构 -> 包装成三档：当前档用编辑结果，其余用各自默认预设
+        next = {
+          profiles: {
+            pre_market: (!all.profiles && Object.keys(all).length ? (all as Record<string, unknown>) : defaultNestedFor("pre_market")),
+            intraday: defaultNestedFor("intraday"),
+            post_market: defaultNestedFor("post_market"),
+          },
+        };
+        (next.profiles as Record<string, unknown>)[profile] = toNested(ov);
+      }
       const res = await fetch("/api/strategy-scan/config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ config: toNested(ov) }),
+        body: JSON.stringify({ config: next }),
       });
       const data = (await res.json()) as { ok?: boolean; error?: string };
       if (data?.ok) {
-        setSaveMsg({ ok: true, text: "已保存到云端，本地拉取后将生效" });
+        rawConfigRef.current = next;
+        setSaveMsg({ ok: true, text: `已保存「${SCAN_PROFILES.find((p) => p.key === profile)?.label || profile}」档配置到云端，本地拉取后生效` });
       } else {
         setSaveMsg({ ok: false, text: data?.error || "保存失败" });
       }
@@ -555,7 +600,7 @@ export function ScreenerConfigPanel({
     } finally {
       setSaving(false);
     }
-  }, [ov]);
+  }, [ov, profile]);
 
   const set = useCallback(<K extends keyof ScreenerOverrides>(k: K, v: ScreenerOverrides[K]) => {
     setOv((prev) => ({ ...prev, [k]: v, ...(k !== "preset" ? { preset: "" } : {}) }));
@@ -579,6 +624,23 @@ export function ScreenerConfigPanel({
     if (p) {
       setOv({ ...DEFAULTS, ...p.overrides, preset: key });
     }
+  }, []);
+
+  /** 切换时段档位：加载该档已存配置；首次进入则用其默认预设基线 */
+  const switchProfile = useCallback((p: string) => {
+    setProfile(p);
+    const all = rawConfigRef.current || {};
+    let pCfg: Record<string, unknown> = {};
+    if (all && all.profiles && typeof all.profiles === "object" && (all.profiles as Record<string, unknown>)[p]) {
+      pCfg = (all.profiles as Record<string, unknown>)[p] as Record<string, unknown>;
+    } else if (!all.profiles && p === "pre_market") {
+      pCfg = all as Record<string, unknown>;
+    } else {
+      pCfg = defaultNestedFor(p);
+    }
+    const flat = fromNested(pCfg);
+    setOv({ ...DEFAULTS, ...flat });
+    setSelectedPreset(typeof flat.preset === "string" ? flat.preset : "");
   }, []);
 
   /** 切换板块选中状态 */
@@ -633,6 +695,25 @@ export function ScreenerConfigPanel({
       <div className="screener-panel__head">
         <h3 className="screener-panel__title">选股前置条件</h3>
         <span className="screener-muted">让扫描更有针对性</span>
+      </div>
+
+      {/* 时段档位：盘前/盘中/盘后各自独立条件 */}
+      <div className="screener-profile-row">
+        <span className="screener-field-label">时段档位</span>
+        <div className="screener-profile-tabs">
+          {SCAN_PROFILES.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              className={`screener-profile-tab ${profile === p.key ? "is-active" : ""}`}
+              title={p.hint}
+              onClick={() => switchProfile(p.key)}
+            >
+              {p.label}
+              <span className="screener-profile-tab__sub">{p.preset}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* 策略预设下拉框（按风险档分组） */}
@@ -733,9 +814,9 @@ export function ScreenerConfigPanel({
             type="button"
             className="screener-btn screener-btn--primary"
             disabled={busy}
-            onClick={() => onRun(ov)}
+            onClick={() => onRun(ov, profile)}
           >
-            {busy ? "扫描中…" : "扫描"}
+            {busy ? "执行中…" : "立即执行（当前时段）"}
           </button>
           <button
             type="button"
