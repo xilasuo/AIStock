@@ -441,6 +441,14 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     flash("本地分析缓存已清空");
   }, [flash]);
 
+  const removeRecentAnalysis = useCallback((code: string) => {
+    setRecentAnalyses((current) => {
+      const next = current.filter((item) => item.stock.code !== code);
+      writeCache("recent", next);
+      return next;
+    });
+  }, []);
+
   const loadData = useCallback(async () => {
     try {
       const [tradeData, watchData, alertData, reviewData, statusData, accountData, preferencesData] = await Promise.all([
@@ -909,6 +917,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 recentAnalyses={recentAnalyses}
                 initialSymbol={searchParams.get("symbol") ?? ""}
                 onPickRecent={(item) => setAnalysis(item)}
+                onRemoveRecent={removeRecentAnalysis}
                 onAnalyze={analyzeStock}
                 onReanalyze={reanalyzeStock}
                 onBuy={() => setTradeMode("buy")}
@@ -1169,6 +1178,7 @@ function StockAnalysisPanel({
   recentAnalyses,
   initialSymbol,
   onPickRecent,
+  onRemoveRecent,
   onAnalyze,
   onReanalyze,
   onBuy,
@@ -1187,6 +1197,7 @@ function StockAnalysisPanel({
   recentAnalyses: Analysis[];
   initialSymbol: string;
   onPickRecent: (item: Analysis) => void;
+  onRemoveRecent: (code: string) => void;
   onAnalyze: (event?: React.FormEvent, overrideQuery?: string) => Promise<void>;
   onReanalyze: () => Promise<void>;
   onBuy: () => void;
@@ -1242,14 +1253,29 @@ function StockAnalysisPanel({
           <span className="recent-bar__label">最近查询</span>
           <div className="recent-bar__chips">
             {recentAnalyses.map((item) => (
-              <button
+              <span
                 key={item.stock.code}
-                type="button"
                 className={analysis && analysis.stock.code === item.stock.code ? "recent-chip is-active" : "recent-chip"}
-                onClick={() => onPickRecent(item)}
               >
-                {item.stock.name} <span className="recent-chip__code">{item.stock.code}</span>
-              </button>
+                <button
+                  type="button"
+                  className="recent-chip__content"
+                  onClick={() => onPickRecent(item)}
+                >
+                  {item.stock.name} <span className="recent-chip__code">{item.stock.code}</span>
+                </button>
+                <button
+                  type="button"
+                  className="recent-chip__close"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRemoveRecent(item.stock.code);
+                  }}
+                  aria-label={`移除 ${item.stock.name}`}
+                >
+                  <X size={12} />
+                </button>
+              </span>
             ))}
           </div>
         </div>

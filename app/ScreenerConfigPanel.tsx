@@ -254,6 +254,37 @@ export const STRATEGY_PRESETS: {
       max_pe_ttm: 10000, max_pb: 1000, top_n: 3, st_filter: "exclude_st",
     },
   },
+  // --- 尾盘 / 早盘时段策略 ---
+  {
+    key: "afternoon_close",
+    label: "尾盘选股",
+    risk: "平衡",
+    desc: "尾盘放量拉升：捕捉14:30~15:00尾盘资金抢筹信号，侧重短期动量+资金流+量能，精选中短线弹性标的。适用尾盘建仓、隔日冲高止盈。",
+    overrides: {
+      w_momentum: 0.32, w_liquidity: 0.20, w_trend: 0.15,
+      w_fund_flow: 0.15, w_macd: 0.10, w_rsi: 0.06,
+      w_value: 0.02, w_size: 0.00, w_quality: 0.00,
+      momentum_window: 5, min_turnover_pct: 1.5,
+      use_breakout_filter: true, breakout_window: 10,
+      max_pe_ttm: 300, max_pb: 20,
+      top_n: 5, max_per_sector: 1, st_filter: "exclude_st",
+    },
+  },
+  {
+    key: "morning_breakout",
+    label: "早盘选股",
+    risk: "激进",
+    desc: "早盘强势突破：捕捉9:30~10:30开盘放量抢筹信号，极高动量权重+高换手+主力资金驱动，做早盘强势启动、日内弹性最大。适合早盘追进、盘中/次日止盈。",
+    overrides: {
+      w_momentum: 0.38, w_liquidity: 0.22, w_macd: 0.14,
+      w_trend: 0.12, w_fund_flow: 0.10, w_rsi: 0.04,
+      w_value: 0.00, w_size: 0.00, w_quality: 0.00,
+      momentum_window: 3, min_turnover_pct: 2.5,
+      use_breakout_filter: true, breakout_window: 8,
+      max_pe_ttm: 10000, max_pb: 1000,
+      top_n: 3, max_per_sector: 1, st_filter: "exclude_st",
+    },
+  },
 ];
 
 /** 默认值（与 config.py ScreenerConfig 默认值对齐） */

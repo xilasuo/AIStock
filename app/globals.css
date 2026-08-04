@@ -6224,6 +6224,36 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
 }
 .recent-chip__code { color: var(--muted); font-size: var(--fs-2xs); font-weight: 500; }
 .recent-chip.is-active .recent-chip__code { color: color-mix(in srgb, var(--accent) 60%, var(--ink)); }
+.recent-chip__content {
+  align-items: center;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  gap: 5px;
+  padding: 0;
+}
+.recent-chip__close {
+  align-items: center;
+  background: none;
+  border: none;
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  height: 16px;
+  justify-content: center;
+  margin-left: 2px;
+  padding: 0;
+  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+  width: 16px;
+}
+.recent-chip__close:hover { background: var(--surface-hover); color: var(--ink); }
+.recent-chip.is-active .recent-chip__close:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
 
 /* ---------------- 弹窗增强 ---------------- */
 .modal--sm { max-width: 420px; }
