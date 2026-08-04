@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
 import {
   SectionHeader,
   Card,
@@ -8,7 +7,6 @@ import {
   Tag,
   Banner,
   Hint,
-  Spinner,
   LoadingState,
 } from "../components/ui";
 import { useApi } from "../../lib/utils/use-api";
@@ -73,7 +71,7 @@ function SignalCard({ signal }: { signal: WritebackSignal }) {
 
 /* ------------------------------ 主视图 ------------------------------ */
 export function WritebackView() {
-  const { data: writeback, loading, error, reload } = useApi<WritebackPayload>(
+  const { data: writeback, loading, error } = useApi<WritebackPayload>(
     async () => {
       const res = await fetch("/api/writeback-signals");
       const json = (await res.json()) as WritebackResponse;

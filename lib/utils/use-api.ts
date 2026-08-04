@@ -85,7 +85,6 @@ export function useApi<T>(
       alive = false;
       ctrl.abort();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeoutMs]);
 
   useEffect(() => {

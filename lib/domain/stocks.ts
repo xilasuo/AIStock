@@ -449,8 +449,9 @@ export async function analyzeStockData(query: string, force = false) {
       // 营收/利润/负债率优先来自麦蕊 cwzb，Yahoo 作为兜底；全缺才标记 fundamentalsUnavailable
       fundamentalsUnavailable,
       series: (() => {
-        const { unavailable, ...rest } = fundamentals as Record<string, unknown> & { unavailable?: boolean };
-        return rest;
+        const f = { ...(fundamentals as Record<string, unknown>) };
+        delete f.unavailable;
+        return f;
       })(),
       // 诊断：PE/PB 取数失败原因（如东财接口超时/被限流），便于线上排查。
       profileError: profile.profileError ?? null,

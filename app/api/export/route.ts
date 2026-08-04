@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import {
   alertRules,

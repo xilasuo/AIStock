@@ -70,6 +70,8 @@ function summarizeContext(ctx: AssistantContext): string {
 function buildTraderSystemPrompt(prefs: TradingPreferences, context: AssistantContext): string {
   return [
     "你是严厉且资深的操盘手，只看数据、不拍脑袋。风格：直接、强硬、反幻觉；句句落到买卖动作上——买/加仓/持有/减仓/止损/清仓，并给出明确价格与股数/金额，不许用“可以考虑”“或许”这类软话。能算就给数字，不能算就明说缺什么；违背纪律的倾向要直接点破。不承诺收益、不替用户下单，最终由用户确认执行。",
+    "【回答风格硬约束】干净利索、不绕弯、不罗嗦：结论先行、动作直给；不铺垫寒暄客套、不重复免责声明、不堆砌形容词；能用短句绝不用长句。整体不超 400 字（第 8 条仓位计算展示除外），到点即止。",
+    "【持仓股决策硬约束】只要用户持有该股，必须把四件事讲死讲明、不许含糊：①止盈——价格到哪个价位/满足什么条件就卖（给具体价或明确条件）；②止损——跌破哪个价位必须砍（即下方止损位，给具体价，不犹豫）；③加仓(买入)——满足什么条件才加、给触发价与上限；④减仓/卖出——什么情况减、什么情况清。能买/能加就明说“买/加”，不能就明说“不买/不加、继续持有或减”，绝不用“可以考虑”“视情况”糊弄；最终结论只能是买/加仓/持有/减仓/清仓中的一个明确动作，不许两头下注。",
     "1. 只根据 context 里的信息做判断，绝不凭记忆补数、不编造行情或财务数字（PE/ROE/支撑阻力等缺失就写“数据缺失”）。",
     "2. 支撑位与阻力位来自 context 的支撑/阻力；没有历史价或数值异常时直接说明“无法判断支撑/阻力”，不臆造。",
     "3. 针对用户的实际持仓与账户状况给建议：有持仓从成本/盈亏/占仓出发谈加仓减仓止损；无持仓从旁观角度给方向，不要假装知道用户有没有买。",
@@ -132,26 +134,33 @@ export function buildStrategyFallback(context: AssistantContext, prefs: TradingP
   const nearResistance = quote.resistance > 0 && quote.price >= quote.resistance * 0.98;
   const concentration = p.stockPositionPercent ?? 0;
   const totalPosition = context.portfolio.totalPositionPercent ?? 0;
+  const stopLoss = quote.support;
+  const takeProfit = quote.resistance;
   let action: string;
   let reason: string;
   if (belowSupport) {
-    action = "止损/减仓（风险优先）";
-    reason = `价格已跌破风险观察线¥${quote.support.toFixed(3)}，原买入逻辑失效，先砍风险`;
+    action = "立即减仓/清仓（止损优先）";
+    reason = `价格已跌破止损线¥${stopLoss.toFixed(3)}，原买入逻辑失效，先砍风险`;
   } else if (p.returnPercent > 0 && nearResistance) {
     action = "分批止盈/减仓";
-    reason = `已有盈利且逼近阻力¥${quote.resistance.toFixed(3)}，落袋为安`;
+    reason = `已有盈利且逼近阻力¥${takeProfit.toFixed(3)}，落袋为安`;
   } else if (concentration >= prefs.maxConcentrationPercent) {
     action = "减仓降集中";
     reason = `该股占仓${concentration.toFixed(2)}%已超${prefs.maxConcentrationPercent}%警戒`;
   } else {
-    action = "持有并盯止损";
+    action = "持有并盯紧止损";
     reason = `仍在支撑上方、占仓${concentration.toFixed(2)}%未超标，持有观察`;
   }
   const canAdd = !belowSupport && concentration < prefs.maxConcentrationPercent && totalPosition < 80;
+  const slText = `${prefs.enforceStopLoss ? "跌破¥" + stopLoss.toFixed(3) + "必须立即砍，不犹豫" : "跌破¥" + stopLoss.toFixed(3) + "即减仓/清仓"}`;
+  const tpText = takeProfit > 0 ? `涨至¥${takeProfit.toFixed(3)}附近分批卖、落袋为安` : "阻力缺失，暂无法定价止盈，以跌破支撑为唯一卖出信号";
+  const addText = canAdd
+    ? `回踩¥${stopLoss.toFixed(3)}不破、占仓未超${prefs.maxConcentrationPercent}%、总仓位<80%时可小仓加，单笔受可亏约束`
+    : "当前不满足加仓条件，不加";
   return [
-    `结论：当前持仓相对成本${percent(p.returnPercent)}，操作建议——${action}${canAdd ? "；若回踩支撑不破、且未触发纪律上限，可小仓加（仍受单笔可亏约束）" : "；暂不加仓"}。`,
-    `依据：持仓${p.quantity}股，成本¥${p.averageCost.toFixed(3)}，现价¥${quote.price.toFixed(3)}，占仓${concentration.toFixed(2)}%，账户总仓位${totalPosition.toFixed(2)}%；支撑¥${quote.support.toFixed(3)}、阻力¥${quote.resistance.toFixed(3)}。`,
-    `仓位与止损：${prefs.enforceStopLoss ? "必须先设止损，" : ""}止损位设在¥${quote.support.toFixed(3)}下方，单笔亏损控制在计划内。`,
+    `结论：持仓${percent(p.returnPercent)}，操作——${action}。`,
+    `依据：持仓${p.quantity}股@成本¥${p.averageCost.toFixed(3)}，现价¥${quote.price.toFixed(3)}，占仓${concentration.toFixed(2)}%，总仓位${totalPosition.toFixed(2)}%；支撑¥${stopLoss.toFixed(3)}、阻力¥${takeProfit.toFixed(3)}。`,
+    `四档触发（讲死）：①止损——${slText}；②止盈——${tpText}；③加仓(买入)——${addText}；④减仓/卖出——占仓≥${prefs.maxConcentrationPercent}%或跌破支撑时减，否则持有。`,
     `风险与缺口：${reason}；${context.missingInformation.slice(0, 2).join("、") || "最新公告仍需自行核验"}${osc ? `\n动能信号：${osc}` : ""}。`,
     "下一步：按动作执行，最终由你确认。",
   ].join("\n");
@@ -170,7 +179,7 @@ export async function generateStrategy(
       {
         role: "user" as const,
         content:
-          "结合我的资产、风险偏好与交易纪律，给出该股当前交易策略：是否买入/加仓/持有/减仓/清仓，建议仓位（股数/成数）与止损位，并说明触发条件与依据。",
+          "结合我的资产、风险偏好与交易纪律，给出该股当前交易策略：结论只能是买/加仓/持有/减仓/清仓中的一个明确动作，并把止盈、止损、加仓(买入)、减仓(卖出)四档触发条件讲死（给具体价位或明确条件），不模糊、不两头下注；给出建议仓位（股数/成数）与止损位，并说明依据。",
       },
     ];
     const response = await fetch(`${ai.apiBase}/chat/completions`, {

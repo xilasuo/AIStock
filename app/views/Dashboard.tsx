@@ -30,8 +30,6 @@ import {
   ChevronDown,
   TrendingUp,
   Upload,
-  Check,
-  Copy,
   Trash2,
   CheckCircle2,
   MessageCircle,
@@ -526,6 +524,16 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     else root.classList.remove("stealth");
   }, [preferences?.stealthMode]);
 
+  const savePreferences = useCallback(async (next: TradingPreferences) => {
+    const result = await jsonRequest<TradingPreferences>("/api/preferences", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(next),
+    });
+    setPreferences(result);
+    flash("风险偏好与交易纪律已保存");
+  }, [setPreferences, flash]);
+
   // 老板键：按 Esc 在隐身模式间快速切换（办公室摸鱼防暴露）
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -603,7 +611,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   const quoteStale = useCallback((symbol: string) => {
     const fetchedAt = quoteFetchedAt.current[symbol];
     return !fetchedAt || Date.now() - fetchedAt > QUOTE_TTL_MS;
-  }, []);
+  }, [QUOTE_TTL_MS]);
 
   const refreshQuote = useCallback((symbol: string) => {
     if (pendingQuotes.current.has(symbol)) return;
@@ -678,7 +686,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       window.clearTimeout(firstCheck);
       window.clearInterval(timer);
     };
-  }, [alerts, checkAlerts, portfolio.positions, quoteStale, refreshQuote, watchlist]);
+  }, [alerts, checkAlerts, portfolio.positions, quoteStale, refreshQuote, watchlist, QUOTE_TTL_MS]);
 
   async function analyzeStock(event?: React.FormEvent, overrideQuery?: string) {
     event?.preventDefault();
@@ -859,16 +867,6 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       body: JSON.stringify({ action: "delete_flow", flowId }),
     });
     await reloadAccount();
-  }
-
-  async function savePreferences(next: TradingPreferences) {
-    const result = await jsonRequest<TradingPreferences>("/api/preferences", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(next),
-    });
-    setPreferences(result);
-    flash("风险偏好与交易纪律已保存");
   }
 
   const analyzedPosition = portfolio.positions.find((position) => position.symbol === analysis?.stock.code);
@@ -2421,7 +2419,6 @@ function SmartAssistant(
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [primed, setPrimed] = useState(false);
-  const [assistantMode, setAssistantMode] = useState<"ai" | "fallback" | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
@@ -2460,7 +2457,6 @@ function SmartAssistant(
       }]);
       setPrimed(true);
     }
-    setAssistantMode(null);
     // 仅股票维度变化触发恢复；position 变化不再清空历史
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stockCode, storageKey]);
@@ -2531,7 +2527,6 @@ function SmartAssistant(
           context: buildContext(),
         }),
       });
-      setAssistantMode(result.mode);
       setMessages((current) => [...current, {
         role: "assistant",
         content: result.answer,
@@ -2616,7 +2611,6 @@ function SmartAssistant(
         : "还没选中股票。可以先按账户和持仓说话；要谈某只票，先去「个股分析」跑一遍。",
       id: nextId(),
     }]);
-    setAssistantMode(null);
   }
 
   const targetLabel = analysis?.stock.name ?? "账户总览";
@@ -3759,19 +3753,26 @@ function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, on
   onReview: (cycleEndTradeId: number) => void;
   onDeleteTrade: (id: number) => void;
 }) {
-  const portfolio = calculatePortfolio(trades);
-  const cycles = buildTradeCycles(trades);
-  const completedCycles = cycles.filter((cycle) => cycle.endTradeId !== null);
-  const cycleByTradeId = new Map(cycles.flatMap((cycle) =>
-    cycle.trades.map((trade) => [trade.id, cycle] as const)
-  ));
-  const reviewed = new Set(reviews.flatMap((review) => review.cycleEndTradeId ? [review.cycleEndTradeId] : []));
-  for (const review of reviews.filter((item) => item.cycleEndTradeId === null)) {
-    const legacyCycle = [...completedCycles]
-      .reverse()
-      .find((cycle) => cycle.symbol === review.symbol && cycle.endTradeId && !reviewed.has(cycle.endTradeId));
-    if (legacyCycle?.endTradeId) reviewed.add(legacyCycle.endTradeId);
-  }
+  const portfolio = useMemo(() => calculatePortfolio(trades), [trades]);
+  const cycles = useMemo(() => buildTradeCycles(trades), [trades]);
+  const completedCycles = useMemo(
+    () => cycles.filter((cycle) => cycle.endTradeId !== null),
+    [cycles],
+  );
+  const cycleByTradeId = useMemo(
+    () => new Map(cycles.flatMap((cycle) => cycle.trades.map((trade) => [trade.id, cycle] as const))),
+    [cycles],
+  );
+  const reviewed = useMemo(() => {
+    const s = new Set(reviews.flatMap((review) => review.cycleEndTradeId ? [review.cycleEndTradeId] : []));
+    for (const review of reviews.filter((item) => item.cycleEndTradeId === null)) {
+      const legacyCycle = [...completedCycles]
+        .reverse()
+        .find((cycle) => cycle.symbol === review.symbol && cycle.endTradeId && !s.has(cycle.endTradeId));
+      if (legacyCycle?.endTradeId) s.add(legacyCycle.endTradeId);
+    }
+    return s;
+  }, [reviews, completedCycles]);
   const winningCycles = completedCycles.filter((cycle) => cycle.realizedCents > 0).length;
   const losingCycles = completedCycles.length - winningCycles;
   const winRate = completedCycles.length ? Math.round(winningCycles / completedCycles.length * 100) : null;
