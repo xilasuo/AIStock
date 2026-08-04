@@ -1,5 +1,5 @@
-import { getIndexQuotes } from "../../../lib/indices";
-import { requireApiUser } from "../../../lib/auth";
+import { getIndexQuotes } from "../../../lib/market/indices";
+import { requireApiUser } from "../../../lib/auth/auth";
 
 export async function GET() {
   const unauthorized = await requireApiUser();

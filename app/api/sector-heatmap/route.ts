@@ -1,6 +1,6 @@
-import { getSectorHeatmap, validateSectorDate } from "../../../lib/sectors";
-import { requireApiUser } from "../../../lib/auth";
-import { shanghaiDate } from "../../../lib/time";
+import { getSectorHeatmap, validateSectorDate } from "../../../lib/market/sectors";
+import { requireApiUser } from "../../../lib/auth/auth";
+import { shanghaiDate } from "../../../lib/utils/time";
 
 export async function GET(request: Request) {
   const unauthorized = await requireApiUser();

@@ -1,13 +1,13 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { Badge, SectionHeader, Stat, Button, Card, CardHeader } from "./components";
-import { BarList, DonutChart } from "./charts";
-import { EquityCurveChart } from "./equity-chart";
-import { calculateTradeStatistics } from "../lib/trade-statistics";
-import type { CapitalFlow, Trade } from "../lib/domain";
-import type { PortfolioInsights } from "../lib/portfolio-insights";
-import { shanghaiDate } from "../lib/time";
+import { Badge, SectionHeader, Stat, Button, Card, CardHeader } from "../components/ui";
+import { BarList, DonutChart } from "../components/charts";
+import { EquityCurveChart } from "../components/equity-chart";
+import { calculateTradeStatistics } from "../../lib/domain/trade-statistics";
+import type { CapitalFlow, Trade } from "../../lib/domain/domain";
+import type { PortfolioInsights } from "../../lib/domain/portfolio-insights";
+import { shanghaiDate } from "../../lib/utils/time";
 
 export type AnalyticsReview = {
   cycleEndTradeId: number | null;

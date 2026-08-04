@@ -11,8 +11,8 @@ import {
   watchDetails,
   watchItems,
 } from "../../../db/schema";
-import { getCurrentUser, requireApiUser } from "../../../lib/auth";
-import { shanghaiDate, shanghaiIso } from "../../../lib/time";
+import { getCurrentUser, requireApiUser } from "../../../lib/auth/auth";
+import { shanghaiDate, shanghaiIso } from "../../../lib/utils/time";
 
 export async function GET() {
   const unauthorized = await requireApiUser();

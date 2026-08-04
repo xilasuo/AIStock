@@ -544,7 +544,7 @@ export async function fundFlow(code: string): Promise<FundFlow> {
 }
 
 // ---------------------------------------------------------------------------
-// 大盘指数（东方财富批量接口，见 lib/indices.ts）
+// 大盘指数（东方财富批量接口，见 lib/market/indices.ts）
 // ---------------------------------------------------------------------------
 
 export { getIndexQuotes } from "./indices";

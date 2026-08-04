@@ -16,7 +16,7 @@ import {
   Banner,
   Hint,
   Spinner,
-} from "./components";
+} from "../components/ui";
 import { ScreenerConfigPanel, type ScreenerOverrides } from "./ScreenerConfigPanel";
 
 /* ----------------------------- 数据类型 ----------------------------- */

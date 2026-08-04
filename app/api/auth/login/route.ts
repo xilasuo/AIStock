@@ -1,4 +1,4 @@
-import { authenticate, sessionCookie } from "../../../../lib/auth";
+import { authenticate, sessionCookie } from "../../../../lib/auth/auth";
 
 export async function POST(request: Request) {
   const form = await request.formData();

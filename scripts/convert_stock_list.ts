@@ -2,7 +2,7 @@
  * 将 akshare 拉取的 A 股列表转成 TypeScript 模块。
  *
  * 一键更新全量股票列表（5534 只沪深京）：
- *   python -c "import akshare as ak; ak.stock_info_a_code_name().to_json('db/_temp.json', orient='records', force_ascii=False)" && npx tsx scripts/convert_stock_list.ts db/_temp.json && rm db/_temp.json
+ *   python -c "import akshare as ak; ak.stock_info_a_code_name().to_json('db/seeds/_temp.json', orient='records', force_ascii=False)" && npx tsx scripts/convert_stock_list.ts db/seeds/_temp.json && rm db/seeds/_temp.json
  */
 import * as fs from "node:fs";
 
@@ -43,5 +43,5 @@ for (const code of codes) {
 tsLines.push("};", "", "export default A_STOCK_LIST;");
 
 const tsContent = tsLines.join("\n");
-fs.writeFileSync("db/a_stock_list.ts", tsContent, "utf-8");
-console.log(`Written db/a_stock_list.ts (${codes.length} entries, ${(tsContent.length / 1024).toFixed(0)}KB)`);
+fs.writeFileSync("db/seeds/a_stock_list.ts", tsContent, "utf-8");
+console.log(`Written db/seeds/a_stock_list.ts (${codes.length} entries, ${(tsContent.length / 1024).toFixed(0)}KB)`);

@@ -1,6 +1,6 @@
 import { Suspense } from "react";
-import { Dashboard } from "./Dashboard";
-import { requireAuthenticatedUser } from "../lib/auth";
+import { Dashboard } from "./views/Dashboard";
+import { requireAuthenticatedUser } from "../lib/auth/auth";
 
 export const dynamic = "force-dynamic";
 

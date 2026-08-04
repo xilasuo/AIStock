@@ -12,8 +12,8 @@ import {
   toMillis,
   toTenThousandths,
   type Trade,
-} from "../lib/domain";
-import { tencentSymbol, yahooSymbol } from "../lib/stocks";
+} from "../lib/domain/domain";
+import { tencentSymbol, yahooSymbol } from "../lib/domain/stocks";
 
 function trade(values: Partial<Trade>): Trade {
   return {

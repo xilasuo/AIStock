@@ -1,8 +1,8 @@
-import { getAiConfig } from "../../../lib/ai-config";
-import { buildFallbackAnswer, isValidContext, type AssistantContext } from "../../../lib/assistant";
-import { getCurrentUser, requireApiUser } from "../../../lib/auth";
+import { getAiConfig } from "../../../lib/ai/ai-config";
+import { buildFallbackAnswer, isValidContext, type AssistantContext } from "../../../lib/ai/assistant";
+import { getCurrentUser, requireApiUser } from "../../../lib/auth/auth";
 import { ensureSchema, getDb } from "../../../db";
-import { DEFAULT_PREFERENCES, fetchPreferences, type TradingPreferences } from "../../../lib/preferences";
+import { DEFAULT_PREFERENCES, fetchPreferences, type TradingPreferences } from "../../../lib/utils/preferences";
 
 type ChatMessage = {
   role: "user" | "assistant";

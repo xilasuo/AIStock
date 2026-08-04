@@ -1,5 +1,5 @@
-import { checkAndNotifyAlerts } from "../../../../lib/notify";
-import { requireApiUser } from "../../../../lib/auth";
+import { checkAndNotifyAlerts } from "../../../../lib/utils/notify";
+import { requireApiUser } from "../../../../lib/auth/auth";
 
 /** 读取 Cron 预共享密钥（用于无 Cookie 的定时器调用）。 */
 async function getCronSecret(): Promise<string | undefined> {

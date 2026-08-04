@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseEtfKlines, rankSectorMoves, validateSectorDate, type SectorMove } from "../lib/sectors";
+import { parseEtfKlines, rankSectorMoves, validateSectorDate, type SectorMove } from "../lib/market/sectors";
 
 function move(name: string, changePercent: number, amount: number): SectorMove {
   return {

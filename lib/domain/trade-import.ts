@@ -8,7 +8,7 @@
  * 对标：TraderVue / 投资账本 的"券商流水导入对账"。
  */
 import { isIsoDate, isStockCode, isTradeSide, toCents, toTenThousandths } from "./domain";
-import { shanghaiDate } from "./time";
+import { shanghaiDate } from "../utils/time";
 import { canonicalStockName } from "./stocks";
 
 export type PreparedTrade = {

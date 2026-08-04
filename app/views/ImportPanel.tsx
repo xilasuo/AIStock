@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { parseBrokerCsv } from "../lib/trade-import";
-import { Button, Hint } from "./components";
+import { parseBrokerCsv } from "../../lib/domain/trade-import";
+import { Button, Hint } from "../components/ui";
 
 type ImportResult = {
   inserted: number;

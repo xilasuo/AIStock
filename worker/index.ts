@@ -55,7 +55,7 @@ const worker = {
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     try {
       const { drizzle } = await import("drizzle-orm/d1");
-      const { checkAndNotifyAlerts } = await import("../lib/notify");
+      const { checkAndNotifyAlerts } = await import("../lib/utils/notify");
       const db = drizzle(env.DB, { schema, logger: false });
       ctx.waitUntil(checkAndNotifyAlerts(db));
     } catch (error) {

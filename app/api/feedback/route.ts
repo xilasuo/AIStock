@@ -1,5 +1,5 @@
 import { desc, eq } from "drizzle-orm";
-import { requireApiUser, getCurrentUser } from "../../../lib/auth";
+import { requireApiUser, getCurrentUser } from "../../../lib/auth/auth";
 import { getDb, ensureSchema } from "../../../db";
 import { strategyFeedback } from "../../../db/schema";
 

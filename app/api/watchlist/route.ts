@@ -1,10 +1,10 @@
 import { and, eq } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import { watchDetails, watchItems } from "../../../db/schema";
-import { isStockCode } from "../../../lib/domain";
-import { canonicalStockName } from "../../../lib/stocks";
-import { getCurrentUser, requireApiUser } from "../../../lib/auth";
-import { shanghaiIso } from "../../../lib/time";
+import { isStockCode } from "../../../lib/domain/domain";
+import { canonicalStockName } from "../../../lib/domain/stocks";
+import { getCurrentUser, requireApiUser } from "../../../lib/auth/auth";
+import { shanghaiIso } from "../../../lib/utils/time";
 
 export async function GET() {
   const unauthorized = await requireApiUser();

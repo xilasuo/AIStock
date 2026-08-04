@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { getDb, ensureSchema } from "../../../db";
-import { requireApiUser, getCurrentUser } from "../../../lib/auth";
+import { requireApiUser, getCurrentUser } from "../../../lib/auth/auth";
 import { tradingPreferences } from "../../../db/schema";
-import { normalizePreferences, type TradingPreferences } from "../../../lib/preferences";
-import { shanghaiIso } from "../../../lib/time";
+import { normalizePreferences, type TradingPreferences } from "../../../lib/utils/preferences";
+import { shanghaiIso } from "../../../lib/utils/time";
 
 export async function GET() {
   const unauthorized = await requireApiUser();

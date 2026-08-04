@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { mock } from "node:test";
-import { getKlines, getProfile } from "../lib/market-data";
+import { getKlines, getProfile } from "../lib/market/market-data";
 
 // 根据 URL 返回不同响应的 fetch mock，用于隔离外部行情源。
 function makeRouter(routes: Record<string, (url: string) => unknown>) {

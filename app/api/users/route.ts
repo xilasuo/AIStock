@@ -14,8 +14,8 @@ import {
   watchDetails,
   watchItems,
 } from "../../../db/schema";
-import { generateSalt, hashPassword, requireSuperAdmin } from "../../../lib/auth";
-import { shanghaiIso } from "../../../lib/time";
+import { generateSalt, hashPassword, requireSuperAdmin } from "../../../lib/auth/auth";
+import { shanghaiIso } from "../../../lib/utils/time";
 
 const MIN_PASSWORD = 12;
 

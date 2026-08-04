@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeOscillators, type ChartRow } from "../lib/stocks.ts";
+import { computeOscillators, type ChartRow } from "../lib/domain/stocks.ts";
 
 // 自带高低价波动的 K 线，保证 KDJ 的 RSV 有合理取值范围（high/low 不能相等）。
 function ohlcRow(date: string, close: number): ChartRow {

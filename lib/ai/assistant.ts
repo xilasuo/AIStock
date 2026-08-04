@@ -1,5 +1,5 @@
-import type { Oscillators } from "./stocks";
-import { DEFAULT_PREFERENCES, type TradingPreferences } from "./preferences";
+import type { Oscillators } from "../domain/stocks";
+import { DEFAULT_PREFERENCES, type TradingPreferences } from "../utils/preferences";
 
 export type AssistantContext = {
   stock: {

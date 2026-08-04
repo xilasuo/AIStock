@@ -15,7 +15,7 @@
 //   sourceUrl?    资料来源链接（可选）
 //
 // 类型定义见 lib/stocks.ts 的 FundProfile。
-import type { FundProfile } from "../lib/stocks";
+import type { FundProfile } from "../../lib/domain/stocks";
 
 export const USER_FUND_PROFILES: Record<string, FundProfile> = {
   // 示例（取消注释并改成你的基金即可）：

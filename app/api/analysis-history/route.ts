@@ -1,8 +1,8 @@
 import { and, desc, eq } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import { analysisReports } from "../../../db/schema";
-import { isStockCode } from "../../../lib/domain";
-import { getCurrentUser, requireApiUser } from "../../../lib/auth";
+import { isStockCode } from "../../../lib/domain/domain";
+import { getCurrentUser, requireApiUser } from "../../../lib/auth/auth";
 
 export async function GET(request: Request) {
   const unauthorized = await requireApiUser();

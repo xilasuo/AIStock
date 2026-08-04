@@ -12,7 +12,7 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as schema from "../db/schema";
 import { ensureSchema, getDb } from "../db";
-import { getRealtime } from "./market-data";
+import { getRealtime } from "../market/market-data";
 import { shanghaiIso } from "./time";
 
 type NotifyEnv = {

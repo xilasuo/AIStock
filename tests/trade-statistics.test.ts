@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { calculateTradeStatistics, type ReviewInput } from "../lib/trade-statistics.ts";
-import type { CapitalFlow, Trade } from "../lib/domain.ts";
+import { calculateTradeStatistics, type ReviewInput } from "../lib/domain/trade-statistics.ts";
+import type { CapitalFlow, Trade } from "../lib/domain/domain.ts";
 
 function trade(overrides: Partial<Trade> & Pick<Trade, "id" | "symbol" | "side" | "priceCents" | "quantity" | "tradeDate">): Trade {
   return {

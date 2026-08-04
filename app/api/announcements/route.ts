@@ -2,11 +2,11 @@ import { and, desc, eq } from "drizzle-orm";
 import { extractText, getDocumentProxy } from "unpdf";
 import { ensureSchema, getDb } from "../../../db";
 import { announcementNotes } from "../../../db/schema";
-import { isStockCode } from "../../../lib/domain";
-import { getAiConfig } from "../../../lib/ai-config";
-import { getCurrentUser, requireApiUser } from "../../../lib/auth";
-import { isEtfCode } from "../../../lib/stocks";
-import { shanghaiIso } from "../../../lib/time";
+import { isStockCode } from "../../../lib/domain/domain";
+import { getAiConfig } from "../../../lib/ai/ai-config";
+import { getCurrentUser, requireApiUser } from "../../../lib/auth/auth";
+import { isEtfCode } from "../../../lib/domain/stocks";
+import { shanghaiIso } from "../../../lib/utils/time";
 
 const allowedHosts = new Set([
   "static.cninfo.com.cn",

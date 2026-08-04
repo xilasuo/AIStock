@@ -1,7 +1,7 @@
 import { getAiConfig } from "./ai-config";
-import { DEFAULT_PREFERENCES, type TradingPreferences } from "./preferences";
+import { DEFAULT_PREFERENCES, type TradingPreferences } from "../utils/preferences";
 import type { AssistantContext } from "./assistant";
-import type { Oscillators } from "./stocks";
+import type { Oscillators } from "../domain/stocks";
 
 type DeepSeekResponse = {
   choices?: Array<{ message?: { content?: string } }>;

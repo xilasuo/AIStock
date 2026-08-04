@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isEtfCode, parseStockSuggestions, resolveStock } from "../lib/stocks";
+import { isEtfCode, parseStockSuggestions, resolveStock } from "../lib/domain/stocks";
 
 test("本地常用股票名称仍可直接解析", () => {
   assert.deepEqual(resolveStock("贵州茅台"), { code: "600519", name: "贵州茅台" });

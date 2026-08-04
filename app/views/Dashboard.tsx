@@ -11,14 +11,14 @@ import React, {
   type ReactNode,
 } from "react";
 import { useSearchParams, usePathname } from "next/navigation";
-import { SectionHeader, Badge, Stat, Button, IconButton, Field, Input, Select, Textarea, Banner, Hint, LoadingState, ConfirmDialog, StockSearch, type StockSuggestionGroup } from "./components";
-import { Sparkline } from "./charts";
+import { SectionHeader, Badge, Stat, Button, IconButton, Field, Input, Select, Textarea, Banner, Hint, LoadingState, ConfirmDialog, StockSearch, type StockSuggestionGroup } from "../components/ui";
+import { Sparkline } from "../components/charts";
 import { AnalyticsView } from "./AnalyticsView";
 import { ImportPanel } from "./ImportPanel";
-import { MarkdownMessage } from "./MarkdownMessage";
+import { MarkdownMessage } from "../components/MarkdownMessage";
 import { StrategyScanView, type StrategyScanResponse } from "./StrategyScanView";
 import { WritebackView } from "./WritebackView";
-import { UsersAdmin } from "./components/UsersAdmin";
+import { UsersAdmin } from "../components/UsersAdmin";
 import {
   ArrowDown,
   ArrowUp,
@@ -74,23 +74,23 @@ import {
   type MarketPeriod,
   type Trade,
   type TradeCycle,
-} from "../lib/domain";
-import type { SectorHeatmap as SectorHeatmapData } from "../lib/sectors";
-import { calculatePortfolioInsights, type PortfolioInsights } from "../lib/portfolio-insights";
-import { calculateTradeStatistics } from "../lib/trade-statistics";
-import { TAKE_PROFIT_1_R, TAKE_PROFIT_2_R } from "../lib/trade-import";
-import { baseCloseSince, resolveStock, type Oscillators } from "../lib/stocks";
+} from "../../lib/domain/domain";
+import type { SectorHeatmap as SectorHeatmapData } from "../../lib/market/sectors";
+import { calculatePortfolioInsights, type PortfolioInsights } from "../../lib/domain/portfolio-insights";
+import { calculateTradeStatistics } from "../../lib/domain/trade-statistics";
+import { TAKE_PROFIT_1_R, TAKE_PROFIT_2_R } from "../../lib/domain/trade-import";
+import { baseCloseSince, resolveStock, type Oscillators } from "../../lib/domain/stocks";
 import {
   DEFAULT_PREFERENCES,
   RISK_PRESETS,
   RISK_PROFILE_LABELS,
   type RiskProfile,
   type TradingPreferences,
-} from "../lib/preferences";
-import type { AssistantContext } from "../lib/assistant";
-import { splitAssistantSections, conclusionTone } from "../lib/assistant";
-import { formatDateShanghai, formatDateTimeShanghai } from "../lib/time";
-import { readCache, writeCache, removeCache } from "../lib/client-cache";
+} from "../../lib/utils/preferences";
+import type { AssistantContext } from "../../lib/ai/assistant";
+import { splitAssistantSections, conclusionTone } from "../../lib/ai/assistant";
+import { formatDateShanghai, formatDateTimeShanghai } from "../../lib/utils/time";
+import { readCache, writeCache, removeCache } from "../../lib/utils/client-cache";
 
 type View = "home" | "watchlist" | "trades" | "settings" | "analytics" | "analysis" | "scan" | "writeback";
 type TradeMode = "buy" | "sell";
@@ -3771,7 +3771,7 @@ function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, on
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20;
 
-  // 绩效统计：复用 lib/trade-statistics，在交易记录页直接给出复盘分析
+  // 绩效统计：复用 lib/domain/trade-statistics，在交易记录页直接给出复盘分析
   const stats = useMemo(() => calculateTradeStatistics(
     trades,
     capitalFlows,

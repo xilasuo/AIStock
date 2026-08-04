@@ -1,11 +1,11 @@
-import { requireApiUser } from "../../../../lib/auth";
+import { requireApiUser } from "../../../../lib/auth/auth";
 import { execFileSync } from "child_process";
 import { readFileSync } from "fs";
 import {
   SUPPORTS_EXEC,
   resolvePython,
   isExecNotImplemented,
-} from "../../../../lib/pythonExec";
+} from "../../../../lib/utils/pythonExec";
 import path from "path";
 
 /**

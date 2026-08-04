@@ -1,4 +1,4 @@
-import { clearSessionCookie } from "../../../../lib/auth";
+import { clearSessionCookie } from "../../../../lib/auth/auth";
 
 export async function GET(request: Request) {
   return new Response(null, {

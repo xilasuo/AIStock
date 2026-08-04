@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Card, Divider, EmptyState, Field, IconButton, Input } from "../components";
+import { Badge, Button, Card, Divider, EmptyState, Field, IconButton, Input } from "./ui";
 
 type ManagedUser = {
   id: number;

@@ -1,5 +1,5 @@
-import { requireApiUser } from "../../../lib/auth";
-import { conceptBoards, fundFlow } from "../../../lib/market-data";
+import { requireApiUser } from "../../../lib/auth/auth";
+import { conceptBoards, fundFlow } from "../../../lib/market/market-data";
 
 // 统一行情数据入口的只读查询路由。
 // type=concepts          取概念板块列表（AKShare _em 等效：stock_board_concept_name_em）

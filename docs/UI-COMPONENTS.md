@@ -1,7 +1,7 @@
 # UI 组件库用法说明
 
-本项目（AIStock）的界面交互元素统一封装在 `app/components.tsx`，视觉样式全部由
-`app/globals.css` 中的语义化 class 驱动。新增页面或改造旧页面时，**优先复用以下组件**，
+本项目（AIStock）的界面交互元素统一封装在 `app/components/ui.tsx`，视觉样式全部由
+`app/styles/globals.css` 中的语义化 class 驱动。新增页面或改造旧页面时，**优先复用以下组件**，
 不要手写裸 `<button>` / `<input>` 或散落的 class（如 `primary-button` / `ghost-button`）。
 
 ---

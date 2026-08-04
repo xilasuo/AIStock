@@ -10,8 +10,8 @@ import {
   Hint,
   Spinner,
   LoadingState,
-} from "./components";
-import { useApi } from "../lib/use-api";
+} from "../components/ui";
+import { useApi } from "../../lib/utils/use-api";
 
 /* ----------------------------- 数据类型 ----------------------------- */
 export type WritebackSignal = {

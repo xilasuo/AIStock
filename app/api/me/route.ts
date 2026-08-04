@@ -1,4 +1,4 @@
-import { getCurrentUser, requireApiUser } from "../../../lib/auth";
+import { getCurrentUser, requireApiUser } from "../../../lib/auth/auth";
 
 export async function GET() {
   const unauthorized = await requireApiUser();

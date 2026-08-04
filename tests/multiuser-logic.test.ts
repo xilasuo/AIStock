@@ -5,9 +5,9 @@ import {
   hashPassword,
   createSessionToken,
   verifyToken,
-} from "../lib/crypto";
-import { normalizePreferences, DEFAULT_PREFERENCES } from "../lib/preferences";
-import { buildTradeCycles, type Trade } from "../lib/domain";
+} from "../lib/auth/crypto";
+import { normalizePreferences, DEFAULT_PREFERENCES } from "../lib/utils/preferences";
+import { buildTradeCycles, type Trade } from "../lib/domain/domain";
 
 const SECRET = "a".repeat(40); // 满足 >=32 位
 

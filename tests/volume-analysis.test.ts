@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { analyzeVolume, type ChartRow } from "../lib/stocks.ts";
+import { analyzeVolume, type ChartRow } from "../lib/domain/stocks.ts";
 
 function row(date: string, close: number, volume: number): ChartRow {
   return { date, open: close, high: close, low: close, close, volume, ma5: null, ma20: null, ma60: null };

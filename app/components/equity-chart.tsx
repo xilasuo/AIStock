@@ -7,7 +7,7 @@ import {
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
-import type { EquityPoint } from "../lib/trade-statistics";
+import type { EquityPoint } from "../../lib/domain/trade-statistics";
 
 type EquityCurveChartProps = {
   title: string;

@@ -1,4 +1,4 @@
-import { isAuthConfigured } from "../../lib/auth";
+import { isAuthConfigured } from "../../lib/auth/auth";
 
 export const dynamic = "force-dynamic";
 

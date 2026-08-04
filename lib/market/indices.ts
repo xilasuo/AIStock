@@ -1,7 +1,7 @@
 // 主要大盘指数实时行情。
 // 主源：腾讯证券 qt.gtimg.cn（国内网络稳定可达，与个股行情同源）。
 // 注：东方财富 push2 在部分网络环境下被掐（TLS 建连后 HTTP 超时），故不再作为主源。
-import { shanghaiIso } from "./time";
+import { shanghaiIso } from "../utils/time";
 
 export type IndexQuote = {
   code: string;

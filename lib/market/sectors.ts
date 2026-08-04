@@ -1,5 +1,5 @@
-import { isIsoDate } from "./domain";
-import { shanghaiIso } from "./time";
+import { isIsoDate } from "../domain/domain";
+import { shanghaiIso } from "../utils/time";
 
 export type SectorMove = {
   code: string;

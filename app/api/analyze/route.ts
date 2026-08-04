@@ -1,12 +1,12 @@
 import { ensureSchema, getDb } from "../../../db";
 import { analysisReports } from "../../../db/schema";
-import { analyzeStockData, automaticExplanation } from "../../../lib/stocks";
-import { getAiConfig } from "../../../lib/ai-config";
-import { getCurrentUser, requireApiUser } from "../../../lib/auth";
-import { DEFAULT_PREFERENCES, fetchPreferences } from "../../../lib/preferences";
-import { isValidContext, type AssistantContext } from "../../../lib/assistant";
-import { generateStrategy } from "../../../lib/trading-strategy";
-import { shanghaiIso } from "../../../lib/time";
+import { analyzeStockData, automaticExplanation } from "../../../lib/domain/stocks";
+import { getAiConfig } from "../../../lib/ai/ai-config";
+import { getCurrentUser, requireApiUser } from "../../../lib/auth/auth";
+import { DEFAULT_PREFERENCES, fetchPreferences } from "../../../lib/utils/preferences";
+import { isValidContext, type AssistantContext } from "../../../lib/ai/assistant";
+import { generateStrategy } from "../../../lib/ai/trading-strategy";
+import { shanghaiIso } from "../../../lib/utils/time";
 
 type DeepSeekResponse = {
   choices?: Array<{ message?: { content?: string } }>;

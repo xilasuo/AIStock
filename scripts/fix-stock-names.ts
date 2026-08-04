@@ -12,7 +12,7 @@
 //      docker compose run --rm -w /app fupanbu npx tsx scripts/fix-stock-names.ts
 //   3) 重启服务：
 //      docker compose up -d
-import A_STOCK_LIST from "../db/a_stock_list";
+import A_STOCK_LIST from "../db/seeds/a_stock_list";
 import { spawnSync } from "node:child_process";
 
 const DB_NAME = "site-creator-d1";

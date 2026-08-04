@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildMaxLossAlerts, parseBrokerCsv, prepareTradeInput } from "../lib/trade-import.ts";
+import { buildMaxLossAlerts, parseBrokerCsv, prepareTradeInput } from "../lib/domain/trade-import.ts";
 
 test("解析东方财富风格交割单", () => {
   const csv = [

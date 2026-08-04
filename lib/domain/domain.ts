@@ -1,4 +1,4 @@
-import { shanghaiDate } from "./time";
+import { shanghaiDate } from "../utils/time";
 
 export type Trade = {
   id: number;

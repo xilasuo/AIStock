@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildFallbackAnswer, type AssistantContext } from "../lib/assistant";
+import { buildFallbackAnswer, type AssistantContext } from "../lib/ai/assistant";
 
 const context: AssistantContext = {
   stock: { code: "600519", name: "贵州茅台", industry: "白酒", instrumentType: "stock" },

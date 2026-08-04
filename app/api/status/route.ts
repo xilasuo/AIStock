@@ -1,6 +1,6 @@
-import { getAiConfig } from "../../../lib/ai-config";
-import { requireApiUser } from "../../../lib/auth";
-import { isMairuiEnabled } from "../../../lib/mairui";
+import { getAiConfig } from "../../../lib/ai/ai-config";
+import { requireApiUser } from "../../../lib/auth/auth";
+import { isMairuiEnabled } from "../../../lib/market/mairui";
 
 export async function GET() {
   const unauthorized = await requireApiUser();

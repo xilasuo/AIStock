@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { baseCloseSince } from "../lib/stocks";
+import { baseCloseSince } from "../lib/domain/stocks";
 
 const rows = [
   { date: "2026-07-25", close: 100 },
