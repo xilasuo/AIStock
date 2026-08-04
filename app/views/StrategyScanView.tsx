@@ -259,17 +259,27 @@ export function StrategyScanView({
     };
   }, []);
 
-  useEffect(() => {
-    // 顶层预取数据可能在组件首次渲染之后才到达（例如硬刷新 Ctrl+Shift+R
-    // 时 Dashboard 的 loadData 尚未完成，initialData 先为 null 再被填充）。
-    // 此时 loading 初始为 true，需要在 initialData 到达后纠正为“已加载”，
-    // 否则会一直停在“正在加载…”且不会自行拉取（guard 直接 return）。
+  // 顶层预取数据可能在组件首次渲染之后才到达（例如硬刷新 Ctrl+Shift+R
+  // 时 Dashboard 的 loadData 尚未完成，initialData 先为 null 再被填充）。
+  // 此时 loading 初始为 true，需要在 initialData 到达后纠正为“已加载”，
+  // 否则会一直停在“正在加载…”且不会自行拉取（下方 effect 的 guard 直接 return）。
+  //
+  // 这里采用 React 官方推荐的「渲染期间根据 props 变化调整 state」模式，
+  // 而不是在 effect 内 setState —— 后者会先提交一次“加载中”的画面再触发级联
+  // 渲染纠正，既多一帧闪烁也更慢。参见 react.dev/learn/you-might-not-need-an-effect
+  const [syncedInitial, setSyncedInitial] = useState(initialData);
+  if (initialData !== syncedInitial) {
+    setSyncedInitial(initialData);
     if (initialData?.ok && initialData.scan) {
       setScan(initialData.scan);
       setLoading(false);
       setError("");
-      return;
     }
+  }
+
+  useEffect(() => {
+    // 顶层已预取到数据则不再自行拉取（状态同步已在上方渲染期间完成）
+    if (initialData?.ok && initialData.scan) return;
     // 仅在顶层未预取数据时才自行拉取，避免进入页面时重复加载造成闪烁
     let cleanup: (() => void) | undefined;
     const timer = window.setTimeout(() => {

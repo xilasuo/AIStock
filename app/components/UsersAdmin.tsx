@@ -67,6 +67,10 @@ export function UsersAdmin({ currentUserId }: { currentUserId: number }) {
   }, []);
 
   useEffect(() => {
+    // 「挂载即拉取」是数据获取的正常形态，非派生 state 反模式：load() 内的
+    // setLoading(true)/setError("") 与初值一致（loading 初值即 true），
+    // React 会直接 bail out，不产生级联渲染。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
 

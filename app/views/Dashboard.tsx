@@ -3896,8 +3896,14 @@ function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, on
     return arr;
   }, [trades, sortedTrades, sortKey, sortDir, cycleByTradeId, reviewed]);
 
-  // 排序变化时回到第 1 页
-  useEffect(() => { setCurrentPage(1); }, [sortKey, sortDir]);
+  // 排序变化时回到第 1 页。采用 React 官方「渲染期间根据变化调整 state」的模式，
+  // 而非 effect 内 setState —— 后者会先提交一帧「新排序 + 旧页码」的错误画面再纠正。
+  const sortSignature = `${sortKey}|${sortDir}`;
+  const [prevSortSignature, setPrevSortSignature] = useState(sortSignature);
+  if (prevSortSignature !== sortSignature) {
+    setPrevSortSignature(sortSignature);
+    setCurrentPage(1);
+  }
 
   // 分页
   const totalPages = Math.max(1, Math.ceil(displayedTrades.length / pageSize));
@@ -4657,7 +4663,7 @@ function TradeModal({ mode, stock, positions, analysisQuote, onClose, onSubmit, 
                       <span>止盈参考一（1R）</span><strong>{analysisQuote.target1 != null ? price(analysisQuote.target1) : "缺失"}</strong>
                       <span>止盈参考二（2R）</span><strong>{analysisQuote.target2 != null ? price(analysisQuote.target2) : "缺失"}</strong>
                     </div>
-                    <p className="tech-suggestion__note">来自该股当前分析的支撑位与 1R/2R 目标，点"一键采用"填入下方；可再手动改。</p>
+                    <p className="tech-suggestion__note">来自该股当前分析的支撑位与 1R/2R 目标，点「一键采用」填入下方；可再手动改。</p>
                   </div>
                 )}
                 <Field label="止损价（元，可选）" help="留空时按下方「最多接受亏损」反推；也可点上方「技术面建议」用支撑位自动填入，系统据此设止损并算止盈。">
