@@ -54,6 +54,8 @@ export type AssistantContext = {
     downDaysWithVolume: number;
   } | null;
   oscillators?: Oscillators | null;
+  /** 全局模式（未关联个股）时的持仓汇总文本，替代 position:null 时显示"无持仓" */
+  holdingsSummary?: string;
 };
 
 export function isValidContext(value: unknown): value is AssistantContext {

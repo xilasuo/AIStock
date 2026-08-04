@@ -2339,15 +2339,23 @@ function StrategyCard({ analysis, position, portfolioInsights }: {
 // isValidContext 校验的 context。后端与原有 /api/assistant 逻辑完全不改，
 // AI 在 system 约束下会如实说明「未关联具体股票」，不会编造个股数字。
 function buildPlaceholderContext(portfolioInsights: PortfolioInsights): AssistantContext {
+  const holdingsSummary = portfolioInsights.positions.length > 0
+    ? portfolioInsights.positions.map((p) =>
+        `${p.name}(${p.symbol}) ${p.allocationPercent?.toFixed(1) ?? "?"}%、回报${p.returnPercent >= 0 ? "+" : ""}${p.returnPercent.toFixed(1)}%`
+      ).join("；")
+    : "";
   return {
     stock: { code: "", name: "未选择股票", industry: "未关联", instrumentType: "stock" },
     quote: { price: 0, changePercent: 0, ma20: 0, support: 0, resistance: 0, volatility: 0, marketTime: null },
     financials: { revenueGrowth: null, profitGrowth: null, debtRatio: null, pe: null, pb: null, roe: null },
-    summary: "用户未在当前分析页选中具体股票，仅提供账户级上下文。",
+    summary: holdingsSummary
+      ? `用户未选中具体股票。当前持有${portfolioInsights.positions.length}只：${holdingsSummary}。账户总仓位${portfolioInsights.totalPositionPercent?.toFixed(1) ?? "?"}%。`
+      : "用户未在当前分析页选中具体股票，暂无持仓记录。",
     risks: [],
     missingInformation: ["未关联具体股票，无法提供个股行情与财务"],
     source: { name: "账户记录", fetchedAt: new Date().toISOString() },
     position: null,
+    holdingsSummary: portfolioInsights.positions.length > 0 ? holdingsSummary : undefined,
     portfolio: {
       totalAssets: portfolioInsights.totalAssetsCents === null ? null : portfolioInsights.totalAssetsCents / 100,
       cash: portfolioInsights.cashCents === null ? null : portfolioInsights.cashCents / 100,

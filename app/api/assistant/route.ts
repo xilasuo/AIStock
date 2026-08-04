@@ -33,6 +33,8 @@ function summarizeContext(ctx: AssistantContext): string {
   if (ctx.position) {
     const p = ctx.position;
     lines.push(`我的持仓：${p.quantity}股，成本=${p.averageCost}，当前回报=${p.returnPercent.toFixed(2)}%，占账户仓位=${p.stockPositionPercent ?? "数据缺失"}%`);
+  } else if (ctx.holdingsSummary) {
+    lines.push(`我的持仓：${ctx.holdingsSummary}`);
   } else {
     lines.push("我的持仓：无");
   }
