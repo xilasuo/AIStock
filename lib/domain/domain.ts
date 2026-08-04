@@ -13,6 +13,7 @@ export type Trade = {
   reason: string;
   maxLossCents: number | null;
   feeCents: number;
+  otherReason?: string | null;
   createdAt?: string;
   /** 最后修改时间（PATCH 时更新）；DB 列 trade_records.updated_at（ensureSchema 运行时加列） */
   updatedAt?: string | null;
