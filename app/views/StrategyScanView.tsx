@@ -400,7 +400,8 @@ export function StrategyScanView({
     );
   }
 
-  const fm = scan.backtest.finalMetrics ?? {};
+  const fm: Record<string, number | undefined> =
+    (scan.backtest.finalMetrics as Record<string, number | undefined> | undefined) ?? {};
   const opt = scan.backtest.optimized;
 
   return (
