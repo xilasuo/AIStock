@@ -1,5 +1,5 @@
-import { desc } from "drizzle-orm";
-import { requireApiUser, pushSharedSecret } from "../../../lib/auth";
+import { desc, eq, or, isNull } from "drizzle-orm";
+import { requireApiUser, pushSharedSecret, getAuthenticatedUser } from "../../../lib/auth";
 import { getDb, ensureSchema } from "../../../db";
 import { strategyWriteback } from "../../../db/schema";
 import { shanghaiIso } from "../../../lib/time";
@@ -25,12 +25,16 @@ const MAX_PUSH_BYTES = 1_000_000;
 export async function GET() {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
+  // 按登录用户隔离：优先返回本人回写结果；本人从未推送过时回退全局默认（user_id IS NULL）。
+  const user = await getAuthenticatedUser();
+  const userId = user?.id;
   try {
     await ensureSchema();
     const db = getDb();
     const rows = await db
       .select()
       .from(strategyWriteback)
+      .where(userId != null ? or(eq(strategyWriteback.userId, userId), isNull(strategyWriteback.userId)) : isNull(strategyWriteback.userId))
       .orderBy(desc(strategyWriteback.createdAt))
       .limit(1);
     if (!rows.length) {
@@ -44,7 +48,7 @@ export async function GET() {
       );
     }
     const writeback = JSON.parse(rows[0].payload);
-    return Response.json({ ok: true, writeback });
+    return Response.json({ ok: true, writeback, scope: rows[0].userId != null ? "user" : "global" });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return Response.json({ ok: false, error: msg }, { status: 500 });
@@ -91,8 +95,12 @@ export async function POST(req: Request) {
     }
     await ensureSchema();
     const db = getDb();
-    await db.insert(strategyWriteback).values({ payload });
-    return Response.json({ ok: true, savedAt: shanghaiIso() });
+    // 身份归属：携带有效登录会话（Cookie）则写入本人隔离桶（user_id=本人），
+    // 仅持共享令牌（无登录身份）则写入全局桶（user_id=NULL）。禁止由请求体伪造 user_id。
+    const user = await getAuthenticatedUser();
+    const userId = user?.id ?? null;
+    await db.insert(strategyWriteback).values({ userId, payload });
+    return Response.json({ ok: true, savedAt: shanghaiIso(), scope: userId != null ? "user" : "global" });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return Response.json(

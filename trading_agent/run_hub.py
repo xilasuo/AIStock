@@ -296,17 +296,24 @@ def apply_config(cfg: config.AppConfig, ov: dict):
         cfg.screener.mcap_max = float(ov["mcap_max"])
 
 
-def push_writeback(url: str, token: str, payload: dict) -> bool:
-    """把候选回写载荷 POST 到云端 /api/writeback-signals。"""
+def push_writeback(url: str, token: str, payload: dict, cookie: str | None = None) -> bool:
+    """把候选回写载荷 POST 到云端 /api/writeback-signals。
+
+    cookie 为登录会话串（来自 pull_cloud_overrides 的复用）。携带时云端按登录用户
+    写入隔离回写桶（user_id=本人）；不携带则仅 token 鉴权，落入全局桶（兼容老自动化）。
+    """
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    headers: dict = {
+        "Content-Type": "application/json",
+        "x-push-token": token,
+    }
+    if cookie:
+        headers["Cookie"] = cookie
     req = Request(
         url,
         data=data,
         method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "x-push-token": token,
-        },
+        headers=headers,
     )
     try:
         with urlopen(req, timeout=15) as resp:
@@ -868,7 +875,8 @@ def main():
 
     # 可选：把候选回写信号推送到云端「回写结果」页
     if args.push_url and args.push_token:
-        push_writeback(args.push_url, args.push_token, build_writeback_payload(signals))
+        # 复用云端配置拉取时建立的登录会话，使回写结果按登录用户隔离（user_id=本人）。
+        push_writeback(args.push_url, args.push_token, build_writeback_payload(signals), cookie=cloud_cookie)
     else:
         print("（未配置回写推送地址/令牌，跳过云端回写推送；本地 signals_out.json 已就绪）")
 

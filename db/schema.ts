@@ -186,6 +186,7 @@ export const strategyScan = sqliteTable("strategy_scan", {
 // 候选回写信号推送结果（dry-run；真实下单需接入带下单能力的连接器）
 export const strategyWriteback = sqliteTable("strategy_writeback", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id"),
   payload: text("payload").notNull(),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
