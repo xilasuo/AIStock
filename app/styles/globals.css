@@ -7442,6 +7442,87 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
 .bigscreen {
   background: var(--bg-grad);
 }
+
+/* ===== 大屏交互（hover / 点击抽屉） ===== */
+.bigscreen .interactive {
+  cursor: pointer;
+  transition: transform .18s var(--ease-standard), box-shadow .18s var(--ease-standard), border-color .18s var(--ease-standard);
+}
+.bigscreen .row-hover {
+  transition: background .15s var(--ease-standard);
+}
+.bigscreen .heat-tile {
+  transition: transform .16s var(--ease-standard), border-color .16s var(--ease-standard), box-shadow .16s var(--ease-standard);
+}
+@media (hover: hover) {
+  .bigscreen .interactive:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent) !important;
+    box-shadow: var(--glow);
+  }
+  .bigscreen .row-hover:hover {
+    background: rgba(0, 229, 255, .06);
+  }
+  .bigscreen .heat-tile:hover {
+    transform: scale(1.05);
+    border-color: var(--accent) !important;
+    box-shadow: var(--glow);
+    z-index: 2;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bigscreen .interactive:hover { transform: none; }
+  .bigscreen .heat-tile:hover { transform: none; }
+}
+
+/* 点击详情抽屉 / 智能解读面板 */
+.bigscreen-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 12, .55);
+  z-index: 40;
+  animation: bs-fade-in .18s var(--ease-standard);
+}
+.bigscreen-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: min(400px, 88vw);
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: -16px 0 48px rgba(0, 0, 0, .55);
+  z-index: 41;
+  padding: 22px 24px;
+  overflow-y: auto;
+  animation: bs-drawer-in .22s var(--ease-standard);
+}
+@keyframes bs-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes bs-drawer-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
+.bigscreen-drawer .bs-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 9px 0;
+  border-bottom: 0.5px solid var(--line);
+  font-size: 13px;
+}
+.bigscreen-drawer .bs-row .bs-k { color: var(--muted); }
+.bigscreen-drawer .bs-row .bs-v { font-family: var(--font-mono); color: var(--text); }
+.bigscreen-drawer .bs-block { margin-top: 18px; }
+.bigscreen-drawer .bs-block h4 {
+  font-size: 12px;
+  color: var(--accent);
+  letter-spacing: 1px;
+  margin: 0 0 8px;
+  font-weight: 600;
+}
+.bigscreen-drawer .bs-block p {
+  margin: 0 0 6px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-soft);
+}
 .bigscreen .bigscreen-marquee {
   overflow: hidden;
 }

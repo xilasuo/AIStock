@@ -35,6 +35,13 @@ type ScanBrief = {
   marketState?: { state?: string; positionFactor?: number };
 };
 type SectorMove = { code: string; name: string; changePercent: number };
+/** 点击任意条目滑出的详情抽屉内容（统一结构，避免为每类建独立类型）。 */
+type DetailData = {
+  title: string;
+  subtitle?: string;
+  rows: Array<{ k: string; v: string; c?: "up" | "down" | "accent" }>;
+  note?: string;
+};
 
 const PIE_COLORS = ["#ff4d6d", "#00e5ff", "#b98cff", "#21e6a4", "#ffc24d", "#5cc8ff", "#ff8a7a", "#34d399"];
 const UP = "var(--up)";
@@ -246,6 +253,8 @@ export function BigScreenView() {
   const [refreshMs, setRefreshMs] = useState<number>(TRADING_OPEN_MS);
   const [lastLoadAt, setLastLoadAt] = useState<number | null>(null);
   const dataTimerRef = useRef<number | null>(null);
+  const [detail, setDetail] = useState<DetailData | null>(null);
+  const [aiOpen, setAiOpen] = useState(false);
 
   const loadData = useCallback(async () => {
     setLastLoadAt(Date.now());
@@ -334,6 +343,18 @@ export function BigScreenView() {
       window.clearInterval(timer);
     };
   }, [loadSlowData]);
+
+  // Esc 关闭抽屉 / 智能解读面板
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setDetail(null);
+        setAiOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const prices = useMemo(
     () => Object.fromEntries(Object.entries(quotes).map(([symbol, q]) => [symbol, q.price])),
@@ -494,6 +515,72 @@ export function BigScreenView() {
   const ringProgress = refreshMs > 0 ? countdown / (refreshMs / 1000) : 0;
   const ringCircumference = 2 * Math.PI * RING_R;
 
+  /**
+   * AI 智能解读（规则版，零 LLM 成本，永远可用）：用与大屏同源的持仓/盈亏/风险/大盘/选股数据，
+   * 生成大白话播报。这是 AI 助手在大屏上的角色——被动解读层，而非聊天框。
+   */
+  const aiBriefing = useMemo(() => {
+    const blocks: Array<{ heading: string; lines: string[] }> = [];
+    const total = insights.totalAssetsCents ?? 0;
+    const overview: string[] = [`当前总资产 ${money(total)}。`];
+    if (todayPnl) {
+      overview.push(`今日浮动盈亏 ${signedMoney(todayPnl.gainCents)}（${pct(todayPnl.percent)}），覆盖 ${todayPnl.covered} 只持仓。`);
+    }
+    if (insights.totalProfitCents != null) {
+      overview.push(`账户累计${insights.totalProfitCents >= 0 ? "盈利" : "亏损"} ${signedMoney(insights.totalProfitCents)}（${pct(insights.totalProfitPercent)}）。`);
+    }
+    blocks.push({ heading: "今日概览", lines: overview });
+
+    if (positions.length) {
+      const sorted = [...positions].sort(
+        (a, b) => (quotes[b.symbol]?.changePercent ?? -999) - (quotes[a.symbol]?.changePercent ?? -999),
+      );
+      const top = sorted[0];
+      const bottom = sorted[sorted.length - 1];
+      const lines = [`持有 ${positions.length} 只，仓位 ${insights.totalPositionPercent?.toFixed(1)}%。`];
+      lines.push(`今日最强：${top.name} ${pct(quotes[top.symbol]?.changePercent ?? null)}。`);
+      lines.push(`今日最弱：${bottom.name} ${pct(quotes[bottom.symbol]?.changePercent ?? null)}。`);
+      let maxAlloc = 0;
+      let maxName = "";
+      for (const p of positions) {
+        if ((p.allocationPercent ?? 0) > maxAlloc) {
+          maxAlloc = p.allocationPercent ?? 0;
+          maxName = p.name;
+        }
+      }
+      if (maxAlloc >= 30) lines.push(`集中度偏高：${maxName} 占 ${maxAlloc.toFixed(0)}%，注意单票风险。`);
+      blocks.push({ heading: "持仓要点", lines });
+    }
+
+    if (riskAlerts.length) {
+      blocks.push({ heading: "风险提示", lines: riskAlerts.map((a) => `${a.label}：${a.detail}`) });
+    } else {
+      blocks.push({ heading: "风险提示", lines: ["当前无显著风险信号，持仓结构可控。"] });
+    }
+
+    if (scan?.marketState?.state) {
+      const pf = scan.marketState.positionFactor;
+      const advice =
+        marketStateKey === "bull"
+          ? "偏多环境，可适度积极、把握好节奏。"
+          : marketStateKey === "bear"
+            ? "偏空环境，建议防守、控制仓位、减少追高。"
+            : "震荡环境，均衡配置、不追高、保留现金机动。";
+      blocks.push({
+        heading: "大盘与仓位",
+        lines: [`市场处于${marketStateLabel}，建议仓位系数 ${(pf ?? 0).toFixed(2)}。`, advice],
+      });
+    }
+
+    if (scanPicks.length) {
+      blocks.push({
+        heading: "策略关注",
+        lines: [`引擎选出 ${scanPicks.length} 只，领头：${scanPicks[0].name}（评分 ${scanPicks[0].score.toFixed(2)}）。`, "点击右侧「策略选股榜」条目可看选股理由。"],
+      });
+    }
+    return blocks;
+  }, [insights, todayPnl, positions, quotes, riskAlerts, scan, scanPicks, marketStateKey, marketStateLabel]);
+
   return (
     <div className="bigscreen" style={{ background: BG, color: TEXT, height: "100vh", overflow: "hidden", fontFamily: "var(--font-sans)" }}>
       <div style={{ width: "100%", padding: "18px 24px", display: "flex", flexDirection: "column", height: "100%" }}>
@@ -527,6 +614,23 @@ export function BigScreenView() {
               </svg>
               实时连接
             </span>
+            <button
+              type="button"
+              onClick={() => setAiOpen(true)}
+              className="interactive"
+              style={{
+                background: "rgba(0,229,255,.10)",
+                border: "0.5px solid rgba(0,229,255,.4)",
+                color: ACCENT,
+                borderRadius: 999,
+                padding: "4px 12px",
+                fontSize: 12,
+                fontFamily: "var(--font-sans)",
+                cursor: "pointer",
+              }}
+            >
+              智能解读
+            </button>
             <span>{timeText}</span>
           </div>
         </header>
@@ -572,7 +676,7 @@ export function BigScreenView() {
 
         <main style={{ display: "grid", gridTemplateColumns: "minmax(230px, 290px) minmax(0, 1fr) minmax(270px, 330px) minmax(250px, 310px)", gap: 14, flex: 1, minHeight: 0 }}>
           <section style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
-            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 18px" }}>
+            <div className="interactive" style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 18px" }}>
               <div style={{ fontSize: 12, color: MUTED }}>总资产</div>
               <div style={{ fontSize: 30, fontWeight: 500, fontFamily: "var(--font-mono)", color: BRIGHT, margin: "6px 0 4px" }}>
                 <Rolling value={insights.totalAssetsCents} format={money} fallback="待设置" />
@@ -581,7 +685,7 @@ export function BigScreenView() {
                 账户总盈亏 {pct(insights.totalProfitPercent)}
               </div>
             </div>
-            <div style={{ background: CARD, border: `0.5px solid ${todayPnl ? (todayPnl.gainCents >= 0 ? "rgba(255,107,107,.45)" : "rgba(45,212,191,.45)") : BORDER}`, borderRadius: 14, padding: "14px 18px" }}>
+            <div className="interactive" style={{ background: CARD, border: `0.5px solid ${todayPnl ? (todayPnl.gainCents >= 0 ? "rgba(255,107,107,.45)" : "rgba(45,212,191,.45)") : BORDER}`, borderRadius: 14, padding: "14px 18px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ fontSize: 12, color: MUTED }}>今日盈亏</span>
                 <span style={{ fontSize: 10, color: MUTED }}>{todayPnl ? `${todayPnl.covered} 只持仓` : "等待行情"}</span>
@@ -594,36 +698,50 @@ export function BigScreenView() {
               </div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "11px 14px" }}>
+              <div className="interactive" style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "11px 14px" }}>
                 <div style={{ fontSize: 11, color: MUTED }}>总仓位</div>
                 <div style={{ fontSize: 19, fontWeight: 500, fontFamily: "var(--font-mono)", marginTop: 5 }}>
                   <Rolling value={insights.totalPositionPercent} format={(v) => `${v.toFixed(1)}%`} />
                 </div>
               </div>
-              <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "11px 14px" }}>
+              <div className="interactive" style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "11px 14px" }}>
                 <div style={{ fontSize: 11, color: MUTED }}>可用现金</div>
                 <div style={{ fontSize: 19, fontWeight: 500, fontFamily: "var(--font-mono)", marginTop: 5 }}>
                   <Rolling value={insights.cashCents} format={money} />
                 </div>
               </div>
-              <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "11px 14px" }}>
+              <div className="interactive" style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "11px 14px" }}>
                 <div style={{ fontSize: 11, color: MUTED }}>已实现盈亏</div>
                 <div style={{ fontSize: 19, fontWeight: 500, fontFamily: "var(--font-mono)", marginTop: 5, color: insights.realizedCents >= 0 ? UP : DOWN }}>
                   <Rolling value={insights.realizedCents} format={money} />
                 </div>
               </div>
-              <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "11px 14px" }}>
+              <div className="interactive" style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "11px 14px" }}>
                 <div style={{ fontSize: 11, color: MUTED }}>未实现盈亏</div>
                 <div style={{ fontSize: 19, fontWeight: 500, fontFamily: "var(--font-mono)", marginTop: 5, color: insights.unrealizedCents >= 0 ? UP : DOWN }}>
                   <Rolling value={insights.unrealizedCents} format={money} />
                 </div>
               </div>
             </div>
-            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "12px 16px", flex: 1, minHeight: 0 }}>
+            <div className="interactive" style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "12px 16px", flex: 1, minHeight: 0 }}>
               <div style={{ fontSize: 11, color: MUTED, marginBottom: 6 }}>大盘指数</div>
               {activeIndices.length === 0 && <div style={{ fontSize: 12, color: MUTED }}>暂无指数数据</div>}
               {activeIndices.map((index) => (
-                <div key={index.code} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontFamily: "var(--font-mono)", padding: "5px 0" }}>
+                <div
+                  key={index.code}
+                  className="row-hover interactive"
+                  onClick={() =>
+                    setDetail({
+                      title: index.name,
+                      subtitle: index.code,
+                      rows: [
+                        { k: "最新价", v: index.price.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
+                        { k: "涨跌幅", v: pct(index.changePercent), c: index.changePercent >= 0 ? "up" : "down" },
+                      ],
+                    })
+                  }
+                  style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontFamily: "var(--font-mono)", padding: "5px 0" }}
+                >
                   <span style={{ color: TEXT }}>{index.name}</span>
                   <span style={{ color: index.changePercent >= 0 ? UP : DOWN }}>
                     {index.price.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{" "}
@@ -672,7 +790,27 @@ export function BigScreenView() {
               {recentTrades.map((trade) => {
                 const quote = quotes[trade.symbol];
                 return (
-                  <div key={trade.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5, padding: "8px 0", borderBottom: "0.5px solid rgba(22,78,99,.55)" }}>
+                  <div
+                  key={trade.id}
+                  className="row-hover interactive"
+                  onClick={() => {
+                    const q = quotes[trade.symbol];
+                    setDetail({
+                      title: trade.name,
+                      subtitle: trade.symbol,
+                      rows: [
+                        { k: "方向", v: trade.side, c: trade.side === "买入" ? "accent" : undefined },
+                        { k: "成交价", v: ((trade.priceTenThousandths ?? (trade.priceMillis ?? trade.priceCents * 10) * 10) / 10000).toFixed(2) },
+                        { k: "数量", v: `${trade.quantity} 股` },
+                        { k: "费用", v: money(trade.feeCents ?? 0) },
+                        { k: "交易日期", v: trade.tradeDate },
+                        { k: "现价", v: q ? q.price.toFixed(2) : "—" },
+                        { k: "当日涨跌", v: q ? pct(q.changePercent) : "—", c: q ? (q.changePercent >= 0 ? "up" : "down") : undefined },
+                      ],
+                    });
+                  }}
+                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5, padding: "8px 0", borderBottom: "0.5px solid rgba(22,78,99,.55)" }}
+                >
                     <span style={{ fontFamily: "var(--font-mono)", color: MUTED, width: 62, flexShrink: 0 }}>{trade.tradeDate.slice(5)}</span>
                     <span style={{ width: 84, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{trade.name}</span>
                     <span style={{ color: trade.side === "买入" ? ACCENT : "var(--amber)", width: 40, flexShrink: 0, fontWeight: 500 }}>{trade.side}</span>
@@ -733,7 +871,25 @@ export function BigScreenView() {
                 {positionsByToday.map((pos) => {
                   const quote = quotes[pos.symbol];
                   return (
-                    <div key={pos.symbol} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5, padding: "6px 0", borderBottom: `0.5px solid rgba(22,78,99,.55)` }}>
+                    <div
+                      key={pos.symbol}
+                      className="row-hover interactive"
+                      onClick={() =>
+                        setDetail({
+                          title: pos.name,
+                          subtitle: pos.symbol,
+                          rows: [
+                            { k: "现价", v: quote ? quote.price.toFixed(2) : "—" },
+                            { k: "今日涨跌", v: quote ? pct(quote.changePercent) : "—", c: quote ? (quote.changePercent >= 0 ? "up" : "down") : undefined },
+                            { k: "持仓市值", v: money(pos.marketValueCents) },
+                            { k: "持仓占比", v: pos.allocationPercent != null ? `${pos.allocationPercent.toFixed(1)}%` : "—" },
+                            { k: "累计盈亏", v: pct(pos.returnPercent), c: pos.returnPercent >= 0 ? "up" : "down" },
+                          ],
+                          note: "在「策略选股榜」中点击同名条目可看选股理由。",
+                        })
+                      }
+                      style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5, padding: "6px 0", borderBottom: `0.5px solid rgba(22,78,99,.55)` }}
+                    >
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "34%" }}>{pos.name}</span>
                       <span style={{ fontFamily: "var(--font-mono)", color: BRIGHT, fontSize: 12 }}>{money(pos.marketValueCents)}</span>
                       <span style={{ fontFamily: "var(--font-mono)", width: 58, textAlign: "right", color: quote ? (quote.changePercent >= 0 ? UP : DOWN) : MUTED }}>
@@ -763,7 +919,22 @@ export function BigScreenView() {
                 </div>
               )}
               {scanPicks.map((pick, index) => (
-                <div key={pick.code} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, padding: "6px 0", borderBottom: "0.5px solid rgba(22,78,99,.55)" }}>
+                <div
+                  key={pick.code}
+                  className="row-hover interactive"
+                  onClick={() =>
+                    setDetail({
+                      title: pick.name,
+                      subtitle: pick.code,
+                      rows: [
+                        { k: "综合评分", v: Number.isFinite(pick.score) ? pick.score.toFixed(2) : "—", c: "accent" },
+                        { k: "所属板块", v: pick.sector ?? "—" },
+                      ],
+                      note: pick.rationale ?? "该标的暂无文字理由。",
+                    })
+                  }
+                  style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, padding: "6px 0", borderBottom: "0.5px solid rgba(22,78,99,.55)" }}
+                >
                   <span style={{ width: 18, height: 18, flexShrink: 0, borderRadius: 5, background: index < 3 ? "rgba(34,211,238,.18)" : "rgba(111,147,168,.12)", color: index < 3 ? ACCENT : MUTED, fontSize: 10, fontFamily: "var(--font-mono)", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
                     {index + 1}
                   </span>
@@ -788,6 +959,15 @@ export function BigScreenView() {
                   {sectors.items.slice(0, 10).map((sector) => (
                     <div
                       key={sector.code}
+                      className="heat-tile interactive"
+                      onClick={() =>
+                        setDetail({
+                          title: sector.name,
+                          subtitle: sector.code,
+                          rows: [{ k: "今日涨跌幅", v: pct(sector.changePercent), c: sector.changePercent >= 0 ? "up" : "down" }],
+                          note: "板块数据来自 ETF 代理口径，反映当日行业强弱。",
+                        })
+                      }
                       style={{
                         background: heatColor(sector.changePercent),
                         border: `0.5px solid ${sector.changePercent >= 0 ? "rgba(255,107,107,.35)" : "rgba(45,212,191,.35)"}`,
@@ -841,6 +1021,78 @@ export function BigScreenView() {
           </span>
         </footer>
       </div>
+
+      {detail && (
+        <>
+          <div className="bigscreen-drawer-backdrop" onClick={() => setDetail(null)} />
+          <aside className="bigscreen-drawer">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 500 }}>{detail.title}</div>
+                {detail.subtitle && (
+                  <div style={{ fontSize: 12, color: MUTED, fontFamily: "var(--font-mono)", marginTop: 4 }}>{detail.subtitle}</div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetail(null)}
+                className="interactive"
+                style={{ background: "transparent", border: "0.5px solid var(--border)", color: MUTED, borderRadius: 8, width: 28, height: 28, cursor: "pointer", fontSize: 14 }}
+                aria-label="关闭"
+              >
+                ×
+              </button>
+            </div>
+            <div style={{ marginTop: 16 }}>
+              {detail.rows.map((r, i) => (
+                <div className="bs-row" key={i}>
+                  <span className="bs-k">{r.k}</span>
+                  <span
+                    className="bs-v"
+                    style={{ color: r.c === "up" ? "var(--up)" : r.c === "down" ? "var(--down)" : r.c === "accent" ? ACCENT : undefined }}
+                  >
+                    {r.v}
+                  </span>
+                </div>
+              ))}
+            </div>
+            {detail.note && <p style={{ marginTop: 16, fontSize: 12.5, lineHeight: 1.7, color: MUTED }}>{detail.note}</p>}
+          </aside>
+        </>
+      )}
+
+      {aiOpen && (
+        <>
+          <div className="bigscreen-drawer-backdrop" onClick={() => setAiOpen(false)} />
+          <aside className="bigscreen-drawer">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 500 }}>智能解读</div>
+                <div style={{ fontSize: 12, color: MUTED, marginTop: 4 }}>基于当前盘面数据的自动播报</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAiOpen(false)}
+                className="interactive"
+                style={{ background: "transparent", border: "0.5px solid var(--border)", color: MUTED, borderRadius: 8, width: 28, height: 28, cursor: "pointer", fontSize: 14 }}
+                aria-label="关闭"
+              >
+                ×
+              </button>
+            </div>
+            <div style={{ marginTop: 14 }}>
+              {aiBriefing.map((block) => (
+                <div className="bs-block" key={block.heading}>
+                  <h4>{block.heading}</h4>
+                  {block.lines.map((line, i) => (
+                    <p key={i}>{line}</p>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </aside>
+        </>
+      )}
     </div>
   );
 }
