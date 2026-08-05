@@ -7623,16 +7623,58 @@ html.stealth .bs-stealth-hint { display: block; }
 @media (prefers-reduced-motion: reduce) {
   .bs-ambient::before, .bs-ambient::after, .bs-topbar { animation: none; }
 }
-.bigscreen-drawer .bs-row {
+/* 划入气泡浮窗（替代详情抽屉）：在锚点旁即时展示，不阻断大屏浏览 */
+.bs-pop {
+  position: fixed;
+  z-index: 50;
+  width: 264px;
+  background: rgba(12, 20, 32, .92);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 0.5px solid rgba(0, 229, 255, .35);
+  border-radius: 14px;
+  box-shadow: 0 18px 48px -16px rgba(0, 229, 255, .35), 0 8px 24px rgba(0, 0, 0, .5);
+  padding: 13px 16px;
+  pointer-events: none;
+  animation: bs-pop-in .14s var(--ease-standard);
+}
+@keyframes bs-pop-in { from { opacity: 0; transform: translateY(4px) scale(.98); } to { opacity: 1; transform: none; } }
+.bs-pop.right::before {
+  content: "";
+  position: absolute;
+  left: -7px; top: 18px;
+  width: 12px; height: 12px;
+  background: rgba(12, 20, 32, .92);
+  border-left: 0.5px solid rgba(0, 229, 255, .35);
+  border-bottom: 0.5px solid rgba(0, 229, 255, .35);
+  transform: rotate(45deg);
+}
+.bs-pop.left::before {
+  content: "";
+  position: absolute;
+  right: -7px; top: 18px;
+  width: 12px; height: 12px;
+  background: rgba(12, 20, 32, .92);
+  border-right: 0.5px solid rgba(0, 229, 255, .35);
+  border-top: 0.5px solid rgba(0, 229, 255, .35);
+  transform: rotate(45deg);
+}
+.bs-pop-head { margin-bottom: 8px; }
+.bs-pop-title { font-size: 15px; font-weight: 500; color: var(--text); }
+.bs-pop-sub { font-size: 11px; color: var(--muted); font-family: var(--font-mono); margin-top: 3px; }
+.bs-pop-note { margin: 10px 0 0; font-size: 12px; line-height: 1.65; color: var(--muted); border-top: 0.5px solid var(--line); padding-top: 8px; }
+/* 通用明细行（气泡浮窗 / 抽屉共用） */
+.bs-row {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  padding: 9px 0;
+  padding: 7px 0;
   border-bottom: 0.5px solid var(--line);
-  font-size: 13px;
+  font-size: 12.5px;
 }
-.bigscreen-drawer .bs-row .bs-k { color: var(--muted); }
-.bigscreen-drawer .bs-row .bs-v { font-family: var(--font-mono); color: var(--text); }
+.bs-row:last-child { border-bottom: none; }
+.bs-row .bs-k { color: var(--muted); }
+.bs-row .bs-v { font-family: var(--font-mono); color: var(--text); }
 .bigscreen-drawer .bs-block { margin-top: 18px; }
 .bigscreen-drawer .bs-block h4 {
   font-size: 12px;

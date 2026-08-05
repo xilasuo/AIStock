@@ -13,6 +13,7 @@
  * 复用现有 API，不改任何业务逻辑，也不额外拉取逐日 K 线。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import { calculatePortfolioInsights } from "../../lib/domain/portfolio-insights";
 import type { CapitalFlow, Trade } from "../../lib/domain/domain";
@@ -254,7 +255,7 @@ export function BigScreenView() {
   const [refreshMs, setRefreshMs] = useState<number>(TRADING_OPEN_MS);
   const [lastLoadAt, setLastLoadAt] = useState<number | null>(null);
   const dataTimerRef = useRef<number | null>(null);
-  const [detail, setDetail] = useState<DetailData | null>(null);
+  const [hover, setHover] = useState<{ data: DetailData; pos: { left: number; top: number }; side: "right" | "left" } | null>(null);
   const [aiOpen, setAiOpen] = useState(false);
   const router = useRouter();
   // 隐身模式（老板键）：与 Dashboard 共用偏好，亮屏/暗屏一键切换
@@ -380,12 +381,28 @@ export function BigScreenView() {
     }).catch(() => undefined);
   }, [stealth]);
 
-  // Esc：优先关抽屉/面板；无浮层时作为老板键切换隐身模式
+  // 划入气泡浮窗：在锚点旁即时展示明细，替代点击抽屉（不阻断大屏浏览）
+  const showTooltip = (e: MouseEvent<HTMLElement>, data: DetailData) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const POP_W = 264;
+    const estH = 92 + data.rows.length * 30 + (data.note ? 46 : 0);
+    let side: "right" | "left" = "right";
+    let left = r.right + 12;
+    if (left + POP_W > window.innerWidth - 12) {
+      left = Math.max(12, r.left - POP_W - 12);
+      side = "left";
+    }
+    let top = r.top;
+    if (top + estH > window.innerHeight - 12) top = Math.max(12, window.innerHeight - 12 - estH);
+    setHover({ data, pos: { left, top }, side });
+  };
+
+  // Esc：优先关浮层/面板；无浮层时作为老板键切换隐身模式
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      if (detail || aiOpen) {
-        setDetail(null);
+      if (hover || aiOpen) {
+        setHover(null);
         setAiOpen(false);
         return;
       }
@@ -394,7 +411,7 @@ export function BigScreenView() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [detail, aiOpen, toggleStealth]);
+  }, [hover, aiOpen, toggleStealth]);
 
   const prices = useMemo(
     () => Object.fromEntries(Object.entries(quotes).map(([symbol, q]) => [symbol, q.price])),
@@ -835,8 +852,8 @@ export function BigScreenView() {
                 <div
                   key={index.code}
                   className="row-hover interactive"
-                  onClick={() =>
-                    setDetail({
+                  onMouseEnter={(e) =>
+                    showTooltip(e, {
                       title: index.name,
                       subtitle: index.code,
                       rows: [
@@ -845,6 +862,7 @@ export function BigScreenView() {
                       ],
                     })
                   }
+                  onMouseLeave={() => setHover(null)}
                   style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontFamily: "var(--font-mono)", padding: "5px 0" }}
                 >
                   <span style={{ color: TEXT }}>{index.name}</span>
@@ -898,9 +916,9 @@ export function BigScreenView() {
                   <div
                   key={trade.id}
                   className="row-hover interactive"
-                  onClick={() => {
+                  onMouseEnter={(e) => {
                     const q = quotes[trade.symbol];
-                    setDetail({
+                    showTooltip(e, {
                       title: trade.name,
                       subtitle: trade.symbol,
                       rows: [
@@ -914,6 +932,7 @@ export function BigScreenView() {
                       ],
                     });
                   }}
+                  onMouseLeave={() => setHover(null)}
                   style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5, padding: "8px 0", borderBottom: "0.5px solid rgba(22,78,99,.55)" }}
                 >
                     <span style={{ fontFamily: "var(--font-mono)", color: MUTED, width: 62, flexShrink: 0 }}>{trade.tradeDate.slice(5)}</span>
@@ -979,8 +998,8 @@ export function BigScreenView() {
                     <div
                       key={pos.symbol}
                       className="row-hover interactive"
-                      onClick={() =>
-                        setDetail({
+                      onMouseEnter={(e) =>
+                        showTooltip(e, {
                           title: pos.name,
                           subtitle: pos.symbol,
                           rows: [
@@ -993,6 +1012,7 @@ export function BigScreenView() {
                           note: "在「策略选股榜」中点击同名条目可看选股理由。",
                         })
                       }
+                      onMouseLeave={() => setHover(null)}
                       style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5, padding: "6px 0", borderBottom: `0.5px solid rgba(22,78,99,.55)` }}
                     >
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "34%" }}>{pos.name}</span>
@@ -1027,8 +1047,8 @@ export function BigScreenView() {
                 <div
                   key={pick.code}
                   className="row-hover interactive"
-                  onClick={() =>
-                    setDetail({
+                  onMouseEnter={(e) =>
+                    showTooltip(e, {
                       title: pick.name,
                       subtitle: pick.code,
                       rows: [
@@ -1038,6 +1058,7 @@ export function BigScreenView() {
                       note: pick.rationale ?? "该标的暂无文字理由。",
                     })
                   }
+                  onMouseLeave={() => setHover(null)}
                   style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, padding: "6px 0", borderBottom: "0.5px solid rgba(22,78,99,.55)" }}
                 >
                   <span style={{ width: 18, height: 18, flexShrink: 0, borderRadius: 5, background: index < 3 ? "rgba(34,211,238,.18)" : "rgba(111,147,168,.12)", color: index < 3 ? ACCENT : MUTED, fontSize: 10, fontFamily: "var(--font-mono)", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
@@ -1065,14 +1086,15 @@ export function BigScreenView() {
                     <div
                       key={sector.code}
                       className="heat-tile interactive"
-                      onClick={() =>
-                        setDetail({
+                      onMouseEnter={(e) =>
+                        showTooltip(e, {
                           title: sector.name,
                           subtitle: sector.code,
                           rows: [{ k: "今日涨跌幅", v: pct(sector.changePercent), c: sector.changePercent >= 0 ? "up" : "down" }],
                           note: "板块数据来自 ETF 代理口径，反映当日行业强弱。",
                         })
                       }
+                      onMouseLeave={() => setHover(null)}
                       style={{
                         background: heatColor(sector.changePercent),
                         border: `0.5px solid ${sector.changePercent >= 0 ? "rgba(255,107,107,.35)" : "rgba(45,212,191,.35)"}`,
@@ -1127,43 +1149,30 @@ export function BigScreenView() {
         </footer>
       </div>
 
-      {detail && (
-        <>
-          <div className="bigscreen-drawer-backdrop" onClick={() => setDetail(null)} />
-          <aside className="bigscreen-drawer">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 500 }}>{detail.title}</div>
-                {detail.subtitle && (
-                  <div style={{ fontSize: 12, color: MUTED, fontFamily: "var(--font-mono)", marginTop: 4 }}>{detail.subtitle}</div>
-                )}
+      {hover && (
+        <div
+          className={`bs-pop ${hover.side === "left" ? "left" : "right"}`}
+          style={{ left: hover.pos.left, top: hover.pos.top }}
+        >
+          <div className="bs-pop-head">
+            <div className="bs-pop-title">{hover.data.title}</div>
+            {hover.data.subtitle && <div className="bs-pop-sub">{hover.data.subtitle}</div>}
+          </div>
+          <div className="bs-pop-body">
+            {hover.data.rows.map((r, i) => (
+              <div className="bs-row" key={i}>
+                <span className="bs-k">{r.k}</span>
+                <span
+                  className="bs-v"
+                  style={{ color: r.c === "up" ? "var(--up)" : r.c === "down" ? "var(--down)" : r.c === "accent" ? ACCENT : undefined }}
+                >
+                  {r.v}
+                </span>
               </div>
-              <button
-                type="button"
-                onClick={() => setDetail(null)}
-                className="interactive bs-panel"
-                style={{ background: "transparent", border: "0.5px solid var(--border)", color: MUTED, borderRadius: 8, width: 28, height: 28, cursor: "pointer", fontSize: 14 }}
-                aria-label="关闭"
-              >
-                ×
-              </button>
-            </div>
-            <div style={{ marginTop: 16 }}>
-              {detail.rows.map((r, i) => (
-                <div className="bs-row" key={i}>
-                  <span className="bs-k">{r.k}</span>
-                  <span
-                    className="bs-v"
-                    style={{ color: r.c === "up" ? "var(--up)" : r.c === "down" ? "var(--down)" : r.c === "accent" ? ACCENT : undefined }}
-                  >
-                    {r.v}
-                  </span>
-                </div>
-              ))}
-            </div>
-            {detail.note && <p style={{ marginTop: 16, fontSize: 12.5, lineHeight: 1.7, color: MUTED }}>{detail.note}</p>}
-          </aside>
-        </>
+            ))}
+          </div>
+          {hover.data.note && <p className="bs-pop-note">{hover.data.note}</p>}
+        </div>
       )}
 
       {aiOpen && (
