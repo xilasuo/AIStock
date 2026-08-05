@@ -106,6 +106,7 @@ async function syncDirAdditive(src: string, dest: string): Promise<void> {
 export function sites(): Plugin {
   let root = process.cwd();
   let outDir = "dist";
+  let cleaned = false;
 
   return {
     name: "sites",
@@ -120,7 +121,12 @@ export function sites(): Plugin {
     // Vite 已关闭 emptyOutDir（见 vite.config.ts），这里在构建开始前等价清空
     // 整个 dist，避免 Vite 内置清空逻辑被 safe-delete 批量删除阈值拦截。
     // 删除失败（文件锁）时容忍残留：vite 覆盖写入新产物，功能不受影响。
+    // 注意：vinext 用 @cloudflare/vite-plugin 构建多个环境（RSC + SSR），
+    // buildStart 会对每个环境各触发一次。用 cleaned 标志确保只清空一次，
+    // 否则 SSR 环境的 buildStart 会把 RSC 环境的构建产物一并删除。
     buildStart() {
+      if (cleaned) return;
+      cleaned = true;
       removeDirBypassShim(resolve(root, outDir));
     },
     async closeBundle() {
