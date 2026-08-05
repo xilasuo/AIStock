@@ -25,6 +25,7 @@ import {
   ArrowLeftRight,
   ArrowLeft,
   Bell,
+  Bot,
   CalendarDays,
   ChevronRight,
   ChevronDown,
@@ -2705,6 +2706,7 @@ function SmartAssistant(
       <div className="sa-msgs" ref={messagesRef} aria-live="polite">
         {!primed && (
           <div className="sa-msg sa-msg--assistant">
+            <div className="sa-msg__avatar" aria-hidden><Bot size={16} /></div>
             <div className="sa-msg__body">…</div>
           </div>
         )}
@@ -2719,55 +2721,59 @@ function SmartAssistant(
           const regen = regeneratingId === message.id;
           return (
             <div key={message.id} className={`sa-msg sa-msg--assistant${message.error ? " is-error" : ""}`}>
-              {regen ? (
-                <span className="sa-dots" aria-label="正在重新生成"><span /><span /><span /></span>
-              ) : (
-                <AssistantAnswer content={message.content} />
-              )}
-              {!regen && message.kind !== "primer" && (
-                <div className="sa-msg__meta">
-                  {message.error ? (
-                    message.pendingQuestion && (
-                      <button
-                        type="button"
-                        className="sa-link"
-                        onClick={() => message.id && retry(message.id)}
-                        disabled={asking}
-                      >
-                        重试
-                      </button>
-                    )
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        className="sa-link"
-                        onClick={() => message.id && copyMessage(message.content, message.id)}
-                        aria-label="复制这条回复"
-                        title="复制"
-                      >
-                        {copiedId === message.id ? "已复制" : "复制"}
-                      </button>
-                      <span className="sa-sep" aria-hidden>·</span>
-                      <button
-                        type="button"
-                        className="sa-link"
-                        onClick={() => message.id && regenerate(message.id)}
-                        disabled={asking || regeneratingId === message.id}
-                        aria-label="换一版回复"
-                        title="换一版"
-                      >
-                        换一版
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
+              <div className="sa-msg__avatar" aria-hidden><Bot size={16} /></div>
+              <div className="sa-msg__main">
+                {regen ? (
+                  <span className="sa-dots" aria-label="正在重新生成"><span /><span /><span /></span>
+                ) : (
+                  <AssistantAnswer content={message.content} />
+                )}
+                {!regen && message.kind !== "primer" && (
+                  <div className="sa-msg__meta">
+                    {message.error ? (
+                      message.pendingQuestion && (
+                        <button
+                          type="button"
+                          className="sa-link"
+                          onClick={() => message.id && retry(message.id)}
+                          disabled={asking}
+                        >
+                          重试
+                        </button>
+                      )
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="sa-link"
+                          onClick={() => message.id && copyMessage(message.content, message.id)}
+                          aria-label="复制这条回复"
+                          title="复制"
+                        >
+                          {copiedId === message.id ? "已复制" : "复制"}
+                        </button>
+                        <span className="sa-sep" aria-hidden>·</span>
+                        <button
+                          type="button"
+                          className="sa-link"
+                          onClick={() => message.id && regenerate(message.id)}
+                          disabled={asking || regeneratingId === message.id}
+                          aria-label="换一版回复"
+                          title="换一版"
+                        >
+                          换一版
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           );
         })}
         {asking && (
           <div className="sa-msg sa-msg--assistant sa-msg--typing" aria-label="助手正在思考">
+            <div className="sa-msg__avatar" aria-hidden><Bot size={16} /></div>
             <span className="sa-dots"><span /><span /><span /></span>
           </div>
         )}
