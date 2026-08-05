@@ -7435,13 +7435,6 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
 .bigscreen {
   background: #0a0f16;
 }
-.bigscreen .bigscreen-live-dot {
-  animation: bigscreen-pulse 2s ease-in-out infinite;
-}
-@keyframes bigscreen-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
-}
 .bigscreen .bigscreen-marquee {
   overflow: hidden;
 }
@@ -7456,7 +7449,6 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
   to { transform: translateX(-50%); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .bigscreen .bigscreen-live-dot,
   .bigscreen .bigscreen-marquee-track {
     animation: none;
   }

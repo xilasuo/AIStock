@@ -808,12 +808,12 @@ export function BigScreenView() {
           </section>
         </main>
 
-        <footer style={{ marginTop: 14, background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 12, overflow: "hidden" }}>
-          <div className="bigscreen-marquee" style={{ display: "flex", alignItems: "center", height: 42 }}>
-            <span style={{ flexShrink: 0, padding: "0 18px", fontSize: 12, color: MUTED, borderRight: `0.5px solid ${BORDER}`, lineHeight: "42px" }}>
-              自选行情
-            </span>
-            <div className="bigscreen-marquee-track" style={{ display: "flex", flex: 1, minWidth: 0 }}>
+        <footer style={{ marginTop: 14, background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 12, overflow: "hidden", display: "flex", alignItems: "center", height: 42 }}>
+          <span style={{ flexShrink: 0, padding: "0 18px", fontSize: 12, color: MUTED, borderRight: `0.5px solid ${BORDER}`, lineHeight: "42px" }}>
+            自选行情
+          </span>
+          <div className="bigscreen-marquee" style={{ flex: 1, minWidth: 0, overflow: "hidden", height: "100%", display: "flex", alignItems: "center" }}>
+            <div className="bigscreen-marquee-track" style={{ display: "flex", width: "max-content", flexShrink: 0 }}>
               {[0, 1].map((copy) => (
                 <div key={copy} style={{ display: "flex", alignItems: "center", whiteSpace: "nowrap" }} aria-hidden={copy === 1}>
                   {marqueeSymbols.map((item) => {
@@ -835,10 +835,10 @@ export function BigScreenView() {
                 </div>
               ))}
             </div>
-            <span style={{ flexShrink: 0, padding: "0 18px", fontSize: 11, color: ACCENT, fontFamily: "var(--font-mono)", letterSpacing: 1 }}>
-              LIVE
-            </span>
           </div>
+          <span style={{ flexShrink: 0, padding: "0 18px", fontSize: 11, color: ACCENT, fontFamily: "var(--font-mono)", letterSpacing: 1 }}>
+            LIVE
+          </span>
         </footer>
       </div>
     </div>
