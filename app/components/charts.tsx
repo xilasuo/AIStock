@@ -50,7 +50,7 @@ const DONUT_PALETTE = [
   "#ff8a7a",         // 珊瑚红
   "#b98cff",         // 紫
   "#ffd98a",         // 沙
-  "#7fb0e6",         // 钢蓝
+  "#3da5ff",         // 亮蓝（霓虹）
   "#d6e06b",         // 黄绿
 ];
 

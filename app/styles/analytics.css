@@ -1,5 +1,5 @@
 /* 分析视图 / 图表 / 标签 / 导入 相关样式（与 app/AnalyticsView、charts、ImportPanel 配套）
-   配色对齐 globals.css 的「纸感极简」令牌体系（钢蓝 --accent / 红涨绿跌 --up --down）。 */
+   配色对齐 globals.css 的「青蓝霓虹·数据感」暗色令牌体系（--accent 发光青蓝 / --up 红涨 --down 绿跌）。 */
 
 .analytics-view {
   display: flex;
