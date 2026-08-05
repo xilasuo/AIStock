@@ -111,7 +111,7 @@ export function BigScreenView() {
   const [capitalFlows, setCapitalFlows] = useState<CapitalFlow[]>([]);
   const [indices, setIndices] = useState<MarketIndex[]>([]);
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
-  const [now, setNow] = useState(() => new Date());
+  const [now, setNow] = useState<Date | null>(null);
   const [error, setError] = useState("");
 
   const loadData = useCallback(async () => {
@@ -149,10 +149,12 @@ export function BigScreenView() {
   useEffect(() => {
     const initial = window.setTimeout(() => void loadData(), 0);
     const dataTimer = window.setInterval(() => void loadData(), 30_000);
+    const clockInitial = window.setTimeout(() => setNow(new Date()), 0);
     const clockTimer = window.setInterval(() => setNow(new Date()), 1_000);
     return () => {
       window.clearTimeout(initial);
       window.clearInterval(dataTimer);
+      window.clearTimeout(clockInitial);
       window.clearInterval(clockTimer);
     };
   }, [loadData]);
@@ -225,7 +227,7 @@ export function BigScreenView() {
   }, [watchlist, positions, quotes]);
 
   const activeIndices = indices.slice(0, 3);
-  const timeText = formatDateTimeShanghai(now);
+  const timeText = now ? formatDateTimeShanghai(now) : "——:——:——";
   const profitColor = (insights.totalProfitCents ?? 0) >= 0 ? UP : DOWN;
 
   return (
