@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, Card, Divider, EmptyState, Field, IconButton, Input } from "./ui";
+import { formatDateShanghai } from "../../lib/utils/time";
 
 type ManagedUser = {
   id: number;
@@ -34,9 +35,7 @@ function initials(name: string): string {
 
 function formatDate(iso: string): string {
   if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" });
+  return formatDateShanghai(iso);
 }
 
 export function UsersAdmin({ currentUserId }: { currentUserId: number }) {

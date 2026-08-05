@@ -89,7 +89,7 @@ import {
 } from "../../lib/utils/preferences";
 import type { AssistantContext } from "../../lib/ai/assistant";
 import { splitAssistantSections, conclusionTone } from "../../lib/ai/assistant";
-import { formatDateShanghai, formatDateTimeShanghai } from "../../lib/utils/time";
+import { formatDateShanghai, formatDateTimeShanghai, shanghaiIso } from "../../lib/utils/time";
 import { readCache, writeCache, removeCache, readKeyedCache, writeKeyedCache } from "../../lib/utils/client-cache";
 
 type View = "home" | "watchlist" | "trades" | "settings" | "analytics" | "analysis" | "scan" | "writeback";
@@ -2354,7 +2354,7 @@ function buildPlaceholderContext(portfolioInsights: PortfolioInsights): Assistan
       : "用户未在当前分析页选中具体股票，暂无持仓记录。",
     risks: [],
     missingInformation: ["未关联具体股票，无法提供个股行情与财务"],
-    source: { name: "账户记录", fetchedAt: new Date().toISOString() },
+    source: { name: "账户记录", fetchedAt: shanghaiIso() },
     position: null,
     holdingsSummary: portfolioInsights.positions.length > 0 ? holdingsSummary : undefined,
     portfolio: {

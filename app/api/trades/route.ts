@@ -177,6 +177,7 @@ export async function POST(request: Request) {
         type: alert.type,
         targetPriceCents: Math.round(alert.targetTenThousandths / 100),
         targetPriceMillis: Math.round(alert.targetTenThousandths / 10),
+        createdAt: shanghaiIso(),
       }));
       const [tradeRows] = await db.batch([
         db.insert(tradeRecords).values(tradeValues).returning(),
@@ -370,6 +371,7 @@ export async function PATCH(request: Request) {
         type: alert.type,
         targetPriceCents: Math.round(alert.targetTenThousandths / 100),
         targetPriceMillis: Math.round(alert.targetTenThousandths / 10),
+        createdAt: shanghaiIso(),
       }));
       const [tradeRows] = await db.batch([
         db.update(tradeRecords).set(updates).where(eq(tradeRecords.id, id)).returning(),

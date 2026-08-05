@@ -142,7 +142,7 @@ export async function ensureSchema() {
         amount_cents INTEGER NOT NULL,
         flow_date TEXT NOT NULL,
         note TEXT,
-        created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )`),
       db.prepare(`CREATE TABLE IF NOT EXISTS trading_preferences (
         id INTEGER PRIMARY KEY NOT NULL,

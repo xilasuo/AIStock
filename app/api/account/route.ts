@@ -76,6 +76,7 @@ export async function PUT(request: Request) {
         amountCents: Math.round(amount),
         flowDate,
         note: String(payload.note ?? "").trim() || null,
+        createdAt: shanghaiIso(),
       });
       return Response.json({ ok: true });
     } catch {

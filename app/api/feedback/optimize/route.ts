@@ -1,5 +1,6 @@
 import { requireApiUser, getAuthenticatedUser } from "../../../../lib/auth/auth";
 import { env } from "cloudflare:workers";
+import { shanghaiIso } from "../../../../lib/utils/time";
 
 /**
  * 反馈优化端点（对应架构图「用户反馈 → 优化策略」闭环的关键一环）
@@ -178,7 +179,7 @@ export async function POST(req: Request) {
       delete (newConfig as Record<string, unknown>).screener;
     }
     const payload = JSON.stringify({
-      savedAt: new Date().toISOString(),
+      savedAt: shanghaiIso(),
       optimizedFromFeedback: { count: total, up: up.length, down: down.length, profile },
       config: newConfig,
     });

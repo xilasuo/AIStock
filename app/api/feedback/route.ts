@@ -2,6 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { requireApiUser, getCurrentUser } from "../../../lib/auth/auth";
 import { getDb, ensureSchema } from "../../../db";
 import { strategyFeedback } from "../../../db/schema";
+import { shanghaiIso } from "../../../lib/utils/time";
 
 /**
  * 用户反馈接口（对应架构图「用户 → 本项目 → 优化策略」闭环）
@@ -66,7 +67,7 @@ export async function POST(req: Request) {
     const user = await getCurrentUser();
     await ensureSchema();
     const db = getDb();
-    await db.insert(strategyFeedback).values({ userId: user.id, symbol, name, verdict, note, source, factors });
+    await db.insert(strategyFeedback).values({ userId: user.id, symbol, name, verdict, note, source, factors, createdAt: shanghaiIso() });
     return Response.json({ ok: true });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

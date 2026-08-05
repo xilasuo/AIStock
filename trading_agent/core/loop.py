@@ -120,7 +120,7 @@ def run(cfg: config.AppConfig, dp=None) -> dict:
 
     result = {
         "meta": {
-            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "generated_at": sh_now().strftime("%Y-%m-%d %H:%M:%S"),
             "beg": cfg.beg,
             "end": cfg.end,
             "universe_size": len(codes),

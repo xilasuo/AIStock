@@ -44,6 +44,7 @@ export async function POST(request: Request) {
       type: type as "止损" | "止盈一" | "止盈二",
       targetPriceCents: Math.round(targetPriceMillis / 10),
       targetPriceMillis,
+      createdAt: shanghaiIso(),
     }).returning();
     return Response.json({ alert }, { status: 201 });
   } catch {

@@ -8,6 +8,7 @@ import {
 import path from "path";
 import { existsSync } from "fs";
 import { env } from "cloudflare:workers";
+import { shanghaiIso } from "../../../../lib/utils/time";
 
 /**
  * 探测项目根目录。
@@ -98,7 +99,7 @@ async function readStoredConfig(userId: number | null): Promise<Record<string, u
 
 async function saveStoredConfig(userId: number | null, config: unknown): Promise<void> {
   if (!env.DB) throw new Error("数据库暂不可用");
-  const payload = JSON.stringify({ savedAt: new Date().toISOString(), config });
+  const payload = JSON.stringify({ savedAt: shanghaiIso(), config });
   // 每用户保留自己最新一行；全局默认行以 user_id IS NULL 标识。
   await env.DB.batch([
     env.DB.prepare("DELETE FROM strategy_config WHERE user_id IS ?").bind(userId),

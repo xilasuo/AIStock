@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from datetime import date, timedelta
+from datetime import timedelta
 import urllib.parse
 import urllib.request
 from abc import ABC, abstractmethod
@@ -19,6 +19,7 @@ from typing import Optional
 
 import config
 from data import fundamentals
+from timeutil import sh_now
 
 _UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/117.0.0.0 Safari/537.36"
 _CACHE_DIR = config.CACHE_DIR
@@ -176,7 +177,7 @@ def fetch_kline(code: str, beg: str | None = None, end: str = "20500101") -> lis
     除权除息日的信号/回测失真。新浪未复权仅在东财失败时兜底。
     """
     if beg is None:
-        beg = (date.today() - timedelta(days=620)).strftime("%Y%m%d")
+        beg = (sh_now().date() - timedelta(days=620)).strftime("%Y%m%d")
     cached = _load_cache("kline", f"{code}_{beg}_{end}")
     if cached is not None:
         return cached
@@ -286,8 +287,7 @@ def fetch_hot_stocks() -> list[dict]:
     cached = _load_cache("hot", "today")
     if cached is not None:
         return cached
-    from datetime import date as _date
-    today = _date.today().strftime("%Y-%m-%d")
+    today = sh_now().strftime("%Y-%m-%d")
     url = (
         f"http://zx.10jqka.com.cn/event/api/getharden/"
         f"date/{today}/orderby/date/orderway/desc/charset/GBK/"

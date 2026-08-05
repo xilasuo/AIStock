@@ -94,6 +94,7 @@ export async function POST(request: Request) {
           type: alert.type,
           targetPriceCents: Math.round(alert.targetTenThousandths / 100),
           targetPriceMillis: Math.round(alert.targetTenThousandths / 10),
+          createdAt: shanghaiIso(),
         }));
         alertInserts.push(...alerts);
       }

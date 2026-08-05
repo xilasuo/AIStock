@@ -30,7 +30,7 @@ console.log(`Total unique: ${codes.length}`);
 
 const tsLines = [
   "// Auto-generated from akshare stock_info_a_code_name()",
-  `// Generated at: ${new Date().toISOString()}`,
+  `// Generated at: ${new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}`,
   `// Total: ${codes.length} A-share stocks (沪深京)`,
   "",
   "const A_STOCK_LIST: Record<string, string> = {",
