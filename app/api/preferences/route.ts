@@ -48,6 +48,8 @@ export async function PUT(request: NextRequest) {
           enforceStopLoss: next.enforceStopLoss,
           disciplineNote: next.disciplineNote,
           stealthMode: next.stealthMode,
+          commissionRateTenThousandths: next.commissionRateTenThousandths,
+          minCommissionCents: next.minCommissionCents,
           updatedAt,
         },
       });

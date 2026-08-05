@@ -81,9 +81,11 @@ import { calculateBuySummary, calculateTradeStatistics } from "../../lib/domain/
 import { TAKE_PROFIT_1_R, TAKE_PROFIT_2_R } from "../../lib/domain/trade-import";
 import { baseCloseSince, resolveStock, resolveStockByName, searchLocalStocks, type Oscillators } from "../../lib/domain/stocks";
 import {
+  DEFAULT_FEE_SETTINGS,
   DEFAULT_PREFERENCES,
   RISK_PRESETS,
   RISK_PROFILE_LABELS,
+  estimateTradeFeeCents,
   type RiskProfile,
   type TradingPreferences,
 } from "../../lib/utils/preferences";
@@ -311,8 +313,10 @@ const navItems: Array<{ id: View; label: string; icon: LucideIcon }> = [
   { id: "writeback", label: "回写结果", icon: Upload },
 ];
 
-const buyReasons = ["看好公司业绩", "看好行业题材", "价格回调", "突破买入", "朋友或网络推荐", "担心错过", "冲动买入", "其他"];
-const sellReasons = ["达到止盈目标", "触发止损", "买入逻辑失效", "害怕利润回吐", "临时需要资金", "看到其他股票", "不知道为什么卖", "其他"];
+// 买入理由：按「基本面/技术面/消息面/情绪行为」分组，便于复盘时区分「按规则买」和「情绪买」
+const buyReasons = ["业绩向好", "估值便宜", "行业景气/题材", "放量突破", "回踩支撑企稳", "均线多头趋势", "研报/大V推荐", "怕踏空追涨", "冲动买入", "其他"];
+// 卖出理由：先区分「纪律卖」（止盈/止损/逻辑失效）与「情绪卖」（怕回吐/拿不住/想换股），统计才有意义
+const sellReasons = ["达到止盈目标", "触发止损", "买入逻辑失效", "跌破支撑位", "仓位过重降风险", "大盘/板块转弱", "害怕利润回吐", "拿不住/焦虑", "想换别的股票", "临时需要资金", "不知道为什么卖", "其他"];
 
 function money(cents: number) {
   return `¥${(cents / 100).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -412,10 +416,15 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   const [error, setError] = useState("");
   const notified = useRef(new Set<number>());
   const pendingQuotes = useRef(new Set<string>());
+  const pendingLightQuotes = useRef(new Set<string>());
   /** 每个 symbol 最近一次拉取行情的时间戳，用于 TTL 判断是否需要刷新 */
   const quoteFetchedAt = useRef<Record<string, number>>({});
+  /** 轻量行情（仅价格/涨跌幅）最近刷新时间戳，1 分钟 TTL */
+  const quoteLightFetchedAt = useRef<Record<string, number>>({});
   /** 行情刷新 TTL：超过该时长即视为过期，进入轮询时会重新拉取 */
   const QUOTE_TTL_MS = 5 * 60 * 1000;
+  /** 轻量行情轮询间隔：页面停留时每分钟刷新价格（走 /api/quote，不拉 K 线/财务） */
+  const LIGHT_QUOTE_TTL_MS = 60 * 1000;
   /** 选股榜单点击"分析"时暂存的行数据，fetchAnalysis 消费后清空 */
   const pendingScreenerContext = useRef<import("./StrategyScanView").ScanSelected | null>(null);
 
@@ -649,6 +658,53 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     void fetchAnalysis(symbol, false).finally(() => pendingQuotes.current.delete(symbol));
   }, [fetchAnalysis]);
 
+  /** 判断某 symbol 的轻量行情（价格/涨跌幅）是否需要刷新（60 秒 TTL） */
+  const quoteLightStale = useCallback((symbol: string) => {
+    const fetchedAt = quoteLightFetchedAt.current[symbol];
+    return !fetchedAt || Date.now() - fetchedAt > LIGHT_QUOTE_TTL_MS;
+  }, [LIGHT_QUOTE_TTL_MS]);
+
+  /** 轻量刷新：只取价格/涨跌幅（/api/quote），不拉 K 线/财务/公告，供 1 分钟轮询使用 */
+  const refreshQuoteLight = useCallback(async (symbol: string) => {
+    if (pendingLightQuotes.current.has(symbol)) return;
+    pendingLightQuotes.current.add(symbol);
+    try {
+      const res = await fetch("/api/quote", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ symbols: [symbol] }),
+      });
+      if (!res.ok) return;
+      const json = (await res.json()) as {
+        quotes?: Record<string, { price: number; changePercent: number; fetchedAt: string }>;
+      };
+      const q = json.quotes?.[symbol];
+      if (!q || !Number.isFinite(q.price)) return;
+      quoteLightFetchedAt.current[symbol] = Date.now();
+      setQuotes((current) => {
+        const prev = current[symbol];
+        if (!prev) return current;
+        const next = {
+          ...current,
+          [symbol]: {
+            ...prev,
+            quote: { ...prev.quote, price: q.price, changePercent: q.changePercent, marketTime: q.fetchedAt },
+          },
+        };
+        const trimmed: Record<string, Pick<Analysis, "stock" | "quote" | "history">> = {};
+        for (const [code, item] of Object.entries(next)) {
+          trimmed[code] = { stock: item.stock, quote: item.quote, history: item.history };
+        }
+        writeKeyedCache("quotes", trimmed, 60);
+        return next;
+      });
+    } catch {
+      // 单次失败静默，保留旧价，下一轮轮询再试
+    } finally {
+      pendingLightQuotes.current.delete(symbol);
+    }
+  }, []);
+
   // 首屏与每次状态变化后：为缺失或已过期的持仓/关注/提醒行情发起拉取
   useEffect(() => {
     const symbols = new Set([
@@ -697,10 +753,9 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
 
   useEffect(() => {
     const firstCheck = window.setTimeout(checkAlerts, 0);
-    // 周期轮询：对持仓/关注/提醒统一刷新行情（带 TTL 判定），同时检查止损/止盈是否触发。
-    // 注意：必须在每次轮询里调用 checkAlerts()，否则提醒只在页面加载时检查一次、
-    // 之后价格触达也不再提醒（历史遗漏，已修复）。轮询间隔与 QUOTE_TTL_MS 一致，
-    // 确保每次轮询时 TTL 已过期、行情必然刷新，提醒判断基于最新价。
+    // 周期轮询：对持仓/关注/提醒每分钟刷新一次价格（轻量 /api/quote，不拉 K 线财务），
+    // 同时检查止损/止盈是否触发。轮询间隔与 LIGHT_QUOTE_TTL_MS 一致，确保每次轮询
+    // 时轻量行情 TTL 已过期、价格必然刷新，提醒判断基于最新价。
     const timer = window.setInterval(() => {
       const symbols = new Set([
         ...portfolio.positions.map((position) => position.symbol),
@@ -708,15 +763,15 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
         ...watchlist.map((item) => item.symbol),
       ]);
       for (const symbol of symbols) {
-        if (quoteStale(symbol)) refreshQuote(symbol);
+        if (quoteLightStale(symbol)) void refreshQuoteLight(symbol);
       }
       checkAlerts();
-    }, QUOTE_TTL_MS);
+    }, LIGHT_QUOTE_TTL_MS);
     return () => {
       window.clearTimeout(firstCheck);
       window.clearInterval(timer);
     };
-  }, [alerts, checkAlerts, portfolio.positions, quoteStale, refreshQuote, watchlist, QUOTE_TTL_MS]);
+  }, [alerts, checkAlerts, portfolio.positions, quoteLightStale, refreshQuoteLight, watchlist, LIGHT_QUOTE_TTL_MS]);
 
   async function analyzeStock(event?: React.FormEvent, overrideQuery?: string) {
     event?.preventDefault();
@@ -1056,6 +1111,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 onBuy={() => setTradeMode("buy")}
                 onSell={() => setTradeMode("sell")}
                 onReview={setReviewCycleEndTradeId}
+                onEditTrade={(trade) => setEditingTrade(trade)}
                 onDeleteTrade={(id) => void deleteTrade(id)}
               />
             )}
@@ -1103,7 +1159,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 />
               </div>
             )}
-            {view === "writeback" && <div className="page-content inner-page"><WritebackView /></div>}
+            {view === "writeback" && <div className="page-content inner-page"><WritebackView onNavigate={navigate} /></div>}
           </>
         )}
       </main>
@@ -1126,6 +1182,18 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
           editTrade={editingTrade}
           positions={portfolio.positions}
           analysisQuote={tradeMode === "buy" && !editingTrade ? analysis?.quote ?? null : null}
+          livePrice={(() => {
+            if (tradeMode !== "sell" || editingTrade || !portfolio.positions.length) return undefined;
+            return quotes[portfolio.positions[0].symbol]?.quote?.price;
+          })()}
+          planLossCents={(() => {
+            if (tradeMode !== "sell" || editingTrade || !portfolio.positions.length) return undefined;
+            const symbol = portfolio.positions[0].symbol;
+            const lastBuy = [...trades].reverse().find((trade) => trade.symbol === symbol && trade.side === "买入");
+            return lastBuy?.maxLossCents ?? undefined;
+          })()}
+          suggestedPrice={tradeMode === "buy" && !editingTrade ? analysis?.quote?.price : undefined}
+          prefs={preferences ?? undefined}
           onClose={() => { setTradeMode(null); setEditingTrade(null); }}
           onSubmit={saveTrade}
           onSwitchStock={async (symbol) => { await fetchAnalysis(symbol, true); }}
@@ -1184,13 +1252,14 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
 }
 
 const REVIEW_THEMES: Array<{ key: string; label: string; words: string[] }> = [
-  { key: "stop", label: "止损纪律", words: ["止损", "割肉", "砍仓", "止损线", "破位"] },
-  { key: "size", label: "仓位控制", words: ["仓位", "满仓", "轻仓", "重仓", "加仓", "补仓", "资金"] },
-  { key: "chase", label: "追涨杀跌", words: ["追涨", "追高", "追", "杀跌", "抄底", "跟风"] },
-  { key: "panic", label: "情绪管理", words: ["慌", "恐慌", "恐惧", "焦虑", "贪婪", "冲动", "上头", "怕"] },
-  { key: "plan", label: "交易计划", words: ["计划", "纪律", "规则", "预案", "策略", "条件"] },
-  { key: "freq", label: "频繁交易", words: ["频繁", "短线", "来回", "做t", "日内", "炒"] },
-  { key: "hold", label: "持仓耐心", words: ["持有", "拿住", "耐心", "过早", "卖飞"] },
+  { key: "stop", label: "止损纪律", words: ["止损", "割肉", "砍仓", "止损线", "破位", "跌破"] },
+  { key: "size", label: "仓位控制", words: ["仓位", "满仓", "轻仓", "重仓", "加仓", "补仓", "资金", "仓位过重"] },
+  { key: "chase", label: "追涨杀跌", words: ["追涨", "追高", "追", "杀跌", "抄底", "跟风", "踏空"] },
+  { key: "panic", label: "情绪管理", words: ["慌", "恐慌", "恐惧", "焦虑", "贪婪", "冲动", "上头", "怕", "拿不住"] },
+  { key: "plan", label: "交易计划", words: ["计划", "纪律", "规则", "预案", "策略", "条件", "止盈", "目标价"] },
+  { key: "freq", label: "频繁交易", words: ["频繁", "短线", "来回", "做t", "日内", "炒", "换股"] },
+  { key: "hold", label: "持仓耐心", words: ["持有", "拿住", "耐心", "过早", "卖飞", "回踩", "支撑"] },
+  { key: "entry", label: "买点选择", words: ["放量", "突破", "均线", "估值", "业绩", "题材", "买点", "入场"] },
 ];
 
 function getCycleSummary(cycle: TradeCycle) {
@@ -1465,8 +1534,6 @@ function Home({
   const completedCycles = buildTradeCycles(trades).filter((cycle) => cycle.endTradeId !== null);
   const winningCycles = completedCycles.filter((cycle) => cycle.realizedCents > 0).length;
   const winRate = completedCycles.length ? Math.round((winningCycles / completedCycles.length) * 100) : 0;
-  const planRate = reviews.length ? Math.round((reviews.filter((review) => review.followedPlan).length / reviews.length) * 100) : 0;
-  const reviewSummary = summarizeReviews(reviews, completedCycles, pendingReviews);
 
   return (
     <div className="page-content inner-page">
@@ -1507,8 +1574,7 @@ function Home({
               <div className="summary-strip home-summary">
                 <div><span>已实现盈亏</span><strong className={portfolio.realizedCents >= 0 ? "up" : "down"}>{money(portfolio.realizedCents)}</strong></div>
                 <div><span>完整交易胜率</span><strong>{completedCycles.length ? `${winRate}%` : "暂无"}</strong></div>
-                <div><span>按计划复盘</span><strong>{reviews.length ? `${planRate}%` : "暂无"}</strong></div>
-                <div><span>复盘洞察</span><strong className="summary-lesson">{reviewSummary.headline}</strong></div>
+                <div><span>待复盘</span><strong>{pendingReviews.length ? `${pendingReviews.length} 笔` : "已清空"}</strong></div>
               </div>
 
               {!!trades.length && (
@@ -1556,7 +1622,7 @@ function Home({
                 {!activeAlerts.length && <div className="empty-inline">暂无提醒。记录买入并填写最大亏损后会自动生成。</div>}
               </section>
               <section className="panel review-panel">
-                <SectionHeader title="待复盘" subtitle="卖出后只回答三个问题" />
+                <SectionHeader title="待复盘" subtitle="卖出后，花一分钟回答关键问题" />
                 {pendingReviews.slice(0, 3).map((cycle) => {
                   return (
                     <div className="review-item" key={cycle.endTradeId}>
@@ -3759,9 +3825,6 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved, strategyScan }
             const StatusIcon = status.icon;
             const industryLabel = stockMeta?.industry || "行业信息待补充";
             const isEtf = stockMeta?.instrumentType === "etf";
-            const reviewedDate = item.lastReviewedAt
-              ? formatDateShanghai(item.lastReviewedAt)
-              : null;
             const watchedDays = Math.max(0, Math.round((today.getTime() - new Date(item.createdAt).getTime()) / 86_400_000));
             return (
               <article className="panel watch-card" key={item.symbol}>
@@ -3869,9 +3932,6 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved, strategyScan }
                       <span className="watch-note-label"><MessageCircle size={13} />我的条件</span>
                       <p>{item.conditionText?.trim() || "还没有写下条件——先想清楚再决定要不要行动。"}</p>
                     </div>
-                    <div className="watch-card-meta">
-                      <span><CalendarDays size={13} />最近检查 {reviewedDate ?? "尚未检查"}</span>
-                    </div>
                     <div className="watch-card-actions">
                       <Button variant="primary" iconRight={<ArrowUp size={14} style={{ transform: "rotate(45deg)" }} />} onClick={() => onAnalyze(item.symbol)}>查看分析</Button>
                       <IconButton label="编辑条件" title="编辑条件" onClick={() => setEditing(item.symbol)}><Pencil size={16} /></IconButton>
@@ -3899,7 +3959,7 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved, strategyScan }
   );
 }
 
-function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, quotes, onBuy, onSell, onReview, onDeleteTrade }: {
+function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, quotes, onBuy, onSell, onReview, onEditTrade, onDeleteTrade }: {
   trades: Trade[];
   reviews: Review[];
   /** 用于在买入行内展示该股票当前的止损/止盈目标价 */
@@ -3911,6 +3971,7 @@ function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, qu
   onBuy: () => void;
   onSell: () => void;
   onReview: (cycleEndTradeId: number) => void;
+  onEditTrade: (trade: Trade) => void;
   onDeleteTrade: (id: number) => void;
 }) {
   const portfolio = useMemo(() => calculatePortfolio(trades), [trades]);
@@ -4228,8 +4289,7 @@ function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, qu
             <span><SortHeader label="操作" active={sortKey === "side"} dir={sortKey === "side" ? sortDir : null} onClick={() => toggleSort("side")} /></span>
             <span>原因</span>
             <span><SortHeader label="状态" active={sortKey === "status"} dir={sortKey === "status" ? sortDir : null} onClick={() => toggleSort("status")} /></span>
-            <span><SortHeader label="创建时间" active={sortKey === "createdAt"} dir={sortKey === "createdAt" ? sortDir : null} onClick={() => toggleSort("createdAt")} /></span>
-            <span><SortHeader label="操作时间" active={sortKey === "updatedAt"} dir={sortKey === "updatedAt" ? sortDir : null} onClick={() => toggleSort("updatedAt")} /></span>
+            <span><SortHeader label="记录时间" active={sortKey === "updatedAt"} dir={sortKey === "updatedAt" ? sortDir : null} onClick={() => toggleSort("updatedAt")} /></span>
             <span></span>
           </div>
           {pagedTrades.map((trade, idx) => {
@@ -4278,15 +4338,19 @@ function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, qu
                         ? <Button variant="ghost" size="sm" onClick={() => onReview(cycle.endTradeId!)}>去复盘</Button>
                         : <Badge tone="amber">待复盘</Badge>}
                 </span>
-                <span className="trade-time" title={`创建于 ${trade.createdAt ?? "未知"}`}>
-                  <b>{formatTimeShort(trade.createdAt)}</b>
-                  <small>{formatYear(trade.createdAt)}</small>
-                </span>
-                <span className="trade-time" title={`最后修改于 ${trade.updatedAt ?? trade.createdAt ?? "未知"}`}>
+                <span className="trade-time" title={`记录时间 ${trade.updatedAt ?? trade.createdAt ?? "未知"}`}>
                   <b>{formatTimeShort(trade.updatedAt ?? trade.createdAt)}</b>
                   <small>{formatYear(trade.updatedAt ?? trade.createdAt)}</small>
                 </span>
                 <span className="trade-actions">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label={`编辑交易 ${trade.name} ${trade.tradeDate}`}
+                    onClick={() => onEditTrade(trade)}
+                  >
+                    编辑
+                  </Button>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -4356,6 +4420,7 @@ function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferenc
   onClearCache: () => void;
   currentUser: User;
 }) {
+  const [editingAlert, setEditingAlert] = useState<AlertRule | null>(null);
   const notificationState = typeof window !== "undefined" && "Notification" in window ? Notification.permission : "unsupported";
   const enabledAlertCount = alerts.filter((item) => item.enabled).length;
   const cardList = [
@@ -4567,14 +4632,7 @@ function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferenc
                                 )}
                                 {alert.enabled && !triggered && (
                                   <>
-                                    <Button variant="ghost" size="sm" onClick={() => {
-                                      const next = window.prompt(`修改「${alert.name} · ${alert.type}」目标价（元）`, String((alert.targetPriceMillis ?? alert.targetPriceCents * 10) / 1000));
-                                      if (next !== null && next.trim() !== "") {
-                                        const value = Number(next);
-                                        if (Number.isFinite(value) && value > 0) onUpdateAlert(alert.id, value);
-                                        else window.alert("目标价必须是正数");
-                                      }
-                                    }}>改价</Button>
+                                    <Button variant="ghost" size="sm" onClick={() => setEditingAlert(alert)}>改价</Button>
                                     <Button variant="ghost" size="sm" onClick={() => onDisable(alert.id)}>停用</Button>
                                   </>
                                 )}
@@ -4633,6 +4691,54 @@ function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferenc
             </li>
           ))}
         </ul>
+      </section>
+
+      {editingAlert && (
+        <AlertEditModal
+          alert={editingAlert}
+          onClose={() => setEditingAlert(null)}
+          onSave={(id, targetPrice) => { onUpdateAlert(id, targetPrice); setEditingAlert(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** 应用内改价弹窗（替代原生 window.prompt，与整体 UI 风格一致） */
+function AlertEditModal({ alert, onClose, onSave }: {
+  alert: AlertRule;
+  onClose: () => void;
+  onSave: (id: number, targetPrice: number) => void;
+}) {
+  const [value, setValue] = useState(String((alert.targetPriceMillis ?? alert.targetPriceCents * 10) / 1000));
+  const [error, setError] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [onClose]);
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const num = Number(value);
+    if (!Number.isFinite(num) || num <= 0) { setError("目标价必须是正数"); return; }
+    onSave(alert.id, num);
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="modal" role="dialog" aria-modal="true" aria-labelledby="alert-edit-title">
+        <header><div><span className="eyebrow">修改提醒</span><h2 id="alert-edit-title">{alert.name} · {alert.type}</h2></div><IconButton label="关闭" onClick={onClose}><X size={18} /></IconButton></header>
+        <form onSubmit={submit}>
+          <Field label="目标价（元）" help="到达该价格时触发提醒并推送通知。">
+            <Input ref={inputRef} type="number" min="0.001" step="any" value={value} onChange={(event) => { setValue(event.target.value); setError(""); }} />
+          </Field>
+          {error && <p className="form-message form-message--error" role="alert">{error}</p>}
+          <div className="modal-actions"><Button variant="ghost" onClick={onClose}>取消</Button><Button variant="primary" type="submit">保存</Button></div>
+        </form>
       </section>
     </div>
   );
@@ -4747,7 +4853,11 @@ function CapitalSettings({ initialCapitalCents, capitalFlows, onSave, onAddFlow,
                 <span className="flow-amount">{flow.amountCents > 0 ? "+" : ""}{money(flow.amountCents)}</span>
                 <span className="flow-date">{flow.flowDate}</span>
                 {flow.note && <span className="flow-note">{flow.note}</span>}
-                <Button variant="danger" size="sm" onClick={() => onDeleteFlow(flow.id)} title="删除">删除</Button>
+                <Button variant="danger" size="sm" onClick={() => {
+                  if (window.confirm(`确认删除该笔资金流水？\n${flow.amountCents > 0 ? "转入" : "转出"} ${money(flow.amountCents)} · ${flow.flowDate}`)) {
+                    void onDeleteFlow(flow.id);
+                  }
+                }} title="删除">删除</Button>
               </li>
             ))}
           </ul>
@@ -4757,7 +4867,7 @@ function CapitalSettings({ initialCapitalCents, capitalFlows, onSave, onAddFlow,
   );
 }
 
-function TradeModal({ mode, stock, editTrade, positions, analysisQuote, onClose, onSubmit, onSwitchStock }: {
+function TradeModal({ mode, stock, editTrade, positions, analysisQuote, livePrice, planLossCents, suggestedPrice, prefs, onClose, onSubmit, onSwitchStock }: {
   mode: TradeMode;
   stock: { code?: string; symbol?: string; name: string } | null;
   /** 传入时进入编辑模式：股票代码/名称/方向只读，其余字段回显原值 */
@@ -4765,6 +4875,14 @@ function TradeModal({ mode, stock, editTrade, positions, analysisQuote, onClose,
   positions: ReturnType<typeof calculatePortfolio>["positions"];
   /** 买入时当前分析的技术位（支撑位 / 1R / 2R 目标），用于"采用技术面建议" */
   analysisQuote: { support?: number; target1?: number; target2?: number } | null;
+  /** 卖出模式下：该持仓当前参考价（用于显示浮盈亏，行情缺失时只显示成本） */
+  livePrice?: number;
+  /** 卖出模式下：该标的最近一笔买入记录的计划最大亏损（元/分），用于回顾原计划 */
+  planLossCents?: number;
+  /** 买入模式下：当前分析现价（仅作 placeholder 提示，不自动填值） */
+  suggestedPrice?: number;
+  /** 交易费用设置（佣金费率 + 最低佣金），用于自动估算手续费 */
+  prefs?: TradingPreferences;
   onClose: () => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
   /** 对话框内手动切换到另一只股票时，重新拉取该股票的技术位（支撑位/1R/2R） */
@@ -4776,17 +4894,31 @@ function TradeModal({ mode, stock, editTrade, positions, analysisQuote, onClose,
   const takeProfit1Ref = useRef<HTMLInputElement>(null);
   const takeProfit2Ref = useRef<HTMLInputElement>(null);
   const maxLossRef = useRef<HTMLInputElement>(null);
+  const priceRef = useRef<HTMLInputElement>(null);
+  const qtyRef = useRef<HTMLInputElement>(null);
   const reasonFieldsetRef = useRef<HTMLFieldSetElement>(null);
   const [saving, setSaving] = useState(false);
   const [selectedReason, setSelectedReason] = useState(editTrade?.reason ?? "");
   const [reasonError, setReasonError] = useState(false);
+  // 手续费：编辑时回显原值；新建时按佣金设置自动估算（用户手动改过后不再覆盖）
+  const [feeValue, setFeeValue] = useState(editTrade ? String((editTrade.feeCents ?? 0) / 100) : "");
+  const [feeTouched, setFeeTouched] = useState(!!editTrade);
   const isEdit = !!editTrade;
   const defaultPosition = mode === "sell" ? positions[0] : null;
   const symbol = editTrade?.symbol ?? stock?.code ?? stock?.symbol ?? defaultPosition?.symbol ?? "";
   const name = editTrade?.name ?? stock?.name ?? defaultPosition?.name ?? "";
-  const defaultPrice = editTrade?.priceTenThousandths ? String(editTrade.priceTenThousandths / 10000) : "";
-  const defaultQuantity = editTrade?.quantity ? String(editTrade.quantity) : "";
-  const defaultFee = editTrade ? String((editTrade.feeCents ?? 0) / 100) : "0";
+  // 价格默认值：编辑回显原值；新建时预填现价（买入=分析现价，卖出=行情现价），用户核对修改即可
+  const defaultPrice = editTrade?.priceTenThousandths
+    ? String(editTrade.priceTenThousandths / 10000)
+    : mode === "buy"
+      ? (suggestedPrice != null && Number.isFinite(suggestedPrice) ? String(suggestedPrice) : "")
+      : (typeof livePrice === "number" && Number.isFinite(livePrice) ? String(livePrice) : "");
+  // 卖出时默认填全部持仓数量（清仓直接保存，部分卖出改成所需数量即可）
+  const defaultQuantity = editTrade?.quantity
+    ? String(editTrade.quantity)
+    : mode === "sell" && !editTrade && defaultPosition
+      ? String(defaultPosition.quantity)
+      : "";
   const defaultTradeDate = editTrade?.tradeDate ?? localIsoDate();
   const defaultMaxLoss = editTrade?.side === "买入" && editTrade?.maxLossCents ? String((editTrade.maxLossCents / 100).toFixed(2)) : "";
 
@@ -4797,6 +4929,16 @@ function TradeModal({ mode, stock, editTrade, positions, analysisQuote, onClose,
     if (analysisQuote.target1 != null && takeProfit1Ref.current) takeProfit1Ref.current.value = String(analysisQuote.target1);
     if (analysisQuote.target2 != null && takeProfit2Ref.current) takeProfit2Ref.current.value = String(analysisQuote.target2);
     if (maxLossRef.current) maxLossRef.current.value = "";
+  }
+
+  // 按价格×数量自动估算手续费（佣金 max(金额×费率, 最低佣金) + 卖出印花税 0.05%）
+  function recalcFee() {
+    if (feeTouched) return;
+    const p = Number(priceRef.current?.value);
+    const q = Number(qtyRef.current?.value);
+    if (!Number.isFinite(p) || p <= 0 || !Number.isFinite(q) || q <= 0) return;
+    const cents = estimateTradeFeeCents(p * q, mode === "sell" ? "卖出" : "买入", prefs ?? DEFAULT_PREFERENCES);
+    setFeeValue((cents / 100).toFixed(2));
   }
 
   useEffect(() => {
@@ -4830,6 +4972,32 @@ function TradeModal({ mode, stock, editTrade, positions, analysisQuote, onClose,
       <section className="modal" role="dialog" aria-modal="true" aria-labelledby="trade-modal-title">
         <header><div><span className="eyebrow">{isEdit ? "修改记录" : (mode === "buy" ? "写下当时的决定" : "记录真实的退出")}</span><h2 id="trade-modal-title">{isEdit ? `编辑${mode === "buy" ? "买入" : "卖出"}记录` : `记录${mode === "buy" ? "买入" : "卖出"}`}</h2></div><IconButton label="关闭" onClick={onClose}><X size={18} /></IconButton></header>
         <form onSubmit={submit}>
+          {mode === "sell" && !isEdit && defaultPosition && (() => {
+            const avgCost = defaultPosition.averageCostTenThousandths / 10000;
+            const live = typeof livePrice === "number" && Number.isFinite(livePrice) ? livePrice : null;
+            const floatYuan = live !== null ? (live - avgCost) * defaultPosition.quantity : null;
+            const floatPct = live !== null && avgCost > 0 ? ((live - avgCost) / avgCost) * 100 : null;
+            const chips: Array<{ text: string; tone?: string }> = [
+              { text: `持有 ${defaultPosition.quantity} 股 · 成本均价 ¥${avgCost.toFixed(3)}` },
+            ];
+            if (live !== null && floatYuan !== null) {
+              chips.push({
+                text: `现价 ¥${live.toFixed(3)} · 浮盈亏 ${floatYuan >= 0 ? "+" : ""}¥${floatYuan.toFixed(2)}（${floatPct !== null && floatPct >= 0 ? "+" : ""}${(floatPct ?? 0).toFixed(1)}%）`,
+                tone: floatYuan >= 0 ? "up" : "down",
+              });
+            }
+            if (planLossCents != null && planLossCents > 0) {
+              chips.push({ text: `买入时计划最多亏损 ¥${(planLossCents / 100).toFixed(2)}` });
+            }
+            return (
+              <div className="sell-position-ref">
+                {chips.map((chip, index) => (
+                  <span key={index} className={chip.tone ? `sell-pos-chip ${chip.tone}` : "sell-pos-chip"}>{chip.text}</span>
+                ))}
+                <small>来自你的持仓与买入记录，供卖出时对照；价格以实际成交为准。</small>
+              </div>
+            );
+          })()}
           <div className="form-grid">
             <Field label="股票代码"><Input ref={symbolInputRef} name="symbol" defaultValue={symbol} pattern="\d{6}" required disabled={isEdit} readOnly={isEdit} onBlur={(event) => {
               if (isEdit) return;
@@ -4855,12 +5023,25 @@ function TradeModal({ mode, stock, editTrade, positions, analysisQuote, onClose,
                 }
               }
             }} /></Field>
-            <Field label={mode === "buy" ? "买入价格" : "卖出价格"}><Input name="price" type="number" min="0" step="any" defaultValue={defaultPrice} required /></Field>
-            <Field label="数量（股）"><Input name="quantity" type="number" min="1" step="1" defaultValue={defaultQuantity} required /></Field>
+            <Field label={mode === "buy" ? "买入价格" : "卖出价格"}>
+              <Input ref={priceRef} name="price" type="number" min="0" step="any" defaultValue={defaultPrice} required placeholder="按实际成交价填写" onChange={recalcFee} />
+            </Field>
+            <Field label="数量（股）"><Input ref={qtyRef} name="quantity" type="number" min="1" step="1" defaultValue={defaultQuantity} required onChange={recalcFee} /></Field>
             <Field label="交易日期"><Input name="tradeDate" type="date" defaultValue={defaultTradeDate} max={localIsoDate()} required /></Field>
-            <Field label="总费用（可选）"><Input name="fee" type="number" min="0" step="0.01" defaultValue={defaultFee} /></Field>
+            <Field
+              label="总费用（可选）"
+              help={(() => {
+                const rate = (prefs?.commissionRateTenThousandths ?? DEFAULT_FEE_SETTINGS.commissionRateTenThousandths);
+                const minYuan = ((prefs?.minCommissionCents ?? DEFAULT_FEE_SETTINGS.minCommissionCents) / 100).toFixed(0);
+                const feeDesc = `${rate} 万 · 最低 ${minYuan} 元${(prefs?.minCommissionCents ?? 0) === 0 ? "（免5）" : ""}${mode === "sell" ? " · 卖出含印花税 0.05%" : ""}`;
+                return `按「${feeDesc}」自动估算，可修改；不确定就用交割单导入，自动带出实际费用。`;
+              })()}
+            >
+              <Input name="fee" type="number" min="0" step="0.01" value={feeValue} onChange={(event) => { setFeeValue(event.target.value); setFeeTouched(true); }} placeholder="自动估算" />
+            </Field>
             {mode === "buy" && (
-              <>
+              <details className="risk-settings" open={isEdit}>
+                <summary>止损止盈设置 <em>（可选 · 填了自动生成止损/止盈，复盘时还能自动判断按没按计划）</em></summary>
                 {!isEdit && analysisQuote && (analysisQuote.support != null || analysisQuote.target1 != null || analysisQuote.target2 != null) && (
                   <div className="tech-suggestion">
                     <div className="tech-suggestion__head">
@@ -4882,7 +5063,7 @@ function TradeModal({ mode, stock, editTrade, positions, analysisQuote, onClose,
                     <Input ref={stopLossRef} name="stopLoss" type="number" min="0" step="any" placeholder="技术面支撑位或自定" />
                   </Field>
                 )}
-                <Field label="最多接受亏损（元）" help={`如果判断错了，这笔交易最多愿意亏多少钱？请填你能实际执行的金额。系统会用「成本价 − 最多接受亏损 ÷ 股数」生成止损价，并按 ${TAKE_PROFIT_1_R}/${TAKE_PROFIT_2_R} 倍风险自动生成止盈一、止盈二。`}>
+                <Field label="最多接受亏损（元）" help={`这笔最多愿意亏多少？系统按「成本价 − 亏损 ÷ 股数」反推止损价，并按 ${TAKE_PROFIT_1_R}/${TAKE_PROFIT_2_R} 倍风险自动算止盈一、止盈二。`}>
                   <Input ref={maxLossRef} name="maxLoss" type="number" min="0" step="0.01" defaultValue={defaultMaxLoss} placeholder="例如 500" />
                 </Field>
                 {!isEdit && (
@@ -4895,7 +5076,8 @@ function TradeModal({ mode, stock, editTrade, positions, analysisQuote, onClose,
                     </Field>
                   </>
                 )}
-              </>
+                <p className="risk-settings__hint">不填也能保存；填了「最多接受亏损」，复盘时系统才能判断你有没有按计划执行。</p>
+              </details>
             )}
           </div>
           <fieldset
@@ -4923,11 +5105,9 @@ function TradeModal({ mode, stock, editTrade, positions, analysisQuote, onClose,
                 请先选择一项「为什么{mode === "buy" ? "买" : "卖"}」，才能保存。
               </p>
             )}
-            {selectedReason === "其他" && (
-              <Field label="补充说明（可选）" className="other-reason-field">
-                <Input name="otherReason" defaultValue={editTrade?.otherReason ?? ""} placeholder="请简要说明具体原因…" maxLength={200} />
-              </Field>
-            )}
+            <Field label="理由备注（可选）" className="other-reason-field" help="补一句当时的具体依据，复盘时「为什么买/卖」会自动带过来。">
+              <Input name="otherReason" defaultValue={editTrade?.otherReason ?? ""} placeholder={selectedReason === "其他" ? "请简要说明具体原因…" : "例如：中报超预期 / 放量突破 / 临时起意…"} maxLength={200} />
+            </Field>
           </fieldset>
           {mode === "buy" && <div className="calculation-tip"><b>1R是什么？</b>它是你愿意承担的这笔亏损。系统会据此计算风险观察线和1R、2R参考目标；它们不是收益预测，仍由你确认和执行。</div>}
           <div className="modal-actions"><Button variant="ghost" onClick={onClose}>取消</Button><Button variant="primary" type="submit" disabled={saving}>{saving ? "正在保存…" : "确认保存"}</Button></div>
@@ -4945,8 +5125,10 @@ function ReviewModal({ cycle, onClose, onSaved }: {
   const related = cycle.trades;
   const name = cycle.name;
   const summary = getCycleSummary(cycle);
-  const buyReason = related.find((trade) => trade.side === "买入")?.reason ?? "";
-  const sellReason = [...related].reverse().find((trade) => trade.side === "卖出")?.reason ?? "";
+  const buyTrade = related.find((trade) => trade.side === "买入");
+  const sellTrade = [...related].reverse().find((trade) => trade.side === "卖出");
+  const buyReason = [buyTrade?.reason, buyTrade?.otherReason].filter(Boolean).join("；") || "";
+  const sellReason = [sellTrade?.reason, sellTrade?.otherReason].filter(Boolean).join("；") || "";
   const firstInput = useRef<HTMLTextAreaElement>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -4956,8 +5138,27 @@ function ReviewModal({ cycle, onClose, onSaved }: {
     summary.hasPlan ? (summary.withinPlan ? "yes" : "no") : null,
   );
   const [deviationReason, setDeviationReason] = useState("");
+  // 打开复盘时：若买入时有计划且可预判执行情况，直接预填改进建议（用户可改）
+  const [lesson, setLesson] = useState<string>(() => {
+    if (!summary.hasPlan) return "";
+    if (!summary.withinPlan) return "触发止损后当天执行，不再向下移动止损线。";
+    return summary.realizedCents >= 0
+      ? "保持这套买卖条件，下笔继续按计划执行，不临时加码。"
+      : "继续按计划执行，止损当天砍，不抱侥幸。";
+  });
   const [planError, setPlanError] = useState(false);
   const planFieldsetRef = useRef<HTMLFieldSetElement>(null);
+
+  // 根据「有没有按计划执行」自动预填改进建议（用户已手写则不覆盖），减少空想负担
+  function applyLessonSuggestion(plan: "yes" | "no") {
+    if (lesson.trim()) return;
+    const suggestion = plan === "no"
+      ? "触发止损后当天执行，不再向下移动止损线。"
+      : summary.realizedCents >= 0
+        ? "保持这套买卖条件，下笔继续按计划执行，不临时加码。"
+        : "继续按计划执行，止损当天砍，不抱侥幸。";
+    setLesson(suggestion);
+  }
 
   function addTagFromInput() {
     const value = tagInput.trim().slice(0, 20);
@@ -5036,16 +5237,20 @@ function ReviewModal({ cycle, onClose, onSaved }: {
                 : `买入时计划最多亏损 ${money(summary.planLossCents)}，本次亏损 ${money(-summary.realizedCents)}，已超出计划——止损没守住。`}
             </div>
           )}
-          <Field label="为什么买？"><Textarea ref={firstInput} name="buyReason" defaultValue={buyReason} required maxLength={300} /></Field>
-          <Field label="为什么卖？"><Textarea name="sellReason" defaultValue={sellReason} required maxLength={300} /></Field>
+          <Field label="为什么买？" help="回想买入那一刻的逻辑：买它赚的是什么钱、按什么信号进、亏多少会走。可修改，别只写「看好」两个字。">
+            <Textarea ref={firstInput} name="buyReason" defaultValue={buyReason} required maxLength={300} placeholder="例如：放量突破年线，计划做波段；跌破支撑位就止损。" />
+          </Field>
+          <Field label="为什么卖？" help="写清触发卖出的是计划内的条件，还是临时的情绪或资金需求。可修改。">
+            <Textarea name="sellReason" defaultValue={sellReason} required maxLength={300} placeholder="例如：涨到目标价分批止盈；跌破止损位当天执行。" />
+          </Field>
           <fieldset
             ref={planFieldsetRef}
             className={planError ? "reason-fieldset is-error" : "reason-fieldset"}
           >
             <legend>有没有按计划执行？<span className="req-mark">必选</span><small>{summary.hasPlan ? "程序已按计划止损自动预判，可修正" : "买入时未填计划亏损，请凭记忆判断"}</small></legend>
             <div className="reason-options">
-              <label><input className="visually-hidden" type="radio" name="followedPlan" value="yes" checked={followedPlan === "yes"} onChange={() => { setFollowedPlan("yes"); setPlanError(false); }} /><span>有，按计划</span></label>
-              <label><input className="visually-hidden" type="radio" name="followedPlan" value="no" checked={followedPlan === "no"} onChange={() => { setFollowedPlan("no"); setPlanError(false); }} /><span>没有</span></label>
+              <label><input className="visually-hidden" type="radio" name="followedPlan" value="yes" checked={followedPlan === "yes"} onChange={() => { setFollowedPlan("yes"); setPlanError(false); applyLessonSuggestion("yes"); }} /><span>有，按计划</span></label>
+              <label><input className="visually-hidden" type="radio" name="followedPlan" value="no" checked={followedPlan === "no"} onChange={() => { setFollowedPlan("no"); setPlanError(false); applyLessonSuggestion("no"); }} /><span>没有</span></label>
             </div>
             {planError && (
               <p className="form-message form-message--error" role="alert">
@@ -5056,9 +5261,27 @@ function ReviewModal({ cycle, onClose, onSaved }: {
           {followedPlan === "no" && (
             <Field label="这次偏离计划在哪？" help="写清和计划的差异，便于「分析」视图统计纪律缺口（最多 300 字）">
               <Textarea name="deviationReason" value={deviationReason} maxLength={300} onChange={(event) => setDeviationReason(event.target.value)} placeholder="例如：触发止损后没执行，又扛了两天才割；临时追高，超出了原定买点。" />
+              <div className="tag-suggestions">
+                {["止损没执行", "临时追高", "过早卖出", "仓位过重", "临时改主意", "情绪化操作"]
+                  .map((option) => (
+                    <button type="button" key={option} className="tag-suggestion" onClick={() => {
+                      setDeviationReason((prev) => {
+                        const trimmed = prev.trim().replace(/[；;]+$/, "");
+                        const joined = trimmed ? `${trimmed}；${option}` : option;
+                        return joined.length > 300 ? prev : joined;
+                      });
+                    }}>{option}</button>
+                  ))}
+              </div>
             </Field>
           )}
-          <Field label="下一次只改进哪一件事？"><Textarea name="lesson" required maxLength={500} placeholder={summary.hasPlan && !summary.withinPlan ? "例如：触发止损后当天执行，不再向下移动止损线。" : "例如：买入前先把卖出条件写清楚，避免临时起意。"} /></Field>
+          <Field label="下一次只改进哪一件事？" help="只写一条能落地的检查项，下次买入前对照它执行。别写「保持冷静」这类空话。">
+            <Textarea name="lesson" value={lesson} onChange={(event) => setLesson(event.target.value)} required maxLength={500} placeholder={followedPlan === "no"
+              ? "例如：触发止损后当天执行，不再向下移动止损线。"
+              : followedPlan === "yes"
+                ? "例如：这次按计划执行了，下笔交易继续用同一套条件，不临时加码。"
+                : "例如：买入前先把卖出条件写清楚，避免临时起意。"} />
+          </Field>
           <Field label="给这次复盘打标签" help="用于「分析」视图按标签统计盈亏（最多 10 个）">
             <div className="tag-editor">
               <div className="tag-chips">
@@ -5075,7 +5298,7 @@ function ReviewModal({ cycle, onClose, onSaved }: {
               />
             </div>
             <div className="tag-suggestions">
-              {["按计划", "没按计划", "追高", "恐慌卖", "突破", "均线回踩", "题材", "止损纪律", "情绪化"]
+              {["按计划", "没按计划", "追高", "恐慌卖", "止损纪律", "情绪化", "仓位过重", "频繁交易", "过早卖出", "卖飞", "突破买", "回踩买", "题材", "业绩驱动"]
                 .filter((suggestion) => !tags.includes(suggestion))
                 .slice(0, 8)
               .map((suggestion) => (
@@ -5083,7 +5306,6 @@ function ReviewModal({ cycle, onClose, onSaved }: {
               ))}
             </div>
           </Field>
-          <div className="calculation-tip">程序按成交记录计算：持有 {summary.holdingDays} 天，已实现盈亏 <b>{money(summary.realizedCents)}</b>{summary.returnPct === null ? "" : `（收益率 ${summary.returnPct >= 0 ? "+" : ""}${summary.returnPct.toFixed(1)}%）`}。</div>
           {message && <p className="form-message" role="alert">{message}</p>}
           <div className="modal-actions"><Button variant="ghost" onClick={onClose}>取消</Button><Button variant="primary" type="submit" disabled={saving}>{saving ? "正在保存…" : "保存复盘"}</Button></div>
         </form>
@@ -5101,6 +5323,8 @@ function PreferencesSettings({ preferences, onSave }: { preferences: TradingPref
   const [enforceStopLoss, setEnforceStopLoss] = useState(initial.enforceStopLoss);
   const [disciplineNote, setDisciplineNote] = useState(initial.disciplineNote);
   const [stealthMode, setStealthMode] = useState(initial.stealthMode);
+  const [commissionRate, setCommissionRate] = useState(String(initial.commissionRateTenThousandths ?? DEFAULT_FEE_SETTINGS.commissionRateTenThousandths));
+  const [minCommission, setMinCommission] = useState(String(((initial.minCommissionCents ?? DEFAULT_FEE_SETTINGS.minCommissionCents) / 100).toFixed(2)));
   const [saving, setSaving] = useState(false);
 
   function applyProfile(profile: RiskProfile) {
@@ -5123,6 +5347,8 @@ function PreferencesSettings({ preferences, onSave }: { preferences: TradingPref
         enforceStopLoss,
         disciplineNote,
         stealthMode,
+        commissionRateTenThousandths: Number(commissionRate) > 0 ? Number(commissionRate) : DEFAULT_FEE_SETTINGS.commissionRateTenThousandths,
+        minCommissionCents: Number(minCommission) >= 0 ? Math.round(Number(minCommission) * 100) : DEFAULT_FEE_SETTINGS.minCommissionCents,
       });
     } finally {
       setSaving(false);
@@ -5185,6 +5411,18 @@ function PreferencesSettings({ preferences, onSave }: { preferences: TradingPref
         </label>
         <Hint>开启后界面转为中性灰暗色调，涨跌红绿降饱和，整体像普通后台系统；按 Esc 可随时一键切换。</Hint>
       </div>
+      <SectionHeader title="交易费用" subtitle="用于记录买卖时自动估算手续费，不需要每次手算。" />
+      <div className="form-row">
+        <div className="form-group">
+          <label>券商佣金（每万元 X 元）</label>
+          <input className="text-input" type="number" min="0" step="0.1" value={commissionRate} onChange={(e) => setCommissionRate(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label>单笔最低佣金（元，0 = 免5）</label>
+          <input className="text-input" type="number" min="0" step="0.01" value={minCommission} onChange={(e) => setMinCommission(e.target.value)} />
+        </div>
+      </div>
+      <Hint>不知道费率？打开任意一笔交割单，用「佣金 ÷ 成交金额」算一下：万 2.5 表示每 1 万元收 2.5 元。有「最低 5 元」门槛就填 5，免最低就填 0。卖出时系统会自动加印花税 0.05%（国家规定）。</Hint>
       <div className="form-actions">
         <Button variant="primary" disabled={saving} onClick={() => void save()}>
           {saving ? "保存中…" : "保存"}

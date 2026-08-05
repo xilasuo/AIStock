@@ -158,6 +158,10 @@ export const tradingPreferences = sqliteTable("trading_preferences", {
   enforceStopLoss: integer("enforce_stop_loss", { mode: "boolean" }).notNull().default(true),
   disciplineNote: text("discipline_note").notNull().default(""),
   stealthMode: integer("stealth_mode", { mode: "boolean" }).notNull().default(false),
+  /** 券商佣金费率（万 X，如 2.5 = 万2.5），用于买入/卖出时自动估算手续费 */
+  commissionRateTenThousandths: real("commission_rate_ten_thousandths").notNull().default(2.5),
+  /** 单笔最低佣金（分；0 = 免5），卖出另计印花税 0.05% */
+  minCommissionCents: integer("min_commission_cents").notNull().default(500),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 

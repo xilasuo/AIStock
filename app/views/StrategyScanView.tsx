@@ -240,8 +240,11 @@ export function StrategyScanView({
   const [error, setError] = useState(initialData && !initialData.ok ? initialData.error || "暂时无法读取策略扫描结果" : "");
   const [feedback, setFeedback] = useState<Record<string, "有效" | "无效">>({});
   const [feedbackBusy, setFeedbackBusy] = useState("");
+  const [feedbackError, setFeedbackError] = useState("");
   const [scanBusy, setScanBusy] = useState(false);
   const [scanError, setScanError] = useState("");
+  // 榜单次要因子列（RSI/风险动量/趋势/PB/资金流/信号数）默认收起，避免 16 列横向溢出
+  const [showExtraFactors, setShowExtraFactors] = useState(false);
 
   const load = useCallback(() => {
     let alive = true;
@@ -307,6 +310,7 @@ export function StrategyScanView({
   async function submitFeedback(symbol: string, name: string, verdict: "有效" | "无效", factors?: Record<string, number>) {
     if (feedbackBusy) return;
     setFeedbackBusy(symbol + verdict);
+    setFeedbackError("");
     try {
       const res = await fetch("/api/feedback", {
         method: "POST",
@@ -314,8 +318,12 @@ export function StrategyScanView({
         body: JSON.stringify({ symbol, name, verdict, source: "web", factors: factors ?? {} }),
       });
       if (res.ok) setFeedback((prev) => ({ ...prev, [symbol]: verdict }));
+      else setFeedbackError("反馈提交失败，请稍后重试");
+    } catch {
+      setFeedbackError("网络错误：反馈未提交");
     } finally {
       setFeedbackBusy("");
+      window.setTimeout(() => setFeedbackError(""), 4000);
     }
   }
 
@@ -500,36 +508,33 @@ export function StrategyScanView({
       )}
 
       {opt && (
-        <>
-          <Banner
-            tone="success"
-            title={`参数优化有效：夏普 ${opt.sharpeImprovement >= 0 ? "+" : ""}${opt.sharpeImprovement.toFixed(2)}`}
-          >
-            优化后最佳参数 MA{opt.bestSignal.fastMa}/MA{opt.bestSignal.slowMa}，基准 MA
-            {scan.backtest.baseSignal?.fastMa ?? "?"}/MA{scan.backtest.baseSignal?.slowMa ?? "?"}。
-          </Banner>
-
+        <Banner
+          tone="success"
+          title={`参数优化有效：夏普 ${opt.sharpeImprovement >= 0 ? "+" : ""}${opt.sharpeImprovement.toFixed(2)}`}
+        >
+          优化后最佳参数 MA{opt.bestSignal.fastMa}/MA{opt.bestSignal.slowMa}，基准 MA
+          {scan.backtest.baseSignal?.fastMa ?? "?"}/MA{scan.backtest.baseSignal?.slowMa ?? "?"}。
           {opt.outOfSample && (
-            <Banner tone="info" title="样本外验证（防过拟合）">
-              采用时间序列切分（前 {Math.round((opt.split?.trainRatio ?? 0.7) * 100)}% 训练选参，
-              后 {Math.round((1 - (opt.split?.trainRatio ?? 0.7)) * 100)}% 验证），
-              样本外绩效更能反映策略真实可期表现：总收益{" "}
+            <>
+              {" "}样本外验证（防过拟合）：前 {Math.round((opt.split?.trainRatio ?? 0.7) * 100)}% 训练选参、
+              后 {Math.round((1 - (opt.split?.trainRatio ?? 0.7)) * 100)}% 验证，样本外总收益{" "}
               <b>{pct(opt.outOfSample.totalReturn)}</b>，夏普{" "}
               <b>{(opt.outOfSample.sharpe ?? 0).toFixed(2)}</b>，最大回撤{" "}
-              <b>{pct(opt.outOfSample.maxDrawdown)}</b>，交易胜率{" "}
-              <b>{pct(opt.outOfSample.winRate)}</b>。
-            </Banner>
+              <b>{pct(opt.outOfSample.maxDrawdown)}</b>。
+            </>
           )}
-        </>
+        </Banner>
       )}
 
       <Card>
-        <CardHeader title="组合净值曲线（样本内参考）" desc="用当前选股结果在历史区间上的净值（起始归一化 1.0），可能存在幸存者偏差。" />
-        {scan.equityCurve && scan.equityCurve.length > 0 ? (
-          <StrategyCurveChart points={scan.equityCurve} />
-        ) : (
-          <div className="scan-empty-hint">暂无净值曲线数据。</div>
-        )}
+        <details className="curve-collapse">
+          <summary>组合净值曲线（样本内参考，可能存在幸存者偏差）</summary>
+          {scan.equityCurve && scan.equityCurve.length > 0 ? (
+            <StrategyCurveChart points={scan.equityCurve} />
+          ) : (
+            <div className="scan-empty-hint">暂无净值曲线数据。</div>
+          )}
+        </details>
       </Card>
 
       {scan.walkForward && scan.walkForward.equityCurve && scan.walkForward.equityCurve.length > 0 && (
@@ -550,13 +555,22 @@ export function StrategyScanView({
           <button type="button" className="optimize-btn" disabled={optimizeBusy} onClick={optimizeFromFeedback}>
             {optimizeBusy ? "优化中…" : "用反馈优化权重"}
           </button>
+          {feedbackError && <span className="scan-feedback-error">{feedbackError}</span>}
           {optimizeResult && (
             <span className={`scan-optimize-note ${optimizeResult.adjusted ? "is-adjusted" : ""}`}>
               {optimizeResult.note}
             </span>
           )}
         </div>
-        <CardHeader title="选股榜单（多因子打分）" desc="风险调整动量 + 趋势 + 估值 + RSI/MACD 技术确认 + 流动性/规模/资金流，加权打分取 Top N；行业分散约束限制单行业最多入选数。" />
+        <CardHeader
+          title="选股榜单（多因子打分）"
+          desc="风险调整动量 + 趋势 + 估值 + RSI/MACD 技术确认 + 流动性/规模/资金流，加权打分取 Top N；行业分散约束限制单行业最多入选数。"
+          actions={
+            <button type="button" className="scan-extra-toggle" onClick={() => setShowExtraFactors((v) => !v)}>
+              {showExtraFactors ? "收起次要因子" : "展开全部因子"}
+            </button>
+          }
+        />
         {scan.screenerMeta && (() => {
           const applied = scan.screenerMeta.applied || {};
           const skipped = scan.screenerMeta.skipped || [];
@@ -576,7 +590,7 @@ export function StrategyScanView({
             </div>
           );
         })()}
-        <div className="scan-table-wrap">
+        <div className={`scan-table-wrap${showExtraFactors ? " scan-table-wrap--extra" : ""}`}>
         <table className="scan-table">
           <thead>
             <tr>
@@ -586,14 +600,14 @@ export function StrategyScanView({
               <th className="scan-col--sector">行业</th>
               <th className="scan-col--num">得分</th>
               <th className="scan-col--num">动量(20d)</th>
-              <th className="scan-col--num">RSI</th>
-              <th className="scan-col--num">风险动量</th>
-              <th className="scan-col--num">趋势</th>
+              <th className="scan-col--num scan-col--optional">RSI</th>
+              <th className="scan-col--num scan-col--optional">风险动量</th>
+              <th className="scan-col--num scan-col--optional">趋势</th>
               <th className="scan-col--num">PE</th>
-              <th className="scan-col--num">PB</th>
+              <th className="scan-col--num scan-col--optional">PB</th>
               <th className="scan-col--num">换手%</th>
-              <th className="scan-col--num">资金流‰</th>
-              <th className="scan-col--num">信号数</th>
+              <th className="scan-col--num scan-col--optional">资金流‰</th>
+              <th className="scan-col--num scan-col--optional">信号数</th>
               <th className="scan-col--feedback">反馈</th>
               {(onAddWatch || onAnalyze) && <th className="scan-col--actions">操作</th>}
             </tr>
@@ -615,22 +629,22 @@ export function StrategyScanView({
                 <td className="scan-col--num">
                   <Tag tone={s.momentum >= 0 ? "up" : "down"}>{pct(s.momentum)}</Tag>
                 </td>
-                <td className="scan-col--num">{s.rsi != null ? s.rsi.toFixed(1) : "-"}</td>
-                <td className="scan-col--num">
+                <td className="scan-col--num scan-col--optional">{s.rsi != null ? s.rsi.toFixed(1) : "-"}</td>
+                <td className="scan-col--num scan-col--optional">
                   {s.factors ? `${(s.factors.momentum != null ? s.factors.momentum : 0) * 100 | 0}` : "-"}
                 </td>
-                <td className="scan-col--num">
+                <td className="scan-col--num scan-col--optional">
                   {s.factors ? `${(s.factors.trend != null ? s.factors.trend : 0) * 100 | 0}` : "-"}
                 </td>
                 <td className="scan-col--num">{(s.peTtm ?? 0).toFixed(2)}</td>
-                <td className="scan-col--num">{(s.pb ?? 0).toFixed(2)}</td>
+                <td className="scan-col--num scan-col--optional">{(s.pb ?? 0).toFixed(2)}</td>
                 <td className="scan-col--num">{(s.turnover ?? 0).toFixed(2)}</td>
-                <td className="scan-col--num">
+                <td className="scan-col--num scan-col--optional">
                   {s.fundFlowPct != null ? (
                     <Tag tone={s.fundFlowPct >= 0 ? "up" : "down"}>{s.fundFlowPct.toFixed(2)}</Tag>
                   ) : "-"}
                 </td>
-                <td className="scan-col--num">{s.signals}</td>
+                <td className="scan-col--num scan-col--optional">{s.signals}</td>
                 <td className="scan-col--feedback">
                   <span className="scan-feedback">
                     <button

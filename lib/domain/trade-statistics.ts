@@ -18,6 +18,15 @@ export type TagStat = {
   winRate: number;
 };
 
+/** 按买入理由的盈亏归因：把每笔已清仓周期按建仓理由聚合，
+ * 回答「哪种买入逻辑在赚钱、哪种在亏钱」——这是行为复盘最该看的维度。 */
+export type ReasonStat = {
+  reason: string;
+  trades: number;
+  realizedCents: number;
+  winRate: number;
+};
+
 export type MonthlyStat = {
   month: string;
   realizedCents: number;
@@ -80,6 +89,8 @@ export type TradeStatistics = {
   byMonth: MonthlyStat[];
   bySymbol: SymbolStat[];
   byTag: TagStat[];
+  byReason: ReasonStat[];
+  bySellReason: ReasonStat[];
   equityCurve: EquityPoint[];
   planAdherence: PlanAdherence;
 };
@@ -287,6 +298,52 @@ export function calculateTradeStatistics(
     }))
     .sort((a, b) => b.realizedCents - a.realizedCents);
 
+  // 按买入理由归因：取每笔已清仓周期中第一笔买入（建仓）的 reason，
+  // 理由在买入时就已记录，无需等复盘即可归因。
+  const byReasonMap = new Map<string, { trades: number; realizedCents: number; wins: number }>();
+  for (const cycle of cycles) {
+    const reason = cycle.trades.find((trade) => trade.side === "买入")?.reason ?? "";
+    if (!reason) continue;
+    const entry = byReasonMap.get(reason) ?? { trades: 0, realizedCents: 0, wins: 0 };
+    entry.trades += 1;
+    entry.realizedCents += cycle.realizedCents;
+    if (cycle.realizedCents > 0) entry.wins += 1;
+    byReasonMap.set(reason, entry);
+  }
+  const byReason: ReasonStat[] = [...byReasonMap.entries()]
+    .map(([reason, entry]) => ({
+      reason,
+      trades: entry.trades,
+      realizedCents: entry.realizedCents,
+      winRate: safeDivide(entry.wins, entry.trades),
+    }))
+    .sort((a, b) => b.realizedCents - a.realizedCents);
+
+  // 按卖出理由归因：取每笔已清仓周期中「清仓那一笔卖出」的 reason，
+  // 回答「纪律卖（止盈/止损）赚还是亏，情绪卖（怕回吐/拿不住）亏多少」。
+  // endTradeId 对应清仓卖出；老数据缺失时回退到周期内最后一笔卖出。
+  const bySellReasonMap = new Map<string, { trades: number; realizedCents: number; wins: number }>();
+  for (const cycle of cycles) {
+    const closingSell =
+      cycle.trades.find((trade) => cycle.endTradeId !== null && trade.id === cycle.endTradeId) ??
+      [...cycle.trades].reverse().find((trade) => trade.side === "卖出");
+    const reason = closingSell?.reason ?? "";
+    if (!reason) continue;
+    const entry = bySellReasonMap.get(reason) ?? { trades: 0, realizedCents: 0, wins: 0 };
+    entry.trades += 1;
+    entry.realizedCents += cycle.realizedCents;
+    if (cycle.realizedCents > 0) entry.wins += 1;
+    bySellReasonMap.set(reason, entry);
+  }
+  const bySellReason: ReasonStat[] = [...bySellReasonMap.entries()]
+    .map(([reason, entry]) => ({
+      reason,
+      trades: entry.trades,
+      realizedCents: entry.realizedCents,
+      winRate: safeDivide(entry.wins, entry.trades),
+    }))
+    .sort((a, b) => b.realizedCents - a.realizedCents);
+
   const events: Array<{ date: string; delta: number }> = [
     ...capitalFlows.map((flow) => ({ date: flow.flowDate, delta: flow.amountCents })),
     ...realized.map((item) => ({ date: item.end, delta: item.realizedCents })),
@@ -350,6 +407,8 @@ export function calculateTradeStatistics(
     byMonth,
     bySymbol,
     byTag,
+    byReason,
+    bySellReason,
     equityCurve,
     planAdherence,
   };

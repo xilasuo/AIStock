@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { Badge, SectionHeader, Stat, Button, Card, CardHeader } from "../components/ui";
 import { BarList, DonutChart } from "../components/charts";
 import { EquityCurveChart } from "../components/equity-chart";
-import { calculateTradeStatistics } from "../../lib/domain/trade-statistics";
+import { calculateTradeStatistics, type ReasonStat } from "../../lib/domain/trade-statistics";
 import type { CapitalFlow, Trade } from "../../lib/domain/domain";
 import type { PortfolioInsights } from "../../lib/domain/portfolio-insights";
 import { shanghaiDate } from "../../lib/utils/time";
@@ -36,6 +36,23 @@ function pct(value: number): string {
 
 function todayStamp(): string {
   return shanghaiDate();
+}
+
+/** 展示某类理由归因：盈利 Top3（绿）+ 亏损 Top3（红），无数据时给空态。 */
+function ReasonRows({ stats, emptyText }: { stats: ReasonStat[]; emptyText: string }) {
+  const wins = stats.filter((item) => item.realizedCents > 0).slice(0, 3);
+  const losses = stats.filter((item) => item.realizedCents < 0).slice(0, 3);
+  if (!wins.length && !losses.length) return <p className="chart-empty">{emptyText}</p>;
+  return (
+    <>
+      {wins.map((item) => (
+        <p key={`w-${item.reason}`}><Badge tone="green">{item.reason}</Badge> <b>+{money(item.realizedCents)}</b><small>（{item.trades} 笔）</small></p>
+      ))}
+      {losses.map((item) => (
+        <p key={`l-${item.reason}`}><Badge tone="red">{item.reason}</Badge> <b>{money(item.realizedCents)}</b><small>（{item.trades} 笔）</small></p>
+      ))}
+    </>
+  );
 }
 
 export function AnalyticsView({
@@ -213,24 +230,20 @@ export function AnalyticsView({
         <SectionHeader
           eyebrow="优势定位"
           title="你的 Edge"
-          subtitle="哪些打法贡献了主要利润，哪些错误吞噬了利润。"
+          subtitle="入场靠什么买法赚钱，退出靠什么纪律守钱——按建仓/清仓理由自动归因。"
           actions={<Badge tone="accent">数据驱动复盘</Badge>}
         />
         <div className="edge-grid">
           <div>
-            <h4>最赚钱的标签</h4>
-            {stats.byTag.filter((item) => item.realizedCents > 0).slice(0, 3).map((item) => (
-              <p key={item.tag}><Badge tone="green">{item.tag}</Badge> {money(item.realizedCents)}</p>
-            )) || <p className="chart-empty">暂无盈利标签</p>}
+            <h4>入场 · 按买入理由</h4>
+            <ReasonRows stats={stats.byReason} emptyText="暂无清仓记录可归因" />
           </div>
           <div>
-            <h4>最亏钱的标签</h4>
-            {stats.byTag.filter((item) => item.realizedCents < 0).slice(0, 3).map((item) => (
-              <p key={item.tag}><Badge tone="red">{item.tag}</Badge> {money(item.realizedCents)}</p>
-            )) || <p className="chart-empty">暂无亏损标签</p>}
+            <h4>退出 · 按卖出理由</h4>
+            <ReasonRows stats={stats.bySellReason} emptyText="暂无清仓记录可归因" />
           </div>
         </div>
-        <p className="edge-source">盈亏数据来自每笔复盘对应的真实成交（系统自动计入，非手填），仅统计已打标签的复盘。</p>
+        <p className="edge-source">按每笔已清仓周期的建仓/清仓理由自动归因（来自买卖记录，无需等复盘）；同类理由多笔合并统计。卖出一侧重点看：止盈/止损这类纪律卖是否守住了利润，怕回吐/拿不住/想换股这类情绪卖亏掉了多少。</p>
       </section>
     </div>
   );

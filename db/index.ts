@@ -205,6 +205,10 @@ export async function ensureSchema() {
     // 隐身模式开关（办公室低存在感配色）
     await addColumnIfMissing("trading_preferences", "stealth_mode", "stealth_mode INTEGER NOT NULL DEFAULT 0");
 
+    // 交易费用设置：券商佣金费率（万 X）+ 单笔最低佣金（分，0=免5），用于买卖时自动估算手续费
+    await addColumnIfMissing("trading_preferences", "commission_rate_ten_thousandths", "commission_rate_ten_thousandths REAL NOT NULL DEFAULT 2.5");
+    await addColumnIfMissing("trading_preferences", "min_commission_cents", "min_commission_cents INTEGER NOT NULL DEFAULT 500");
+
     // ---- 多用户隔离迁移 ----
     // 1) 给所有用户数据表加 user_id 列（老表兼容，默认 0 表示尚未归属）
     for (const table of [

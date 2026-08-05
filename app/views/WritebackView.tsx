@@ -71,7 +71,7 @@ function SignalCard({ signal }: { signal: WritebackSignal }) {
 }
 
 /* ------------------------------ 主视图 ------------------------------ */
-export function WritebackView() {
+export function WritebackView({ onNavigate }: { onNavigate?: (view: "scan" | "trades") => void }) {
   const { data: writeback, loading, error } = useApi<WritebackPayload>(
     async () => {
       const res = await fetch("/api/writeback-signals");
@@ -183,6 +183,14 @@ export function WritebackView() {
         回写通道：{writeback.channel}
         {writeback.note ? ` ｜ ${writeback.note}` : ""}
       </Hint>
+
+      {onNavigate && (
+        <div className="writeback-next">
+          <span className="writeback-next__label">下一步</span>
+          <button type="button" className="writeback-next__btn" onClick={() => onNavigate("scan")}>去策略扫描看选股</button>
+          <button type="button" className="writeback-next__btn" onClick={() => onNavigate("trades")}>去交易记录对账</button>
+        </div>
+      )}
     </div>
   );
 }

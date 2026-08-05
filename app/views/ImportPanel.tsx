@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { parseBrokerCsv } from "../../lib/domain/trade-import";
+import { parseBrokerCsv, type ParsedImportRow } from "../../lib/domain/trade-import";
 import { Button, Hint } from "../components/ui";
 
 type ImportResult = {
@@ -10,9 +10,22 @@ type ImportResult = {
   errors: Array<{ line: number; symbol: string; reason: string }>;
 };
 
+/** 下载券商交割单 CSV 模板（表头 + 示例行） */
+function downloadTemplate() {
+  const header = "日期,代码,名称,方向,价格,数量,手续费";
+  const example = "2026-01-02,600000,浦发银行,买入,10.50,1000,5.00";
+  const blob = new Blob([`${header}\n${example}\n`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "券商交割单模板.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export function ImportPanel({ onImported }: { onImported: () => void | Promise<void> }) {
   const [csv, setCsv] = useState("");
-  const [previewRows, setPreviewRows] = useState<number>(0);
+  const [previewRows, setPreviewRows] = useState<ParsedImportRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState("");
@@ -21,7 +34,8 @@ export function ImportPanel({ onImported }: { onImported: () => void | Promise<v
     setError("");
     setResult(null);
     try {
-      setPreviewRows(parseBrokerCsv(csv).length);
+      setPreviewRows(parseBrokerCsv(csv));
+      if (!parseBrokerCsv(csv).length) setError("没有识别到有效成交行，请检查列名（代码/方向/价格/数量/日期）是否正确。");
     } catch {
       setError("CSV 解析失败，请确认格式为逗号分隔的交割单。");
     }
@@ -65,17 +79,42 @@ export function ImportPanel({ onImported }: { onImported: () => void | Promise<v
         className="import-csv control control--area"
         value={csv}
         placeholder={"日期,代码,名称,方向,价格,数量,手续费\n2026-01-02,600000,浦发银行,买入,10.50,1000,5.00"}
-        onChange={(event) => setCsv(event.target.value)}
+        onChange={(event) => { setCsv(event.target.value); setPreviewRows([]); setResult(null); }}
         rows={6}
       />
       <div className="import-actions">
+        <Button variant="ghost" onClick={downloadTemplate}>下载 CSV 模板</Button>
         <Button variant="ghost" onClick={preview} disabled={!csv.trim()}>预览解析</Button>
         <Button variant="primary" onClick={runImport} disabled={!csv.trim() || busy}>
           {busy ? "正在导入…" : "确认导入"}
         </Button>
-        {previewRows > 0 && !result && <span className="import-count">识别到 {previewRows} 条成交</span>}
+        {previewRows.length > 0 && !result && <span className="import-count">识别到 {previewRows.length} 条成交</span>}
       </div>
       {error && <p className="form-message" role="alert">{error}</p>}
+      {previewRows.length > 0 && !result && (
+        <div className="import-preview">
+          <p>识别到 <b>{previewRows.length}</b> 条成交，预览前 {Math.min(5, previewRows.length)} 条：</p>
+          <table className="import-preview-table">
+            <thead>
+              <tr><th>日期</th><th>代码</th><th>名称</th><th>方向</th><th>价格</th><th>数量</th><th>手续费</th></tr>
+            </thead>
+            <tbody>
+              {previewRows.slice(0, 5).map((row, index) => (
+                <tr key={index}>
+                  <td>{row.tradeDate}</td>
+                  <td>{row.symbol}</td>
+                  <td>{row.name || "—"}</td>
+                  <td>{row.side}</td>
+                  <td>{row.price}</td>
+                  <td>{row.quantity}</td>
+                  <td>{row.fee ? row.fee.toFixed(2) : "0.00"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="import-preview-note">确认无误后点击「确认导入」；无法识别的行会在导入结果中列出。</p>
+        </div>
+      )}
       {result && (
         <div className="import-result">
           <p><b>成功导入 {result.inserted} 条</b>{result.skipped > 0 ? `，跳过 ${result.skipped} 条` : ""}。</p>

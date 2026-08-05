@@ -820,11 +820,12 @@ export function ScreenerConfigPanel({
           </button>
           <button
             type="button"
-            className="screener-btn screener-btn--primary"
+            className="screener-btn screener-btn--ghost"
             disabled={saving}
             onClick={saveConfig}
+            title="把当前参数保存为默认，下次打开自动套用"
           >
-            {saving ? "保存中…" : "保存配置"}
+            {saving ? "保存中…" : "保存为默认"}
           </button>
           <button type="button" className="screener-btn screener-btn--ghost" onClick={reset}>
             重置
@@ -860,7 +861,7 @@ export function ScreenerConfigPanel({
           className="screener-toggle"
           onClick={() => setShowWeights((s) => !s)}
         >
-          {showWeights ? "▼ 收起参数" : "▶ 因子权重 & 高级参数"}
+          {showWeights ? "▼ 收起参数" : "▶ 因子权重 & 高级参数（新手可跳过，用默认即可）"}
         </button>
 
         {showWeights && (
