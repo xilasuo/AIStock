@@ -6700,6 +6700,10 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
   flex-direction: column;
   inset: 0;
   position: fixed;
+  /* 双重声明：桌面端 100vh，移动端 100dvh（iOS Safari 动态视口） */
+  height: 100vh;
+  height: 100dvh;
+  width: 100vw;
   /* 高于浮窗(60)与底部导航，确保整页覆盖、不被其它层透出 */
   z-index: 70;
 }
@@ -6714,27 +6718,30 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
   gap: 0;
   height: 100%;
   margin: 0;
+  min-height: 0;
   padding: 0;
+  width: 100%;
 }
 .assistant-page .sa--page .sa-head {
   border-bottom: 1px solid var(--line);
   flex-wrap: wrap;
-  padding: 12px 16px;
+  padding: 10px 14px;
 }
 .assistant-page .sa--page .sa-msgs {
   flex: 1 1 auto;
   max-height: none;
   min-height: 0;
-  padding: 16px 16px 12px;
+  padding: 14px 14px 10px;
 }
 .assistant-page .sa--page .sa-prompts {
-  padding: 0 16px;
+  padding: 0 14px;
 }
 .assistant-page .sa--page .sa-form {
   border-top: 1px solid var(--line);
+  flex-shrink: 0;
   margin: 0;
   /* 适配 iPhone 底部安全区，避免输入区被圆角/Home 条遮挡 */
-  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
 }
 
 /* —— 头部股票关联下拉 —— */
@@ -6779,6 +6786,32 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
   right: 0;
   top: calc(100% + 6px);
   z-index: 10;
+}
+/* 移动端：linker 下拉做成全宽抽屉，避免被屏幕边缘裁剪 */
+@media (max-width: 768px) {
+  .sa-linker {
+    flex: 0 0 auto;
+    /* 让 linker 单独成行显示，避免被 title/actions 挤到边缘 */
+    margin-left: 0;
+    width: 100%;
+  }
+  .sa-linker__pop {
+    border-radius: 10px;
+    box-shadow: 0 6px 22px rgba(0, 0, 0, .12);
+    left: 0;
+    max-height: 60vh;
+    min-width: 0;
+    overflow-y: auto;
+    right: auto;
+    top: calc(100% + 6px);
+    width: 100%;
+    z-index: 30;
+  }
+  /* linker 在移动端固定到头部第一行左侧，标题/操作换行到第二行 */
+  .assistant-page .sa--page .sa-head {
+    align-items: center;
+    row-gap: 8px;
+  }
 }
 
 .sa-linker__group { display: flex; flex-direction: column; gap: 6px; }
