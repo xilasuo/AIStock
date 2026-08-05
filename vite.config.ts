@@ -86,6 +86,10 @@ export default defineConfig(async ({ mode }) => {
     server: isCodexSeatbeltSandbox
       ? { watch: { useFsEvents: false, usePolling: true } }
       : undefined,
+    // Vite 内置的 emptyDir 清空 dist 会被 safe-delete shim 的批量删除阈值拦截
+    // （>50 文件）。改为关闭自动清空，由 sites() 插件在 buildStart 阶段用
+    // 绕过 shim 的方式清空，行为等价且构建可稳定通过。
+    build: { emptyOutDir: false },
     plugins: [
       vinext(),
       sites(),

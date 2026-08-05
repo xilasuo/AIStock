@@ -1186,23 +1186,6 @@ svg { display: block; }
 
 /* ---- 大盘指数条 ---- */
 .market-indices-card { padding: 22px; }
-.market-indices-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  margin-top: 20px;
-}
-.index-chip {
-  flex: 1 1 140px;
-  min-width: 130px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface);
-}
 .index-name {
   font-size: var(--fs-xs);
   color: var(--text-soft);
@@ -1219,10 +1202,6 @@ svg { display: block; }
   font-weight: 700;
   color: var(--text-soft);
 }
-.index-chip.up .index-price,
-.index-chip.up .index-change { color: var(--red); }
-.index-chip.down .index-price,
-.index-chip.down .index-change { color: var(--green); }
 .market-indices-state {
   margin-top: 20px;
   font-size: var(--fs-sm);
@@ -1260,14 +1239,6 @@ svg { display: block; }
 }
 .home-market .market-indices-card,
 .home-market .sector-heatmap-card { margin: 0; }
-
-/* 旧的两栏（仅放提醒+复盘），保留向后兼容但不再用于首页主干 */
-.home-grid {
-  display: grid;
-  gap: 20px;
-  grid-template-columns: 1.2fr 1fr;
-  margin-top: 20px;
-}
 
 .reminder,
 .review-item {
@@ -3136,8 +3107,6 @@ svg { display: block; }
 .sa-msg--assistant .markdown-body .md-h5::before,
 .sa-msg--assistant .markdown-body .md-h6::before { height: 8px; width: 2px; }
 
-.assistant-disclaimer { color: var(--muted); display: block; font-size: var(--fs-2xs); margin-top: 8px; }
-
 /* —— AssistantAnswer 结构化卡片（结论 / 依据 / 风险与缺口 / 下一步） —— */
 .assistant-sections {
   display: flex;
@@ -3355,12 +3324,6 @@ svg { display: block; }
   display: block;
   font-size: var(--fs-sm);
   margin-top: 5px;
-}
-
-.fund-source-link {
-  display: inline-block;
-  margin-top: 8px;
-  text-decoration: none;
 }
 
 .card-note,
@@ -4558,12 +4521,6 @@ svg { display: block; }
 .settings-detail { background: var(--surface); }
 .settings-detail h3 { font-size: var(--fs-md); margin: 0 0 6px; }
 .settings-detail p { color: var(--text-soft); font-size: var(--fs-xs); line-height: 1.65; }
-.settings-detail-head,
-.alert-row { align-items: center; display: flex; justify-content: space-between; }
-.alert-row { border-top: 1px solid var(--line); padding: 11px 0; }
-.alert-row b,
-.alert-row small { display: block; font-size: var(--fs-2xs); }
-.alert-row small { color: var(--muted); margin-top: 4px; }
 
 /* 产品边界：编辑型 header + 单列表（PC 端双列） */
 .boundary-card {
@@ -4716,7 +4673,6 @@ svg { display: block; }
   cursor: pointer;
   appearance: none;
 }
-.flow-note-label { flex: 1.5 !important; }
 .flows-summary {
   display: flex;
   gap: 18px;
@@ -4928,8 +4884,6 @@ svg { display: block; }
   margin: 0 0 16px;
   padding: 10px 11px;
 }
-
-.login-note { display: none; }
 
 .modal-backdrop {
   align-items: center;
@@ -5359,7 +5313,6 @@ svg { display: block; }
   .sector-tile { min-height: 116px; }
   .sector-heatmap-foot { align-items: flex-start; flex-direction: column; gap: 4px; }
   .holding-grid,
-  .home-grid,
   .home-cols,
   .home-market,
   .analysis-grid,
@@ -5524,7 +5477,6 @@ svg { display: block; }
   .mobile-nav button svg { width: 18px; height: 18px; }
   .modal-backdrop { align-items: flex-end; padding: 8px; }
   .modal { border-radius: var(--radius-card) var(--radius-card) 8px 8px; max-height: calc(100dvh - 16px); }
-  .settings-detail-head { align-items: flex-start; flex-direction: column; gap: 10px; }
   .login-page { padding: 14px; }
   .login-card { grid-template-columns: 1fr; max-width: 520px; }
   .login-aside {
@@ -5567,17 +5519,11 @@ svg { display: block; }
   /* 触控质感：去除系统默认高亮，改用克制的下沉反馈（taste: 物理感） */
   * { -webkit-tap-highlight-color: transparent; }
   .settings-card__hit,
-  .watch-card,
-  .nav-btn {
+  .watch-card {
     transition: transform 0.16s cubic-bezier(0.16, 1, 0.3, 1);
   }
   .settings-card__hit:active,
-  .watch-card:active,
-  .nav-btn:active { transform: scale(0.984); }
-
-  /* 舒适触控尺寸（44px 命中区，a11y 友好） */
-  .nav-btn { min-height: 44px; }
-  .rem-skip { min-height: 40px; }
+  .watch-card:active { transform: scale(0.984); }
 
   /* —— 策略扫描配置面板：三列网格在窄屏堆叠为单列 —— */
   .screener-row { grid-template-columns: 1fr; gap: 16px; }
@@ -6238,10 +6184,6 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
   color: var(--text-soft);
 }
 .btn--ghost:hover { background: var(--surface-strong); color: var(--ink); }
-.btn--subtle { background: var(--surface-strong); border-color: transparent; color: var(--ink); }
-.btn--subtle:hover { background: var(--surface-strong); }
-.btn--outline { background: var(--surface); border-color: var(--line-strong); color: var(--ink); }
-.btn--outline:hover { border-color: var(--accent); color: var(--accent-ink); }
 .btn--danger { background: var(--down); color: #fff; }
 .btn--danger:hover { filter: brightness(.94); }
 

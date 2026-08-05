@@ -131,7 +131,7 @@ export function Stat({ label, value, hint, className = "" }: StatProps) {
    所有视觉表现由 globals.css 中的语义类驱动，便于全局保持一致。
    ============================================================ */
 
-type ButtonVariant = "primary" | "ghost" | "subtle" | "danger" | "outline" | "link";
+type ButtonVariant = "primary" | "ghost" | "danger" | "link";
 type ButtonSize = "sm" | "md";
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {

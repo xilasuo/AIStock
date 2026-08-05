@@ -130,6 +130,10 @@ trading_agent/prefetched.json
 trading_agent/prefetched_verify.json
 trading_agent/test_universe_conn.json
 trading_agent/*.snapshot.json
+trading_agent/*_snapshot.json
+trading_agent/scan_summary.json
+trading_agent/report_*.txt
+dev/
 
 # ---- Playwright (e2e 测试产物) ----
 /test-results/
