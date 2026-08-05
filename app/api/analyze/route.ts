@@ -14,6 +14,10 @@ type DeepSeekResponse = {
 
 type Explanation = ReturnType<typeof automaticExplanation>;
 
+/** 空话黑名单：summary 若只含这些词且不带任何数字，判定为无效输出，回退规则版 */
+const EMPTY_TALK_RE = /(需注意风险|谨慎|控制仓位|存在不确定性|建议关注|请结合自身情况|仅供参考)/;
+const HAS_DIGIT_RE = /\d/;
+
 function normalizeExplanation(value: unknown, fallback: Explanation): Explanation {
   if (!value || typeof value !== "object") return fallback;
   const candidate = value as Record<string, unknown>;
@@ -39,6 +43,7 @@ function normalizeExplanation(value: unknown, fallback: Explanation): Explanatio
 
   return {
     summary: typeof candidate.summary === "string" && candidate.summary.trim()
+      && !(EMPTY_TALK_RE.test(candidate.summary) && !HAS_DIGIT_RE.test(candidate.summary))
       ? candidate.summary.slice(0, 600)
       : fallback.summary,
     company: company.length ? company : fallback.company,
@@ -50,6 +55,12 @@ function normalizeExplanation(value: unknown, fallback: Explanation): Explanatio
 
 function slimFactsForPrompt(facts: Awaited<ReturnType<typeof analyzeStockData>>) {
   const { stock, quote, financials } = facts;
+  // 预计算「可信数字」：距离百分比等换算在服务端完成，模型只逐字引用、禁止自行计算，
+  // 从源头消除模型算错数/编数字的风险。
+  const safePct = (numerator: number, denominator: number): number | null =>
+    Number.isFinite(numerator) && Number.isFinite(denominator) && denominator > 0
+      ? (numerator / denominator) * 100
+      : null;
   return {
     stock: {
       code: stock.code,
@@ -73,6 +84,12 @@ function slimFactsForPrompt(facts: Awaited<ReturnType<typeof analyzeStockData>>)
       target1: quote.target1,
       target2: quote.target2,
       marketTime: quote.marketTime,
+    },
+    /** 预计算的位置关系（百分比），供 summary 直接引用 */
+    position: {
+      priceToSupportPct: safePct(quote.price - quote.support, quote.price),
+      priceToResistancePct: safePct(quote.resistance - quote.price, quote.price),
+      vsMa20Pct: safePct(quote.price - quote.ma20, quote.ma20),
     },
     financials: {
       revenueGrowth: financials.revenueGrowth,
@@ -143,7 +160,12 @@ async function getDeepSeekExplanation(
               "【confidence 取值规范】已核验=来自ETF资料或公告级字段；较强=由行情/财务等结构化数据直接得出；中=板块分类推断；待核验=关键词模糊匹配的概念题材，必须注明“需以公告为准”。",
               "【themes 要求】至少输出“行业本身 + 1-2 个概念板块”（如人工智能、新能源、高股息），不要把行业名重复当作概念。",
               "【示例】行业=半导体 时，themes 应类似：[{name:\"半导体\",confidence:\"较强\",reason:\"主营所属行业为半导体\"},{name:\"国产替代\",confidence:\"待核验\",reason:\"与半导体相关的常见概念，需以公告为准\"}]。",
-              "summary 用一句有观点的大白话：属于什么行业、价格相对20日均线的位置与强弱、波动大小，并点明当前技术姿态（如“站上均线偏强”或“跌破均线偏弱”）；不下达买卖指令，但可结合下方【用户风险偏好与交易纪律】提示与用户风险承受度或交易计划的关系（如近20日波动是否明显超出其单笔可亏阈值、该股若建仓是否会触及单股集中度上限）。",
+              "summary 是板块的灵魂，必须是一句**有信息增量**的大白话，按以下四要素组织：",
+              "① 行业/身份（如“半导体”）；② 价格相对关键位：必须引用 position 字段（priceToSupportPct / priceToResistancePct / vsMa20Pct）给出**带数字的姿态**，如“站上20日线+2.1%、距阻力位仅4.3%”；③ 量能/动能：必须引用 volume.ratio、quote.volatility 等给出带数字的状态，如“量比1.8放量、20日波动3.2%”，并结合 MACD/RSI/KDJ 姿态（金叉/超买/背离）给出**比较级判断**（偏强/偏弱/动能占优/上攻空间有限/风险大于收益）；④ 结尾给一个**可证伪的条件句**（若…则…），如“若放量突破阻力11.7则打开上行空间，否则缩量回踩支撑11.2前不宜追”。",
+              "【数字可靠性·硬约束】summary 及所有字段中的数字必须逐字来自用户消息中的结构化数据（quote/position/financials/volume/oscillators），禁止自行换算、四舍五入改值、推算或编造；缺失字段写“数据缺失”。position 字段已由系统算好，直接引用即可，不得重新计算。",
+              "【反空话·硬约束】“需注意风险”“谨慎”“控制仓位”“存在不确定性”“建议关注”“请结合自身情况”等空话**禁止单独出现**；使用前必须搭配具体数字或条件（如“距阻力仅4.3%，上攻空间有限”）。summary 若全是空话会被判定为无效输出。",
+              "【判断放行】“偏强/偏弱/动能占优/上攻空间有限/风险大于收益/接近超买”等**比较级状态判断是允许且应当给出的**，它们是对事实的解读、不是买卖指令；允许的边界是不出现“买入/卖出/必涨/必跌/抄底/逃顶”等具体指令或确定性涨跌承诺。",
+              "【回答风格】所有自然语言字段（summary、risks、themes 的 reason）必须干净利索、不绕弯、不罗嗦：直给要点、不堆砌套话、不用长难句；summary 严格一句有观点的大白话，不展开成段；risks/themes 只列关键项、不凑数量。",
               "5. 量价关系：必须结合 volume.ratio（量比）与 volume.divergence（量价背离）判断强弱。放量突破才可信，缩量上涨或高位放巨量滞涨需提示风险；当 divergence 为“顶背离”时，summary 与 themes 不得给出偏多结论；volume 字段缺失时对应输出写“量能数据缺失”。",
               "6. 摆动指标：facts 中的 oscillators（MACD/RSI/KDJ）仅作技术姿态参考。RSI>70 视为超买、<30 视为超卖，仅提示风险而非方向结论；MACD 金叉/死叉、KDJ 金叉/死叉、顶/底背离只作为“动能强弱”的依据；指标在强趋势中可能钝化失效，必须提示这一局限。超买区不盲目看多、超卖区不盲目看空，禁止据此给出确定性买卖措辞；字段缺失则对应输出写“摆动指标数据缺失”。",
               "7. 【技术面为主，基本面按实际可得性使用】营收增长/利润增长/负债率优先来自麦蕊智数，缺失时由新浪财报三表兜底；PE/PB 来自麦蕊/腾讯/东方财富；ROE/毛利率/净利率优先麦蕊，缺失时由新浪三表现算。凡 facts 中已给出数值的基本面字段必须引用并参与解读，不得预设其缺失、也不得笼统宣称“基本面缺失”；仅对确实为空的项写“数据缺失”，不得编造。summary 与 risks 的解读以走势结构（价格相对均线、支撑阻力）、量能、动能指标为**主要依据**；当基本面确实不足时注明“基本面数据缺失，以下解读以技术面为主”，并照常给出走势、量价、动能层面的解读。",
@@ -155,7 +177,6 @@ async function getDeepSeekExplanation(
               `enforce_stop_loss=${prefs.enforceStopLoss ? "是" : "否"}`,
               `discipline_note=${prefs.disciplineNote || "（未填写）"}`,
               "解读时可结合上述风险偏好做个性化表述（例如当前波动是否明显大于其单笔可亏阈值、该股是否可能触及单股集中度上限），但只做提示、不给买卖建议，且不得编造任何数字。",
-              "8. 【回答风格】所有自然语言字段（summary、risks、themes 的 reason）必须干净利索、不绕弯、不罗嗦：直给要点、不堆砌套话、不用长难句；summary 严格一句有观点的大白话，不展开成段；risks/themes 只列关键项、不凑数量。",
               ...(screenerContext ? [
                 "",
                 "【选股榜单上下文（多因子打分结果）】",

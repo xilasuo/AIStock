@@ -857,6 +857,13 @@ export function automaticExplanation(data: Awaited<ReturnType<typeof analyzeStoc
     : "基本面（营收/利润/负债率）本次未取到，以下解读以技术面（走势/量能/支撑阻力）为主。";
   const volatilityText = quote.volatility > 3 ? "近期波动较大" : "近期波动处于相对温和区间";
   const oscNote = buildOscillatorNote(data.oscillators);
+  // 预计算位置关系（百分比），让兜底摘要同样带数字、有信息增量
+  const supportDistPct = quote.support > 0 && quote.price > 0 ? ((quote.price - quote.support) / quote.price) * 100 : null;
+  const resistanceDistPct = quote.resistance > 0 && quote.price > 0 ? ((quote.resistance - quote.price) / quote.price) * 100 : null;
+  const positionText = [
+    supportDistPct !== null ? `距支撑约${supportDistPct.toFixed(1)}%` : null,
+    resistanceDistPct !== null ? `距阻力约${resistanceDistPct.toFixed(1)}%` : null,
+  ].filter(Boolean).join("、");
 
   if (stock.instrumentType === "etf") {
     const fund = stock.fund;
@@ -958,7 +965,7 @@ export function automaticExplanation(data: Awaited<ReturnType<typeof analyzeStoc
       : null;
 
   return {
-    summary: `${stock.name}属于${stock.industry}，${trend}，${volatilityText}${volNote}。${oscNote ? oscNote + "。" : ""}先检查基本面变化，再结合自己能承受的亏损设置计划。`,
+    summary: `${stock.name}属于${stock.industry}，${trend}，${volatilityText}${volNote}${positionText ? `，${positionText}` : ""}。${oscNote ? oscNote + "。" : ""}先检查基本面变化，再结合自己能承受的亏损设置计划。`,
     company,
     risks: [
       profitText,

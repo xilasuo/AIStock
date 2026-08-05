@@ -7356,3 +7356,25 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
   transition: opacity var(--dur-fast) var(--ease-standard);
 }
 .writeback-next__btn:hover { opacity: 0.8; }
+
+/* 「一句话看懂」关键位置行（引擎算好的支撑/阻力 + 距离%，不经 AI） */
+.verdict-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 6px;
+}
+.verdict-keys span {
+  color: var(--text-soft);
+  font-size: var(--fs-xs);
+}
+.verdict-keys b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  margin: 0 4px;
+}
+.verdict-keys small {
+  color: var(--text-muted);
+  font-size: var(--fs-2xs);
+}

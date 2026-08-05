@@ -2026,7 +2026,29 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
 
       <section className="verdict">
         <span className="verdict-mark">{analysis.mode === "deepseek" ? "在线" : "本地"}</span>
-        <div><span>一句话看懂</span><h3>{explanation.summary}</h3><p>只基于页面所列公开数据整理，不构成投资建议。</p></div>
+        <div>
+          <span>一句话看懂</span>
+          <h3>{explanation.summary}</h3>
+          {(quote.support > 0 || quote.resistance > 0) && (() => {
+            const supPct = quote.support > 0 ? ((quote.price - quote.support) / quote.price) * 100 : null;
+            const resPct = quote.resistance > 0 ? ((quote.resistance - quote.price) / quote.price) * 100 : null;
+            return (
+              <div className="verdict-keys">
+                {supPct !== null && (
+                  <span>支撑 <b>{price(quote.support)}</b>
+                    <small>{supPct >= 0 ? `（现价下方 ${supPct.toFixed(1)}%）` : `（已跌破 ${Math.abs(supPct).toFixed(1)}%）`}</small>
+                  </span>
+                )}
+                {resPct !== null && (
+                  <span>阻力 <b>{price(quote.resistance)}</b>
+                    <small>{resPct >= 0 ? `（现价上方 ${resPct.toFixed(1)}%）` : `（现价已超过 ${Math.abs(resPct).toFixed(1)}%）`}</small>
+                  </span>
+                )}
+              </div>
+            );
+          })()}
+          <p>只基于页面所列公开数据整理，不构成投资建议。</p>
+        </div>
       </section>
 
       <StrategyCard analysis={analysis} position={position} portfolioInsights={portfolioInsights} />
