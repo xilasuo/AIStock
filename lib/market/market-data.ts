@@ -261,10 +261,10 @@ async function tencentProfile(code: string): Promise<Partial<StockProfile>> {
 /** 实时行情，多级降级；全部失败返回 null（调用方应回退到历史K线推算值）。
  * 优先级：麦蕊（仅配置 MAIRUI_TOKEN 时）→ 腾讯 → 新浪 → 东方财富（兜底）。
  * 注：push2.eastmoney.com 在部分网络环境被掐，放在最后作兜底，避免拖慢首屏。 */
-async function fetchRealtime(code: string): Promise<RealtimeQuote | null> {
+async function fetchRealtime(code: string, force = false): Promise<RealtimeQuote | null> {
   if (await isMairuiEnabled()) {
     try {
-      const m = await getMairuiRealtime(code);
+      const m = await getMairuiRealtime(code, force);
       if (m && m.price !== null) {
         return {
           code,
@@ -302,7 +302,7 @@ export async function getRealtime(code: string, force = false): Promise<Realtime
     if (cached && cached.expiresAt > now) return await cached.value;
   }
 
-  const promise = fetchRealtime(key);
+  const promise = fetchRealtime(key, force);
   realtimeCache.set(key, { expiresAt: now + REALTIME_CACHE_MS, value: promise });
   try {
     const result = await promise;
@@ -651,15 +651,15 @@ async function sinaFinancialStatements(code: string): Promise<SinaStatements> {
  *   ROE / 毛利率 / 净利率        —— 麦蕊 → 东财财务主指标(实测已下线) → 新浪三表现算
  *   营收同比 / 利润同比 / 负债率 —— 麦蕊 → 新浪三表
  * 背景：旧实现下麦蕊限流或断网时这些字段恒为空，前端助手因此总是开口就说"基本面缺失"。 */
-export async function getProfile(code: string): Promise<StockProfile> {
+export async function getProfile(code: string, force = false): Promise<StockProfile> {
   const mairuiEnabled = await isMairuiEnabled();
   const [em, tencent, mairui, mairuiRealtime, emF100, emFund, sina] = await Promise.all([
     eastmoneyProfile(code),
     tencentProfile(code),
     // 麦蕊为可选增强源，异常时静默降级为 null，交由下方东财兜底。
-    mairuiEnabled ? getMairuiFundamentals(code).catch(() => null) : Promise.resolve(null),
+    mairuiEnabled ? getMairuiFundamentals(code, force).catch(() => null) : Promise.resolve(null),
     // 麦蕊实时接口实测返回 pe / pb_ratio，作为 PE/PB 的第一优先级（优先调用麦蕊）。
-    mairuiEnabled ? getMairuiRealtime(code).catch(() => null) : Promise.resolve(null),
+    mairuiEnabled ? getMairuiRealtime(code, force).catch(() => null) : Promise.resolve(null),
     eastmoneyF100Profile(code),
     eastmoneyFundamentals(code),
     // 新浪财报三表免费兜底：补充营收/利润同比与资产负债率（麦蕊单点失败时的兜底）。

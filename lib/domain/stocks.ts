@@ -443,7 +443,7 @@ export async function analyzeStockData(query: string, force = false) {
   // force=true 时强制拉最新行情，绕过实时行情缓存（供"重新分析"使用）
   const realtimePromise = getRealtime(stock.code, force);
   const fundamentalsPromise = getFundamentals(symbol);
-  const profilePromise = getProfile(stock.code);
+  const profilePromise = getProfile(stock.code, force);
   const klines = await klinesPromise;
   const history = buildHistory(klines.rows);
   const closes = history.map((row) => row.close);

@@ -11,7 +11,6 @@
 
 const MAIRUI_BASE = "https://api.mairuiapi.com";
 const REALTIME_TTL_MS = 5 * 60 * 1000; // 同只股票 5 分钟内不重复请求，缓解重复刷新浪费额度
-
 export type MairuiRealtime = {
   price: number | null;
   previousClose: number | null;
@@ -24,8 +23,27 @@ export type MairuiRealtime = {
 // 模块级缓存：减少单次进程内重复刷新对同一额度的浪费。
 // 注意：Worker 多 isolate 不共享此缓存，跨请求持久缓存需用 KV/D1。
 const cache = new Map<string, { ts: number; data: MairuiRealtime }>();
-// 额度耗尽（401/403）后当天不再调用，避免持续触发限流。
+// 额度/鉴权失败（401/403）后进入冷却：指数退避（5 分钟起，翻倍封顶 2 小时），
+// 既避免持续打 401 浪费请求，又能在临时故障/额度恢复后较快自动恢复。
 let disabledUntil = 0;
+let circuitBackoffMs = 5 * 60 * 1000;
+const CIRCUIT_MAX_BACKOFF_MS = 2 * 60 * 60 * 1000;
+
+function tripCircuit() {
+  disabledUntil = Date.now() + circuitBackoffMs;
+  circuitBackoffMs = Math.min(circuitBackoffMs * 2, CIRCUIT_MAX_BACKOFF_MS);
+}
+
+function resetCircuit() {
+  disabledUntil = 0;
+  circuitBackoffMs = 5 * 60 * 1000;
+}
+
+/** 熔断状态（供 /api/status 展示，让"麦蕊停用"对用户可见而非静默降级）。 */
+export function mairuiCircuit(): { tripped: boolean; retryAfterMs: number } {
+  const remain = disabledUntil - Date.now();
+  return remain > 0 ? { tripped: true, retryAfterMs: remain } : { tripped: false, retryAfterMs: 0 };
+}
 
 async function getMairuiToken(): Promise<string> {
   // Worker 运行时通过 cloudflare:workers 的 env 读取（与 ai-config.ts 一致）。
@@ -102,13 +120,14 @@ function parseRealtime(row: Record<string, unknown>): MairuiRealtime {
   return { price, previousClose, changePercent, pe, pb, name };
 }
 
-export async function getMairuiRealtime(code: string): Promise<MairuiRealtime | null> {
+export async function getMairuiRealtime(code: string, force = false): Promise<MairuiRealtime | null> {
   const token = await getMairuiToken();
   if (!token) return null;
   if (Date.now() < disabledUntil) return null;
 
   const cached = cache.get(code);
-  if (cached && Date.now() - cached.ts < REALTIME_TTL_MS) return cached.data;
+  // force=true（"重新分析"）时跳过 TTL 缓存，强制拉最新；熔断期仍不发起请求
+  if (cached && !force && Date.now() - cached.ts < REALTIME_TTL_MS) return cached.data;
 
   // 实时行情路径（licence 拼在末尾）。如与官方文档不符，改这一行即可。
   const url = `${MAIRUI_BASE}/hsstock/real/time/${code}/${token}`;
@@ -117,18 +136,16 @@ export async function getMairuiRealtime(code: string): Promise<MairuiRealtime | 
       headers: { "user-agent": "Mozilla/5.0 StockReviewAssistant/1.0" },
       signal: AbortSignal.timeout(6_000),
     });
-    // 免费档超额：接口停用，次日（Asia/Shanghai 00:00）自动恢复。
+    // 免费档超额/鉴权失败：进入指数退避冷却，避免持续触发限流
     if (res.status === 401 || res.status === 403) {
-      const now = new Date();
-      const sh = new Date(now.getTime() + 8 * 3600_000);
-      sh.setUTCHours(0, 0, 0, 0);
-      disabledUntil = sh.getTime() + 24 * 3600_000;
+      tripCircuit();
       return null;
     }
     if (!res.ok) return null;
     const row = await res.json() as Record<string, unknown>;
     const data = parseRealtime(row);
     if (data.price === null) return null;
+    resetCircuit();
     cache.set(code, { ts: Date.now(), data });
     return data;
   } catch {
@@ -288,14 +305,15 @@ function parseIndustry(rows: unknown): string | null {
   return null;
 }
 
-export async function getMairuiFundamentals(code: string): Promise<MairuiFundamentals | null> {
+export async function getMairuiFundamentals(code: string, force = false): Promise<MairuiFundamentals | null> {
   const token = await getMairuiToken();
   if (!token) return null;
   if (Date.now() < disabledUntil) return null;
 
   const cacheKey = `fund:${code}`;
   const cached = fundCache.get(cacheKey);
-  if (cached && Date.now() - cached.ts < FUND_TTL_MS) return cached.data;
+  // force=true（"重新分析"）时跳过财务 TTL 缓存
+  if (cached && !force && Date.now() - cached.ts < FUND_TTL_MS) return cached.data;
 
   const headers = { "user-agent": "Mozilla/5.0 StockReviewAssistant/1.0" };
   try {
@@ -307,10 +325,7 @@ export async function getMairuiFundamentals(code: string): Promise<MairuiFundame
     ]);
     for (const res of [cwzbRes, gsjjRes, conceptsRes]) {
       if (res.status === 401 || res.status === 403) {
-        const now = new Date();
-        const sh = new Date(now.getTime() + 8 * 3600_000);
-        sh.setUTCHours(0, 0, 0, 0);
-        disabledUntil = sh.getTime() + 24 * 3600_000;
+        tripCircuit();
         return null;
       }
     }
@@ -340,6 +355,7 @@ export async function getMairuiFundamentals(code: string): Promise<MairuiFundame
       result.profitGrowth !== null ||
       result.debtRatio !== null
     ) {
+      resetCircuit();
       fundCache.set(cacheKey, { ts: Date.now(), data: result });
     }
     return result;

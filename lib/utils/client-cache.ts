@@ -72,6 +72,21 @@ export function removeCache(key: string): void {
   }
 }
 
+/** 按前缀删除缓存项（如清空 assistant:{userId}:* 对话历史） */
+export function removeCacheByPrefix(prefix: string): void {
+  if (!isClient()) return;
+  try {
+    const targets: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (key && key.startsWith(PREFIX + prefix)) targets.push(key);
+    }
+    for (const key of targets) window.localStorage.removeItem(key);
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * 多值字典缓存（如行情快照 quotes）：与 readCache/writeCache 的「单值单时间戳」不同，
  * 这里按「单只 key 独立时间戳」存储，读取时逐项剔除过期数据，避免某一只股票长期
@@ -139,6 +154,53 @@ export function readKeyedCache<T>(
     // 剔除了过期项则回写精简后的缓存，避免缓存体积只增不减
     if (changed) writeKeyedCache(key, result, maxEntries);
     return result;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 读取多值字典缓存并返回每项的时间戳（{ data, tsByKey }）。
+ * 供前端恢复行情快照时同步恢复"新鲜度时间戳"：刷新页面后内存 ref 丢失，
+ * 若直接用空 ref 判定全部过期，会触发一轮全量重拉（localStorage 缓存形同虚设）。
+ * 复用 readKeyedCache 的过期剔除逻辑。
+ */
+export function readKeyedCacheWithMeta<T>(
+  key: string,
+  ttlMs: number,
+  maxEntries: number = KEYED_CACHE_MAX_ENTRIES,
+): { data: Record<string, T>; tsByKey: Record<string, number> } | null {
+  if (!isClient()) return null;
+  try {
+    const raw = window.localStorage.getItem(buildKey(key));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as {
+      ts: number;
+      data: Record<string, { ts: number; data: T } | T>;
+    };
+    const now = Date.now();
+    const result: Record<string, T> = {};
+    const tsByKey: Record<string, number> = {};
+    let changed = false;
+    for (const [code, wrapped] of Object.entries(parsed.data ?? {})) {
+      if (wrapped == null) continue;
+      const isWrapped = typeof wrapped === "object" && "ts" in wrapped && "data" in wrapped;
+      const entryTs = isWrapped ? (wrapped as { ts: number }).ts : parsed.ts;
+      const entryData = isWrapped ? (wrapped as { data: T }).data : (wrapped as T);
+      if (entryData == null) continue;
+      if (now - entryTs > ttlMs) {
+        changed = true;
+        continue;
+      }
+      result[code] = entryData;
+      tsByKey[code] = entryTs;
+    }
+    if (Object.keys(result).length === 0) {
+      window.localStorage.removeItem(buildKey(key));
+      return null;
+    }
+    if (changed) writeKeyedCache(key, result, maxEntries);
+    return { data: result, tsByKey };
   } catch {
     return null;
   }

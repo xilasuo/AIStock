@@ -7391,3 +7391,13 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
   font-weight: 600;
   margin-right: 6px;
 }
+
+/* 持仓卡片：现价更新时间（时效标注） */
+.hold-quote-time {
+  color: var(--text-muted);
+  font-size: var(--fs-2xs);
+  margin: 2px 0 6px;
+}
+.source-status i.is-warn {
+  background: var(--danger);
+}

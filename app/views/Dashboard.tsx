@@ -92,7 +92,7 @@ import {
 import type { AssistantContext } from "../../lib/ai/assistant";
 import { splitAssistantSections, conclusionTone } from "../../lib/ai/assistant";
 import { formatDateShanghai, formatDateTimeShanghai, shanghaiIso } from "../../lib/utils/time";
-import { readCache, writeCache, removeCache, readKeyedCache, writeKeyedCache } from "../../lib/utils/client-cache";
+import { readCache, writeCache, removeCache, removeCacheByPrefix, readKeyedCacheWithMeta, writeKeyedCache } from "../../lib/utils/client-cache";
 
 type View = "home" | "watchlist" | "trades" | "settings" | "analytics" | "analysis" | "scan" | "writeback";
 type TradeMode = "buy" | "sell";
@@ -295,6 +295,8 @@ type Status = {
   aiProvider?: string;
   dataSource: string;
   mairuiEnabled?: boolean;
+  /** 麦蕊增强源状态：正常 / 限流冷却中 / 未启用（熔断时明确提示，不再静默降级） */
+  mairuiStatus?: string;
   reminderMode: string;
 };
 
@@ -397,7 +399,18 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   // 最近分析与行情快照从 localStorage 恢复，刷新页面时避免首屏空白；
   // 行情快照 TTL 较短（10 分钟），过期数据会在后续轮询中被自动覆盖。
   const [recentAnalyses, setRecentAnalyses] = useState<Analysis[]>(() => readCache<Analysis[]>("recent") ?? []);
-  const [quotes, setQuotes] = useState<Record<string, QuoteEntry>>(() => readKeyedCache<QuoteEntry>("quotes", 10 * 60 * 1000) ?? {});
+  // 行情新鲜度时间戳：quotes 恢复时同步恢复（含每项 ts），避免刷新后因内存 ref 丢失
+  // 判定全部过期、触发一轮全量重拉（localStorage 缓存形同虚设的历史问题）。
+  const quoteFetchedAt = useRef<Record<string, number>>({});
+  const quoteLightFetchedAt = useRef<Record<string, number>>({});
+  const [quotes, setQuotes] = useState<Record<string, QuoteEntry>>(() => {
+    const restored = readKeyedCacheWithMeta<QuoteEntry>("quotes", 10 * 60 * 1000);
+    if (restored) {
+      quoteFetchedAt.current = { ...restored.tsByKey };
+      quoteLightFetchedAt.current = { ...restored.tsByKey };
+    }
+    return restored?.data ?? {};
+  });
   const [trades, setTrades] = useState<Trade[]>([]);
   const [watchlist, setWatchlist] = useState<WatchItem[]>([]);
   const [alerts, setAlerts] = useState<AlertRule[]>([]);
@@ -421,10 +434,6 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   const notified = useRef(new Set<number>());
   const pendingQuotes = useRef(new Set<string>());
   const pendingLightQuotes = useRef(new Set<string>());
-  /** 每个 symbol 最近一次拉取行情的时间戳，用于 TTL 判断是否需要刷新 */
-  const quoteFetchedAt = useRef<Record<string, number>>({});
-  /** 轻量行情（仅价格/涨跌幅）最近刷新时间戳，1 分钟 TTL */
-  const quoteLightFetchedAt = useRef<Record<string, number>>({});
   /** 行情刷新 TTL：超过该时长即视为过期，进入轮询时会重新拉取 */
   const QUOTE_TTL_MS = 5 * 60 * 1000;
   /** 轻量行情轮询间隔：页面停留时每分钟刷新价格（走 /api/quote，不拉 K 线/财务） */
@@ -482,9 +491,10 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   }, []);
 
   const clearLocalCache = useCallback(() => {
-    // 清空浏览器本地保存的最近分析与行情快照缓存
+    // 清空浏览器本地保存的最近分析、行情快照与助手对话历史缓存
     removeCache("quotes");
     removeCache("recent");
+    removeCacheByPrefix("assistant:");
     setRecentAnalyses([]);
     flash("本地分析缓存已清空");
   }, [flash]);
@@ -1009,8 +1019,8 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
           <p>本应用只负责解释信息，不替你决定买卖。重要止损请同时在券商App设置。</p>
         </div>
         <div className="source-status">
-          <i />
-          <span><b>{status?.deepseekConfigured ? "在线分析" : "自动解释模式"}</b><small>{status?.mairuiEnabled ? "麦蕊智数(优先) + 腾讯/东方财富" : (status?.dataSource ?? "正在检查数据源")}</small></span>
+          <i className={status?.mairuiStatus === "限流冷却中" ? "is-warn" : ""} />
+          <span><b>{status?.deepseekConfigured ? "在线分析" : "自动解释模式"}</b><small>{status?.mairuiStatus === "限流冷却中" ? "麦蕊额度受限·暂用免费源" : (status?.mairuiEnabled ? "麦蕊智数(优先) + 腾讯/东方财富" : (status?.dataSource ?? "正在检查数据源"))}</small></span>
         </div>
         <div className={`engine-status${engineOnline === null ? " is-probing" : engineOnline ? " is-online" : " is-offline"}`} title={engineOnline === null ? "正在探测本地引擎…" : engineOnline ? "本地引擎守护进程在线，可跑选股扫描" : "本地引擎未启动；选股扫描由云端/WorkBuddy 跑批执行"}>
           <i aria-hidden />
@@ -1243,7 +1253,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
         open={confirming === "clearCache"}
         eyebrow="确认操作"
         title="清空本地分析缓存？"
-        message="将清除浏览器中保存的最近 6 条分析记录与行情快照，不影响服务器上的交易、关注、复盘等数据。确定要清空吗？"
+        message="将清除浏览器中保存的最近 6 条分析记录、行情快照与复盘助手对话历史，不影响服务器上的交易、关注、复盘等数据。确定要清空吗？"
         confirmLabel="确认清空"
         tone="danger"
         onCancel={() => setConfirming(null)}
@@ -1551,6 +1561,7 @@ function Home({
                 <div className={`holding-grid${portfolio.positions.length <= 2 ? " holding-grid-few" : ""}`}>
                   {portfolio.positions.map((position) => {
                     const quote = quotes[position.symbol]?.quote.price;
+                    const quoteTime = quotes[position.symbol]?.quote.marketTime;
                     const insight = portfolioInsights.positions.find((item) => item.symbol === position.symbol);
                     const profitCents = insight?.unrealizedCents ?? 0;
                     const rate = quote ? insight?.returnPercent ?? null : null;
@@ -1565,6 +1576,7 @@ function Home({
                           <strong className={(rate ?? 0) >= 0 ? "up" : "down"}>{rate === null ? "行情更新中" : `${rate >= 0 ? "+" : ""}${rate.toFixed(2)}%`}</strong>
                         </div>
                         <div className="risk-line"><span>{insight?.allocationPercent !== null && insight?.allocationPercent !== undefined ? `${portfolioInsights.configured ? "账户仓位" : "持仓内部占比"} ${insight.allocationPercent.toFixed(1)}%` : "按当前参考价计算"}</span><b>{quote ? money(profitCents) : "暂无"}</b></div>
+                        {quoteTime && <div className="hold-quote-time">现价更新于 {formatDateTimeShanghai(quoteTime)}</div>}
                         <div className="holding-alerts">
                           <span className={`holding-status ${stop ? "amber" : ""}`}><i />{stop ? `止损 ${alertPrice(stop)}` : "未设止损"}</span>
                           <span className="holding-status take">{take1 ? `止盈一 ${alertPrice(take1)}` : "无止盈一"}</span>
@@ -4564,7 +4576,7 @@ function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferenc
       Icon: Trash2,
       title: "本地缓存",
       caption: "浏览器分析缓存",
-      text: "浏览器本地保存的最近分析（最多6条）与行情快照，仅用于刷新页面免首屏空白。清空不影响服务器上的交易、关注、复盘等数据。",
+      text: "浏览器本地保存的最近分析（最多6条）、行情快照与助手对话历史，仅用于刷新页面免首屏空白。清空不影响服务器上的交易、关注、复盘等数据。",
       state: "可清空",
       tone: "neutral",
     },
@@ -4722,7 +4734,7 @@ function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferenc
                 {card.id === "cache" && (
                   <div className="settings-card__panel">
                     <h3>清空本地分析缓存</h3>
-                    <p>浏览器本地保存的最近分析（最多6条，7天自动过期）与行情快照（10分钟）仅用于刷新页面时免首屏空白。清空后不影响服务器上的交易、关注、复盘等数据，重新分析会自动重新生成。</p>
+                    <p>浏览器本地保存的最近分析（最多6条，7天自动过期）、行情快照（10分钟）与复盘助手对话历史，仅用于刷新页面时免首屏空白。清空后不影响服务器上的交易、关注、复盘等数据，重新分析会自动重新生成。</p>
                     <Button variant="danger" onClick={onClearCache}>清空本地缓存</Button>
                   </div>
                 )}
