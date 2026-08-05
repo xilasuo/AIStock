@@ -62,6 +62,7 @@ import {
   ChevronUp,
   RotateCw,
   Zap,
+  Monitor,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -1014,6 +1015,13 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
             );
           })}
         </nav>
+        <button
+          className="nav-item screen-entry"
+          onClick={() => window.open("/screen", "_blank", "noopener,noreferrer")}
+          title="大屏展示（新标签打开，投屏用）"
+        >
+          <span><Monitor size={19} /></span>大屏展示
+        </button>
         <div className="safety-note">
           <span>给新手的提醒</span>
           <p>本应用只负责解释信息，不替你决定买卖。重要止损请同时在券商App设置。</p>

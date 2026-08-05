@@ -7429,3 +7429,35 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
   line-height: 1.5;
   margin: 0;
 }
+
+/* ===== 大屏展示页（/screen）深色终端样式 =====
+   独立于亮色纸感令牌；仅作用于 .bigscreen 作用域，不影响现有界面 */
+.bigscreen {
+  background: #0a0f16;
+}
+.bigscreen .bigscreen-live-dot {
+  animation: bigscreen-pulse 2s ease-in-out infinite;
+}
+@keyframes bigscreen-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.bigscreen .bigscreen-marquee {
+  overflow: hidden;
+}
+.bigscreen .bigscreen-marquee-track {
+  animation: bigscreen-scroll 36s linear infinite;
+}
+.bigscreen .bigscreen-marquee:hover .bigscreen-marquee-track {
+  animation-play-state: paused;
+}
+@keyframes bigscreen-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bigscreen .bigscreen-live-dot,
+  .bigscreen .bigscreen-marquee-track {
+    animation: none;
+  }
+}
