@@ -112,6 +112,40 @@ export function stockNameFromList(code: string): string | undefined {
   return A_STOCK_LIST[code];
 }
 
+/**
+ * 按股票名称反查代码（纯本地，浏览器可用，无网络请求）。
+ * 命中顺序：本地名称精确匹配（resolveStock）→ 规范化精确匹配 → 唯一模糊匹配。
+ * 规范化：去空格/全角空格、全角字母数字转半角、统一小写，
+ * 使「万科A」「万  科Ａ」这类写法也能命中官方名「万  科Ａ」。
+ * 模糊匹配仅在结果唯一时返回，避免「茅台」这类简称匹配到多只票时猜错。
+ */
+export function resolveStockByName(name: string): { code: string; name: string } | null {
+  const clean = name.trim();
+  if (!clean) return null;
+
+  const exact = resolveStock(clean);
+  if (exact && exact.code !== exact.name) return exact;
+
+  const normalize = (value: string) => value
+    .toLowerCase()
+    .replace(/[\s\u3000]+/g, "")
+    .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+
+  const norm = normalize(clean);
+  if (!norm) return null;
+
+  const entries = Object.entries(A_STOCK_LIST) as Array<[string, string]>;
+  const exactNorm = entries.find(([, n]) => normalize(n) === norm);
+  if (exactNorm) return { code: exactNorm[0], name: exactNorm[1] };
+
+  const fuzzy = entries.filter(([, n]) => {
+    const nn = normalize(n);
+    return (nn.includes(norm) || norm.includes(nn)) && nn !== norm;
+  });
+  if (fuzzy.length === 1) return { code: fuzzy[0][0], name: fuzzy[0][1] };
+  return null;
+}
+
 export function canonicalStockName(code: string, fallback: string = code): string {
   if (A_STOCK_LIST[code]) return A_STOCK_LIST[code];
   if (FUND_PROFILES[code]) return FUND_PROFILES[code].name;

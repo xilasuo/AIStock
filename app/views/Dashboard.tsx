@@ -79,7 +79,7 @@ import type { SectorHeatmap as SectorHeatmapData } from "../../lib/market/sector
 import { calculatePortfolioInsights, type PortfolioInsights } from "../../lib/domain/portfolio-insights";
 import { calculateBuySummary, calculateTradeStatistics } from "../../lib/domain/trade-statistics";
 import { TAKE_PROFIT_1_R, TAKE_PROFIT_2_R } from "../../lib/domain/trade-import";
-import { baseCloseSince, resolveStock, type Oscillators } from "../../lib/domain/stocks";
+import { baseCloseSince, resolveStock, resolveStockByName, type Oscillators } from "../../lib/domain/stocks";
 import {
   DEFAULT_PREFERENCES,
   RISK_PRESETS,
@@ -4748,7 +4748,7 @@ function TradeModal({ mode, stock, editTrade, positions, analysisQuote, onClose,
   /** 对话框内手动切换到另一只股票时，重新拉取该股票的技术位（支撑位/1R/2R） */
   onSwitchStock?: (symbol: string) => void | Promise<void>;
 }) {
-  const firstInput = useRef<HTMLInputElement>(null);
+  const symbolInputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const stopLossRef = useRef<HTMLInputElement>(null);
   const takeProfit1Ref = useRef<HTMLInputElement>(null);
@@ -4778,7 +4778,7 @@ function TradeModal({ mode, stock, editTrade, positions, analysisQuote, onClose,
   }
 
   useEffect(() => {
-    firstInput.current?.focus();
+    symbolInputRef.current?.focus();
     const close = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
@@ -4809,7 +4809,7 @@ function TradeModal({ mode, stock, editTrade, positions, analysisQuote, onClose,
         <header><div><span className="eyebrow">{isEdit ? "修改记录" : (mode === "buy" ? "写下当时的决定" : "记录真实的退出")}</span><h2 id="trade-modal-title">{isEdit ? `编辑${mode === "buy" ? "买入" : "卖出"}记录` : `记录${mode === "buy" ? "买入" : "卖出"}`}</h2></div><IconButton label="关闭" onClick={onClose}><X size={18} /></IconButton></header>
         <form onSubmit={submit}>
           <div className="form-grid">
-            <Field label="股票代码"><Input ref={firstInput} name="symbol" defaultValue={symbol} pattern="\d{6}" required disabled={isEdit} readOnly={isEdit} onBlur={(event) => {
+            <Field label="股票代码"><Input ref={symbolInputRef} name="symbol" defaultValue={symbol} pattern="\d{6}" required disabled={isEdit} readOnly={isEdit} onBlur={(event) => {
               if (isEdit) return;
               const code = event.currentTarget.value.trim();
               const resolved = resolveStock(code);
@@ -4821,7 +4821,18 @@ function TradeModal({ mode, stock, editTrade, positions, analysisQuote, onClose,
                 void onSwitchStock(code);
               }
             }} /></Field>
-            <Field label="股票名称"><Input ref={nameInputRef} name="name" defaultValue={name} required maxLength={30} disabled={isEdit} readOnly={isEdit} /></Field>
+            <Field label="股票名称"><Input ref={nameInputRef} name="name" defaultValue={name} required maxLength={30} disabled={isEdit} readOnly={isEdit} onBlur={(event) => {
+              // 反向解析：输入名称自动带出代码（本地全量 A 股表，支持规范化和唯一模糊匹配）
+              if (isEdit) return;
+              const query = event.currentTarget.value.trim();
+              const resolved = resolveStockByName(query);
+              if (resolved && symbolInputRef.current) {
+                symbolInputRef.current.value = resolved.code;
+                if (onSwitchStock && resolved.code !== (stock?.code ?? stock?.symbol)) {
+                  void onSwitchStock(resolved.code);
+                }
+              }
+            }} /></Field>
             <Field label={mode === "buy" ? "买入价格" : "卖出价格"}><Input name="price" type="number" min="0" step="any" defaultValue={defaultPrice} required /></Field>
             <Field label="数量（股）"><Input name="quantity" type="number" min="1" step="1" defaultValue={defaultQuantity} required /></Field>
             <Field label="交易日期"><Input name="tradeDate" type="date" defaultValue={defaultTradeDate} max={localIsoDate()} required /></Field>
