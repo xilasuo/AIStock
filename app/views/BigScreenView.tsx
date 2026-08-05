@@ -231,8 +231,8 @@ export function BigScreenView() {
   const profitColor = (insights.totalProfitCents ?? 0) >= 0 ? UP : DOWN;
 
   return (
-    <div className="bigscreen" style={{ background: BG, color: TEXT, minHeight: "100vh", fontFamily: "var(--font-sans)" }}>
-      <div style={{ maxWidth: 1560, margin: "0 auto", padding: "22px 28px", display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+    <div className="bigscreen" style={{ background: BG, color: TEXT, height: "100vh", overflow: "hidden", fontFamily: "var(--font-sans)" }}>
+      <div style={{ width: "100%", padding: "22px 28px", display: "flex", flexDirection: "column", height: "100%" }}>
         <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 18 }}>
           <div>
             <div style={{ fontSize: 12, color: MUTED, letterSpacing: 2 }}>ACCOUNT OVERVIEW · 大屏展示</div>
@@ -253,7 +253,7 @@ export function BigScreenView() {
           </div>
         )}
 
-        <main style={{ display: "grid", gridTemplateColumns: "300px 1fr 320px", gap: 16, flex: 1, minHeight: 0 }}>
+        <main style={{ display: "grid", gridTemplateColumns: "minmax(280px, 360px) 1fr minmax(300px, 380px)", gap: 16, flex: 1, minHeight: 0 }}>
           <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "18px 20px", flex: 1 }}>
               <div style={{ fontSize: 12, color: MUTED }}>总资产</div>
