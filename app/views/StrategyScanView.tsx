@@ -144,10 +144,10 @@ function cssVar(name: string, fallback: string): string {
   return value || fallback;
 }
 
-const SCAN_LINE = () => cssVar("--accent", "#3a5a78");
-const SCAN_TEXT = () => cssVar("--text-muted", "#8c8c83");
-const SCAN_BORDER = () => cssVar("--line-strong", "#d8d8d0");
-const SCAN_GRID = () => cssVar("--line", "#e8e8e1");
+const SCAN_LINE = () => cssVar("--accent", "#00e5ff");
+const SCAN_TEXT = () => cssVar("--text-muted", "#5f8198");
+const SCAN_BORDER = () => cssVar("--line-strong", "rgba(120,200,255,.22)");
+const SCAN_GRID = () => cssVar("--line", "rgba(120,200,255,.12)");
 
 /* --------------------------- 净值曲线组件 --------------------------- */
 function StrategyCurveChart({ points }: { points: Array<{ date: string; value: number }> }) {

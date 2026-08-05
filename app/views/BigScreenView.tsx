@@ -36,17 +36,17 @@ type ScanBrief = {
 };
 type SectorMove = { code: string; name: string; changePercent: number };
 
-const PIE_COLORS = ["#ff6b6b", "#22d3ee", "#a78bfa", "#2dd4bf", "#f5a524", "#60a5fa", "#f472b6", "#34d399"];
-const UP = "#ff6b6b";
-const DOWN = "#2dd4bf";
-const BG = "#0a0f16";
-const CARD = "#0f1a26";
-const BORDER = "#164e63";
-const TEXT = "#d7f4fb";
-const MUTED = "#6f93a8";
-const BRIGHT = "#a5f3fc";
-const ACCENT = "#22d3ee";
-const CHART = "#ff6b6b";
+const PIE_COLORS = ["#ff4d6d", "#00e5ff", "#b98cff", "#21e6a4", "#ffc24d", "#5cc8ff", "#ff8a7a", "#34d399"];
+const UP = "var(--up)";
+const DOWN = "var(--down)";
+const BG = "var(--bg)";
+const CARD = "var(--surface)";
+const BORDER = "var(--border)";
+const TEXT = "var(--text)";
+const MUTED = "var(--muted)";
+const BRIGHT = "var(--accent)";
+const ACCENT = "var(--accent)";
+const CHART = "var(--up)";
 const RING_R = 9;
 
 const MARKET_STATE_LABEL: Record<string, string> = {
@@ -546,7 +546,7 @@ export function BigScreenView() {
           ) : (
             riskAlerts.map((a, index) => {
               const high = a.level === "high";
-              const color = high ? "#ff6b6b" : "#f5a524";
+              const color = high ? "var(--up)" : "var(--amber)";
               return (
                 <div
                   key={index}
@@ -554,8 +554,8 @@ export function BigScreenView() {
                     display: "inline-flex",
                     alignItems: "center",
                     gap: 8,
-                    background: high ? "rgba(255,107,107,.12)" : "rgba(245,165,36,.10)",
-                    border: `0.5px solid ${high ? "rgba(255,107,107,.4)" : "rgba(245,165,36,.38)"}`,
+                    background: high ? "rgba(255,77,109,.12)" : "rgba(255,207,77,.10)",
+                    border: `0.5px solid ${high ? "rgba(255,77,109,.4)" : "rgba(255,207,77,.38)"}`,
                     color,
                     borderRadius: 10,
                     padding: "7px 14px",
@@ -563,7 +563,7 @@ export function BigScreenView() {
                   }}
                 >
                   <span style={{ fontWeight: 600 }}>{a.label}</span>
-                  <span style={{ color: high ? "#ffc9c9" : "#ffe2b0", fontFamily: "var(--font-mono)" }}>{a.detail}</span>
+                  <span style={{ color: high ? "var(--up)" : "var(--amber)", fontFamily: "var(--font-mono)" }}>{a.detail}</span>
                 </div>
               );
             })
@@ -675,7 +675,7 @@ export function BigScreenView() {
                   <div key={trade.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5, padding: "8px 0", borderBottom: "0.5px solid rgba(22,78,99,.55)" }}>
                     <span style={{ fontFamily: "var(--font-mono)", color: MUTED, width: 62, flexShrink: 0 }}>{trade.tradeDate.slice(5)}</span>
                     <span style={{ width: 84, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{trade.name}</span>
-                    <span style={{ color: trade.side === "买入" ? ACCENT : "#f5a524", width: 40, flexShrink: 0, fontWeight: 500 }}>{trade.side}</span>
+                    <span style={{ color: trade.side === "买入" ? ACCENT : "var(--amber)", width: 40, flexShrink: 0, fontWeight: 500 }}>{trade.side}</span>
                     <span style={{ fontFamily: "var(--font-mono)", width: 78, flexShrink: 0, textAlign: "right" }}>
                       {((trade.priceTenThousandths ?? (trade.priceMillis ?? trade.priceCents * 10) * 10) / 10000).toFixed(2)}
                     </span>
@@ -797,7 +797,7 @@ export function BigScreenView() {
                       }}
                     >
                       <div style={{ fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sector.name}</div>
-                      <div style={{ fontSize: 13, fontFamily: "var(--font-mono)", color: sector.changePercent >= 0 ? "#ffd0d0" : "#c8fbf1", marginTop: 2 }}>
+                      <div style={{ fontSize: 13, fontFamily: "var(--font-mono)", color: sector.changePercent >= 0 ? "var(--up)" : "var(--down)", marginTop: 2 }}>
                         {pct(sector.changePercent)}
                       </div>
                     </div>

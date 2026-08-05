@@ -1,47 +1,53 @@
 @import "tailwindcss";
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
   /* 系统字体栈：在 Cloudflare worker 环境下不依赖 next/font 的本地字体文件 */
   --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
     "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Hiragino Sans GB", sans-serif;
-  /* 极简编辑风：纸感中性底 + 墨色文字 + 沉静钢蓝点缀，无玻璃渐变 */
-  --bg: #fafaf8;
-  --surface: #ffffff;
-  --surface-soft: #f4f4f1;
-  --surface-strong: #ebebe7;
-  --surface-inverse: #1d1d1b;
-  --sidebar: #fafaf8;
-  --sidebar-soft: #f1f1ed;
-  --sidebar-line: #e6e6e0;
-  --text: #1a1a18;
-  --text-soft: #56564f;
-  --ink: #1a1a18;
-  --muted: #8c8c83;
-  --line: #e8e8e1;
-  --line-strong: #d8d8d0;
-  --accent: #3a5a78;
-  --accent-hover: #2e4860;
-  --accent-soft: #eef0ec;
-  --accent-ink: #2c4a64;
-  --red: #c2434f;
-  --red-soft: #fbeced;
+  /* 青蓝霓虹：深蓝黑底 + 发光青蓝主色 + 红涨绿跌，强对比、可发光 */
+  --bg: #060b14;
+  --bg-grad: radial-gradient(1200px 620px at 82% -12%, rgba(0, 229, 255, .10), transparent 60%),
+    radial-gradient(900px 520px at -5% -5%, rgba(43, 140, 255, .12), transparent 55%), var(--bg);
+  --surface: #0c1626;
+  --surface-soft: #0a1320;
+  --surface-strong: #122036;
+  --surface-inverse: #e9f6ff;
+  --sidebar: #080f1c;
+  --sidebar-soft: #0b1424;
+  --sidebar-line: rgba(0, 229, 255, .12);
+  --text: #e9f6ff;
+  --text-soft: #9cc3d8;
+  --ink: #e9f6ff;
+  --muted: #5f8198;
+  --line: rgba(120, 200, 255, .12);
+  --line-strong: rgba(120, 200, 255, .22);
+  --accent: #00e5ff;
+  --accent-hover: #5cf0ff;
+  --accent-soft: rgba(0, 229, 255, .12);
+  --accent-ink: #cdf6ff;
+  --on-accent: #04161d;
+  --accent-2: #2b8cff;
+  --red: #ff4d6d;
+  --red-soft: rgba(255, 77, 109, .14);
   --danger: var(--red);
-  --green: #1f8a63;
-  --green-soft: #eaf6f1;
-  --amber: #9a6a12;
-  --amber-soft: #fbf3df;
-  --focus: rgba(58, 90, 120, .26);
-  --shadow: 0 1px 2px rgba(20, 20, 18, .04), 0 6px 20px rgba(20, 20, 18, .05);
+  --green: #21e6a4;
+  --green-soft: rgba(33, 230, 164, .14);
+  --amber: #ffcf4d;
+  --amber-soft: rgba(255, 207, 77, .14);
+  --focus: rgba(0, 229, 255, .45);
+  --glow: 0 0 12px rgba(0, 229, 255, .5);
+  --glow-strong: 0 0 18px rgba(0, 229, 255, .72);
+  --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 6px 22px rgba(0, 0, 0, .55);
   /* 补全被组件引用、亮色模式原本缺失的令牌（红涨绿跌：--up=红 --down=绿） */
-  --border: #e8e8e1;
-  --text-muted: #8c8c83;
-  --text-faint: #a6a69d;
-  --surface-2: #f4f4f1;
-  --up: #c2434f;
-  --up-soft: #fbeced;
-  --down: #1f8a63;
-  --down-soft: #eaf6f1;
+  --border: rgba(0, 229, 255, .16);
+  --text-muted: #5f8198;
+  --text-faint: #3f5668;
+  --surface-2: #0a1320;
+  --up: #ff4d6d;
+  --up-soft: rgba(255, 77, 109, .14);
+  --down: #21e6a4;
+  --down-soft: rgba(33, 230, 164, .14);
   --radius-sm: 8px;
   /* 轻量节奏：统一间距阶梯，消除各处 18/22/24 混用造成的参差 */
   --space-1: 4px;
@@ -55,8 +61,8 @@
   /* 统一卡片圆角与更轻的阴影，营造清爽无负担的观感 */
   --radius-card: 12px;
   --radius-control: 8px;
-  --shadow-card: 0 1px 2px rgba(12, 17, 21, .04), 0 8px 22px -12px rgba(12, 17, 21, .10);
-  --shadow-raised: 0 2px 8px rgba(12, 17, 21, .05), 0 18px 40px -16px rgba(12, 17, 21, .16);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, .5), 0 8px 22px -12px rgba(0, 0, 0, .6);
+  --shadow-raised: 0 2px 8px rgba(0, 0, 0, .55), 0 18px 40px -16px rgba(0, 0, 0, .7);
   /* 标题与统计数字统一回归系统无衬线 */
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "Courier New", monospace;
   --sidebar-width: 244px;
@@ -84,12 +90,12 @@
 * { box-sizing: border-box; }
 
 html {
-  background: var(--bg);
+  background: var(--bg-grad);
   min-width: 320px;
 }
 
 body {
-  background: var(--bg);
+  background: var(--bg-grad);
   /* 隐藏普通文字上的闪烁文本光标（caret），输入框中仍保留 */
   caret-color: transparent;
   color: var(--text);
@@ -112,8 +118,8 @@ textarea {
 /* 全局兜底：原生 select 下拉选项必须可见（部分浏览器下拉菜单不继承 CSS 变量颜色） */
 select option,
 select optgroup {
-  background: #ffffff;
-  color: #1a1a18;
+  background: #0c1626;
+  color: #e9f6ff;
 }
 
 /* 输入框与可编辑区域内保留可见光标，便于输入定位 */
@@ -1517,7 +1523,7 @@ svg { display: block; }
   align-items: center;
   background: var(--accent);
   border-radius: 9px;
-  color: #ffffff;
+  color: var(--on-accent);
   display: flex;
   flex: 0 0 auto;
   font-size: var(--fs-xs);
@@ -1902,7 +1908,7 @@ svg { display: block; }
   background: var(--accent);
   border: 1px solid var(--accent);
   border-radius: 6px;
-  color: #fff;
+  color: var(--on-accent);
   cursor: pointer;
   font-size: var(--fs-sm);
   padding: 6px 16px;
@@ -2024,7 +2030,7 @@ svg { display: block; }
 
 .screener-profile-tab.is-active {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .screener-profile-tab__sub {
@@ -3499,9 +3505,9 @@ svg { display: block; }
   width: 6px;
 }
 
-.chart-legend .ma5::before { background: #3a5a78; }
-.chart-legend .ma20::before { background: #9a6a12; }
-.chart-legend .ma60::before { background: #7e7596; }
+.chart-legend .ma5::before { background: #36b3ff; }
+.chart-legend .ma20::before { background: #ffc24d; }
+.chart-legend .ma60::before { background: #b98cff; }
 .market-chart { cursor: crosshair; display: block; height: auto; margin-top: 8px; max-height: 300px; touch-action: pan-y; width: 100%; }
 .market-chart:focus-visible { border-radius: 8px; outline: 2px solid var(--accent); outline-offset: 3px; }
 .chart-axis { stroke: var(--line); stroke-width: 1; }
@@ -3510,9 +3516,9 @@ svg { display: block; }
 .volume-up { fill: color-mix(in srgb, var(--red) 28%, transparent); }
 .volume-down { fill: color-mix(in srgb, var(--green) 28%, transparent); }
 .ma-line { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; }
-.ma5-line { stroke: #3a5a78; }
-.ma20-line { stroke: #9a6a12; }
-.ma60-line { stroke: #7e7596; }
+.ma5-line { stroke: #36b3ff; }
+.ma20-line { stroke: #ffc24d; }
+.ma60-line { stroke: #b98cff; }
 .chart-crosshair { stroke: color-mix(in srgb, var(--text) 38%, transparent); stroke-dasharray: 4 4; stroke-width: 1; }
 .chart-crosshair-horizontal { stroke-dasharray: 3 3; }
 .chart-price-label rect { fill: var(--surface-inverse); stroke: color-mix(in srgb, var(--bg) 18%, transparent); }
@@ -4709,7 +4715,7 @@ svg { display: block; }
   transition: background .2s, color .2s;
 }
 .seg:hover { color: var(--text); }
-.seg.active { background: var(--accent); color: #fff; }
+.seg.active { background: var(--accent); color: var(--on-accent); }
 
 /* 出入金流水 */
 .flow-form {
@@ -4819,7 +4825,7 @@ svg { display: block; }
   align-items: center;
   background: var(--accent);
   border-radius: 9px;
-  color: #ffffff;
+  color: var(--on-accent);
   display: flex;
   font-size: var(--fs-base);
   font-weight: 800;
@@ -5741,7 +5747,7 @@ svg { display: block; }
 .badge--red { color: var(--up); background: var(--up-soft); border-color: var(--up-soft); }
 .badge--green { color: var(--down); background: var(--down-soft); border-color: var(--down-soft); }
 .badge--amber { color: var(--amber); background: var(--amber-soft); border-color: var(--amber-soft); }
-.badge--inverse { color: #fff; background: var(--text); border-color: var(--text); }
+.badge--inverse { color: var(--bg); background: var(--text); border-color: var(--text); }
 
 /* ---- Stat：统计块（统一“标签 + 数值 + 说明”三栏） ---- */
 .stat-grid {
@@ -6236,10 +6242,10 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
 
 .btn--primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   box-shadow: 0 1px 2px rgba(28, 45, 60, .12), 0 6px 16px -10px rgba(28, 45, 60, .45);
 }
-.btn--primary:hover { background: var(--accent-ink); }
+.btn--primary:hover { background: var(--accent-hover); }
 .btn--ghost {
   background: var(--surface-soft);
   border-color: var(--line-strong);
@@ -7431,9 +7437,10 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
 }
 
 /* ===== 大屏展示页（/screen）深色终端样式 =====
-   独立于亮色纸感令牌；仅作用于 .bigscreen 作用域，不影响现有界面 */
+   并入全局青蓝霓虹令牌（.bigscreen 作用域内复用 --bg-grad / --accent 等），
+   与全站暗色风格统一；具体卡片色由 BigScreenView 的 JS 常量引用同一套令牌 */
 .bigscreen {
-  background: #0a0f16;
+  background: var(--bg-grad);
 }
 .bigscreen .bigscreen-marquee {
   overflow: hidden;

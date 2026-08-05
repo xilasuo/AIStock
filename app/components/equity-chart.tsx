@@ -48,24 +48,24 @@ export function EquityCurveChart({ title, points, height = 220 }: EquityCurveCha
       width: container.clientWidth || 600,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
-        textColor: cssVar("--text-faint", "#a6a69d"),
+        textColor: cssVar("--text-faint", "#3f5668"),
         fontFamily: "inherit",
         attributionLogo: false,
       },
       grid: {
-        vertLines: { color: cssVar("--line", "#e8e8e1") },
-        horzLines: { color: cssVar("--line", "#e8e8e1") },
+        vertLines: { color: cssVar("--line", "rgba(120,200,255,.12)") },
+        horzLines: { color: cssVar("--line", "rgba(120,200,255,.12)") },
       },
-      rightPriceScale: { borderColor: cssVar("--line-strong", "#d8d8d0") },
-      timeScale: { borderColor: cssVar("--line-strong", "#d8d8d0"), timeVisible: false, secondsVisible: false },
+      rightPriceScale: { borderColor: cssVar("--line-strong", "rgba(120,200,255,.22)") },
+      timeScale: { borderColor: cssVar("--line-strong", "rgba(120,200,255,.22)"), timeVisible: false, secondsVisible: false },
       crosshair: { mode: 0 },
       handleScale: false,
       handleScroll: false,
     });
 
     const series = chart.addSeries(AreaSeries, {
-      lineColor: cssVar("--accent", "#3a5a78"),
-      topColor: cssVar("--accent-soft", "#eef0ec"),
+      lineColor: cssVar("--accent", "#00e5ff"),
+      topColor: cssVar("--accent-soft", "rgba(0,229,255,.12)"),
       bottomColor: "transparent",
       lineWidth: 2,
       priceFormat: {
