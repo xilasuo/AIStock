@@ -505,7 +505,7 @@ export function StockSearch({
   suggestions = [],
   submitLabel = "开始分析",
   loadingLabel = "正在获取数据…",
-  placeholder = "例如 600519、贵州茅台",
+  placeholder = "例如 600519、贵州茅台、gzmt",
   compact = false,
   className = "",
   inputRef,

@@ -1,4 +1,5 @@
 import A_STOCK_LIST from "../../db/seeds/a_stock_list";
+import A_STOCK_PINYIN from "../../db/seeds/a_stock_pinyin";
 import { USER_FUND_PROFILES } from "../../db/seeds/funds_user";
 import { getRealtime, getKlines, getProfile } from "../market/market-data";
 import { shanghaiIso } from "../utils/time";
@@ -152,8 +153,8 @@ export function resolveStockByName(name: string): { code: string; name: string }
 
 /**
  * 全市场联想搜索（纯本地，浏览器可用，无网络请求）。
- * 顺序：代码前缀命中 → 名称规范化包含命中；结果按代码前缀优先排序，limit 截断。
- * 供个股分析输入框联想使用：输入任意片段（代码/名称/简称）即可出候选。
+ * 顺序：代码前缀命中 → 名称规范化包含命中 → 拼音首字母前缀命中；按此优先级排序，limit 截断。
+ * 供个股分析输入框联想使用：输入任意片段（代码/名称/简称/拼音首字母）即可出候选。
  */
 export function searchLocalStocks(
   query: string,
@@ -162,10 +163,12 @@ export function searchLocalStocks(
   const clean = query.trim();
   if (!clean) return [];
   const norm = normalizeStockName(clean);
+  const lower = clean.toLowerCase();
   const entries = Object.entries(A_STOCK_LIST) as Array<[string, string]>;
 
   const codeHits: Array<{ code: string; name: string }> = [];
   const nameHits: Array<{ code: string; name: string }> = [];
+  const pinyinHits: Array<{ code: string; name: string }> = [];
   const seen = new Set<string>();
 
   for (const [code, name] of entries) {
@@ -181,8 +184,22 @@ export function searchLocalStocks(
       nameHits.push({ code, name });
     }
   }
+  // 拼音首字母前缀命中（如 gzmt → 贵州茅台；仅在输入为字母或 *（ST 股）时参与，
+  // 避免中文误匹配）。ST 股缩写以 * 开头（*ST美丽 → *stml），输入 stml 时去掉 * 容错。
+  if (/^[a-z*]+$/i.test(clean)) {
+    for (const [code, name] of entries) {
+      if (seen.has(code)) continue;
+      const abbr = A_STOCK_PINYIN[code];
+      if (!abbr) continue;
+      const noStar = abbr.replace(/\*/g, "");
+      if (abbr.startsWith(lower) || (noStar !== abbr && noStar.startsWith(lower))) {
+        seen.add(code);
+        pinyinHits.push({ code, name });
+      }
+    }
+  }
 
-  // 基金/ETF 名称也参与联想（如 513180 华夏恒生科技ETF）
+  // 基金/ETF 名称也参与联想（如 513180 华夏恒生科技ETF；无拼音表，仅代码/名称）
   for (const [code, fund] of Object.entries(FUND_PROFILES)) {
     if (seen.has(code)) continue;
     if (code.startsWith(clean) || normalizeStockName(fund.name).includes(norm)) {
@@ -190,7 +207,7 @@ export function searchLocalStocks(
     }
   }
 
-  return [...codeHits, ...nameHits].slice(0, limit);
+  return [...codeHits, ...nameHits, ...pinyinHits].slice(0, limit);
 }
 
 export function canonicalStockName(code: string, fallback: string = code): string {
