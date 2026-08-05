@@ -1812,6 +1812,7 @@ svg { display: block; }
 /* 列宽与对齐 */
 .scan-col--code { min-width: 80px; text-align: left; }
 .scan-col--name { min-width: 92px; text-align: left; }
+.scan-col--time { min-width: 108px; text-align: left; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .scan-col--sector { min-width: 96px; text-align: left; }
 .scan-col--num { min-width: 68px; text-align: right; }
 .scan-col--feedback { min-width: 104px; text-align: center; }

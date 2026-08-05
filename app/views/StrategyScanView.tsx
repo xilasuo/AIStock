@@ -40,6 +40,10 @@ export type ScanSelected = {
   sector?: string;
   /** 主力净流入占流通市值千分比（正值=主力净流入）；数据源未提供则缺失 */
   fundFlowPct?: number | null;
+  /** 选出时间：该股被选出的信号依据行情日（K 线最新 bar 日期，如 2026-08-04）；旧 payload 可能缺失 */
+  signalTime?: string;
+  /** 选出时间兜底：整批扫描生成时刻（YYYY-MM-DD HH:MM:SS） */
+  selectedAt?: string;
 };
 type ScanMetrics = {
   totalReturn: number;
@@ -119,6 +123,14 @@ const PROFILE_LABEL: Record<string, string> = {
 function pct(x: number | undefined | null): string {
   if (x == null || Number.isNaN(x)) return "—";
   return `${x >= 0 ? "+" : ""}${(x * 100).toFixed(2)}%`;
+}
+
+/** 选出时间展示：日线信号时点只有日期；整批扫描时刻带时分，统一截到分钟，避免秒级噪音 */
+function fmtSignalTime(raw: string | undefined): string {
+  if (!raw) return "—";
+  const s = raw.trim();
+  if (!s) return "—";
+  return s.length > 16 ? s.slice(0, 16) : s;
 }
 
 /**
@@ -569,6 +581,7 @@ export function StrategyScanView({
             <tr>
               <th className="scan-col--code">代码</th>
               <th className="scan-col--name">名称</th>
+              <th className="scan-col--time">选出时间</th>
               <th className="scan-col--sector">行业</th>
               <th className="scan-col--num">得分</th>
               <th className="scan-col--num">动量(20d)</th>
@@ -591,6 +604,9 @@ export function StrategyScanView({
               <tr key={s.code}>
                 <td className="scan-col--code">{s.code}</td>
                 <td className="scan-col--name">{s.name}</td>
+                <td className="scan-col--time" title="该股信号依据的最新行情日（旧数据回退为扫描生成时刻）">
+                  {fmtSignalTime(s.signalTime || s.selectedAt || scan.generatedAt)}
+                </td>
                 <td className="scan-col--sector">
                   <span className="scan-sector">{s.sector ?? "其他"}</span>
                 </td>

@@ -109,10 +109,14 @@ def run(cfg: config.AppConfig, dp=None) -> dict:
 
     base_bt = engine.backtest(code_klines, code_signals, cfg)
 
-    # 补充每只标的的信号条数（买入 + 卖出事件）
+    # 补充每只标的的信号条数（买入 + 卖出事件）与信号时点
+    # signal_time = 该股 K 线最新 bar 的日期（日线即信号依据的行情日；
+    # 盘后扫描=当日收盘，盘前/盘中=最新可用交易日）。供榜单展示「选出时间」。
     for r in selected:
         bs = code_signals.get(r["code"], (set(), set()))
         r["n_signals"] = len(bs[0]) + len(bs[1])
+        _bars = code_klines.get(r["code"]) or []
+        r["signal_time"] = _bars[-1].get("date") if _bars else ""
 
     result = {
         "meta": {

@@ -239,6 +239,11 @@ def write_scan_json(result: dict, cfg: config.AppConfig) -> str:
             "pb": float(r["pb"]),
             "turnover": float(r["turnover"]),
             "signals": int(r.get("n_signals", 0)),
+            # —— 选出时间：个股信号时点（K 线最新 bar 日期）+ 整批扫描时刻 ——
+            # signalTime: 该股被选出的信号依据行情日（盘后=当日，盘前/盘中=最新交易日）；
+            # selectedAt: 本次扫描生成的时刻（与顶层 generatedAt 一致）。
+            "signalTime": r.get("signal_time") or "",
+            "selectedAt": meta["generated_at"],
             # —— 新增因子维度（丰富选股策略）——
             "rsi": round(float(r.get("rsi", 0.0)), 2),
             "riskAdjMomentum": round(float(r.get("risk_adj_momentum", 0.0)), 4),
