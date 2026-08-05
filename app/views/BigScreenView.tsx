@@ -250,6 +250,15 @@ export function BigScreenView() {
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
   const [scan, setScan] = useState<ScanBrief | null>(null);
   const [sectors, setSectors] = useState<{ date: string; items: SectorMove[] } | null>(null);
+  /** 全市场涨跌分布（大盘宽度）：沪深两市全部 A 股，来源 /api/market-breadth。 */
+  const [marketBreadth, setMarketBreadth] = useState<{
+    up: number;
+    down: number;
+    flat: number;
+    limitUp: number;
+    limitDown: number;
+    total: number;
+  } | null>(null);
   const [now, setNow] = useState<Date | null>(null);
   const [error, setError] = useState("");
   const [refreshMs, setRefreshMs] = useState<number>(TRADING_OPEN_MS);
@@ -266,17 +275,26 @@ export function BigScreenView() {
     setLastLoadAt(Date.now());
     setRefreshMs(marketRefreshMs(new Date()));
     try {
-      const [tradeData, watchData, accountData, indexData] = await Promise.all([
+      const [tradeData, watchData, accountData, indexData, breadthData] = await Promise.all([
         jsonRequest<{ trades: Trade[] }>("/api/trades"),
         jsonRequest<{ items: WatchItem[] }>("/api/watchlist"),
         jsonRequest<{ initialCapitalCents: number | null; capitalFlows: CapitalFlow[] }>("/api/account"),
         jsonRequest<{ indices: MarketIndex[] }>("/api/indices"),
+        jsonRequest<{
+          up: number;
+          down: number;
+          flat: number;
+          limitUp: number;
+          limitDown: number;
+          total: number;
+        }>("/api/market-breadth").catch(() => null),
       ]);
       setTrades(tradeData.trades);
       setWatchlist(watchData.items);
       setInitialCapitalCents(accountData.initialCapitalCents);
       setCapitalFlows(accountData.capitalFlows ?? []);
       setIndices(indexData.indices ?? []);
+      if (breadthData) setMarketBreadth(breadthData);
       const symbols = [
         ...new Set([
           ...tradeData.trades.map((t) => t.symbol),
@@ -552,22 +570,6 @@ export function BigScreenView() {
     [trades],
   );
 
-  /** 涨跌分布：统计监控池（自选 + 持仓）中上涨/平盘/下跌家数，零额外请求。 */
-  const breadth = useMemo(() => {
-    let up = 0;
-    let down = 0;
-    let flat = 0;
-    for (const item of marqueeSymbols) {
-      const cp = item.quote?.changePercent;
-      if (cp == null) continue;
-      if (cp > 0) up += 1;
-      else if (cp < 0) down += 1;
-      else flat += 1;
-    }
-    const total = up + down + flat || 1;
-    return { up, down, flat, total };
-  }, [marqueeSymbols]);
-
   /** 交易时段：盘前/开盘中/午间休市/已收盘/周末，驱动头部状态标签。 */
   const sessionLabel = useMemo(() => {
     if (!now) return "";
@@ -784,18 +786,6 @@ export function BigScreenView() {
           )}
         </div>
 
-        <div className="bs-breadth" style={{ marginBottom: 12 }}>
-          <span className="bs-breadth-label">涨跌分布</span>
-          <div className="bs-breadth-bar">
-            <div className="bs-breadth-seg up" style={{ width: `${(breadth.up / breadth.total) * 100}%` }} />
-            <div className="bs-breadth-seg flat" style={{ width: `${(breadth.flat / breadth.total) * 100}%` }} />
-            <div className="bs-breadth-seg down" style={{ width: `${(breadth.down / breadth.total) * 100}%` }} />
-          </div>
-          <span><b className="up">{breadth.up}</b> 涨</span>
-          <span>{breadth.flat} 平</span>
-          <span><b className="down">{breadth.down}</b> 跌</span>
-        </div>
-
         <main style={{ display: "grid", gridTemplateColumns: "minmax(230px, 290px) minmax(0, 1fr) minmax(270px, 330px) minmax(250px, 310px)", gap: 14, flex: 1, minHeight: 0 }}>
           <section style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
             <div className="interactive bs-panel" style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 18px" }}>
@@ -872,6 +862,22 @@ export function BigScreenView() {
                   </span>
                 </div>
               ))}
+              {marketBreadth && marketBreadth.total > 0 && (
+                <div className="bs-breadth-compact">
+                  <div className="bs-breadth-mini-bar">
+                    <span className="up" style={{ width: `${(marketBreadth.up / marketBreadth.total) * 100}%` }} />
+                    <span className="flat" style={{ width: `${(marketBreadth.flat / marketBreadth.total) * 100}%` }} />
+                    <span className="down" style={{ width: `${(marketBreadth.down / marketBreadth.total) * 100}%` }} />
+                  </div>
+                  <div className="bs-breadth-mini-stats">
+                    <span><b className="up">{marketBreadth.up}</b> 涨</span>
+                    <span>{marketBreadth.flat} 平</span>
+                    <span><b className="down">{marketBreadth.down}</b> 跌</span>
+                    <span className="limit">↑{marketBreadth.limitUp}</span>
+                    <span className="limit">↓{marketBreadth.limitDown}</span>
+                  </div>
+                </div>
+              )}
             </div>
           </section>
 

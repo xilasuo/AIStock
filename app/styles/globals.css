@@ -1249,6 +1249,35 @@ svg { display: block; }
 }
 .market-indices-foot a { color: var(--accent-ink); }
 
+/* 全市场涨跌分布：首页通栏第三卡（全宽），红涨绿跌 + 平盘中性灰 */
+.market-breadth-card { padding: 22px; }
+.home-market .market-breadth-card { grid-column: 1 / -1; margin: 0; }
+.breadth-bar {
+  display: flex;
+  height: 12px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface-strong);
+  border: 0.5px solid var(--border);
+  margin: 16px 0 14px;
+}
+.breadth-seg { height: 100%; transition: width .5s var(--ease-standard); }
+.breadth-seg.up { background: linear-gradient(90deg, #ff6b8a, var(--red)); }
+.breadth-seg.flat { background: #4a5663; }
+.breadth-seg.down { background: linear-gradient(90deg, #21e6a4, var(--green)); }
+.breadth-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.breadth-stat { display: flex; flex-direction: column; gap: 2px; }
+.breadth-num { font-size: var(--fs-xl); font-weight: 800; font-family: var(--font-mono); line-height: 1.1; }
+.breadth-label { font-size: var(--fs-2xs); color: var(--muted); }
+.breadth-stat.up .breadth-num { color: var(--red); }
+.breadth-stat.down .breadth-num { color: var(--green); }
+.breadth-stat.flat .breadth-num { color: var(--text-soft); }
+.breadth-stat.limit .breadth-num { color: var(--text); }
+
 /* 首页主次两栏：主列放核心（概览/持仓/盈亏/复盘 + 大盘行情通栏），次列放任务（提醒/复盘） */
 .home-cols {
   display: grid;
@@ -7566,32 +7595,35 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
   -webkit-text-fill-color: transparent;
 }
 
-/* 涨跌家数分布条（监控池：自选 + 持仓） */
-.bs-breadth {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--muted);
+/* 全市场涨跌分布（紧凑版，置于大屏「大盘指数」卡片底部，不占独立顶条） */
+.bs-breadth-compact {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 0.5px solid var(--border);
 }
-.bs-breadth-label { flex-shrink: 0; letter-spacing: 1px; }
-.bs-breadth-bar {
-  flex: 1;
-  height: 10px;
+.bs-breadth-mini-bar {
+  display: flex;
+  height: 6px;
   border-radius: 999px;
   overflow: hidden;
-  display: flex;
-  background: var(--surface-strong);
-  border: 0.5px solid var(--border);
+  background: rgba(255, 255, 255, .06);
 }
-.bs-breadth-seg { height: 100%; transition: width .5s var(--ease-standard); }
-.bs-breadth-seg.up { background: linear-gradient(90deg, #ff6b8a, #ff4d6d); }
-.bs-breadth-seg.flat { background: #4a5663; }
-.bs-breadth-seg.down { background: linear-gradient(90deg, #21e6a4, #15c98f); }
-.bs-breadth b.up { color: var(--up); }
-.bs-breadth b.down { color: var(--down); }
-.bs-breadth b { font-weight: 600; }
+.bs-breadth-mini-bar span { height: 100%; transition: width .5s var(--ease-standard); }
+.bs-breadth-mini-bar span.up { background: linear-gradient(90deg, #ff6b8a, var(--up)); }
+.bs-breadth-mini-bar span.flat { background: #4a5663; }
+.bs-breadth-mini-bar span.down { background: linear-gradient(90deg, #21e6a4, var(--down)); }
+.bs-breadth-mini-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 7px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.bs-breadth-mini-stats b.up { color: var(--up); }
+.bs-breadth-mini-stats b.down { color: var(--down); }
+.bs-breadth-mini-stats .limit { color: var(--text-soft); }
 
 /* 隐身模式（老板键 Esc）：整屏降饱和 + 压暗，红绿近乎不可辨，像普通后台系统 */
 html.stealth .bigscreen {
