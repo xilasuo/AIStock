@@ -169,7 +169,11 @@ def run(cfg: config.AppConfig, dp=None) -> dict:
         final_signal = cfg.signal
 
     # 统计最终信号总条数（买入 + 卖出事件）
-    final_signals = {c: signals.generate_signals(code_klines[c], final_signal) for c in selected_codes}
+    if final_signal is cfg.signal:
+        # 未启用优化（或优化未改变信号参数）时，直接复用基准信号结果，避免重复计算
+        final_signals = code_signals
+    else:
+        final_signals = {c: signals.generate_signals(code_klines[c], final_signal) for c in selected_codes}
     n_signals_total = sum(len(s[0]) + len(s[1]) for s in final_signals.values())
 
     result["final"] = {

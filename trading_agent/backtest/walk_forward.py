@@ -17,8 +17,17 @@
 - 等权分配：现金按当前持仓票数平均分配，单票风险受控（默认最大并行持仓
   cfg.signal.max_positions）。
 - 若市场状态为熊市（position_factor=0），当期空仓；中性则降权建仓。
+
+**性能约定（2026-08-05 优化，结果逐位一致）**
+- 预构建 code -> 升序日期索引，`_slice_klines_by_date` 与 `_price` 用 bisect
+  （原为逐根过滤 / 反向线性扫描）。
+- 用 `screener.passes_hard_filters` 对候选池做一次 quote 静态预过滤
+  （quote 不随时间变化，每期 screen 的过滤结果相同，预过滤是严格等效的），
+  避免每期对无效票重复计算因子。
 """
 from __future__ import annotations
+
+import bisect
 
 import config
 from data.provider import StaticProvider
@@ -26,29 +35,66 @@ from strategy import screener, market_state
 from . import metrics
 
 
-def _slice_klines_by_date(full_klines: dict[str, list[dict]], up_to: str) -> dict[str, list[dict]]:
-    """把每只标的的 kline 截取到 date <= up_to（含当日），用于「截至当日」决策。"""
+def _build_date_index(full_klines: dict[str, list[dict]]) -> dict[str, list[str]]:
+    """code -> 每根 bar 的日期列表（与 bars 同序，升序），供 bisect 二分。"""
+    return {c: [b.get("date", "") for b in bars] for c, bars in full_klines.items()}
+
+
+def _slice_klines_by_date(
+    full_klines: dict[str, list[dict]],
+    date_index: dict[str, list[str]],
+    up_to: str,
+) -> dict[str, list[dict]]:
+    """把每只标的的 kline 截取到 date <= up_to（含当日），用于「截至当日」决策。
+
+    旧实现为逐根过滤；bars 按日期升序时 bisect_right 的结果与之一致。
+    """
     out = {}
     for code, bars in full_klines.items():
-        out[code] = [b for b in bars if b.get("date", "") <= up_to]
+        idx = bisect.bisect_right(date_index[code], up_to)
+        out[code] = bars[:idx]
     return out
 
 
-def _rebuild_provider(full_klines, full_quotes, up_to: str) -> StaticProvider:
+def _rebuild_provider(
+    full_klines: dict[str, list[dict]],
+    date_index: dict[str, list[str]],
+    full_quotes: dict[str, dict],
+    up_to: str,
+) -> StaticProvider:
     """构造「截至 up_to」的 StaticProvider，注入选股所需的数据（无未来信息）。"""
-    sliced_k = _slice_klines_by_date(full_klines, up_to)
+    sliced_k = _slice_klines_by_date(full_klines, date_index, up_to)
     return StaticProvider(klines=sliced_k, quotes=full_quotes, hot=[])
 
 
-def _price(bars, d, kind="open"):
-    """取某标的截至日期 d 的价格（open/close/low）。"""
-    for b in reversed(bars):
-        if b.get("date", "") <= d:
-            v = b.get(kind)
-            if v is None:
-                v = b.get("close", 0)
-            return float(v or 0)
-    return 0.0
+def _price_lookup(full_klines: dict[str, list[dict]]) -> dict[str, tuple[list[str], list[dict]]]:
+    """code -> (升序日期列表, bars)，供 _price 用 bisect 取「<= 日期 d」的 bar。"""
+    return {
+        c: ([b.get("date", "") for b in bars], bars)
+        for c, bars in full_klines.items()
+    }
+
+
+def _price(lookup: dict[str, tuple[list[str], list[dict]]], code: str, d: str, kind="open") -> float:
+    """取某标的截至日期 d 的价格（open/close/low）；无可用 bar 返回 0.0。"""
+    dates, bars = lookup[code]
+    idx = bisect.bisect_right(dates, d)
+    if idx == 0:
+        return 0.0
+    b = bars[idx - 1]
+    v = b.get(kind)
+    if v is None:
+        v = b.get("close", 0)
+    return float(v or 0)
+
+
+def _prefilter_codes(cfg: config.AppConfig, codes: list[str], full_quotes: dict[str, dict]) -> list[str]:
+    """quote 静态硬过滤：turnover/PE/PB/板块/ST/流通市值。
+
+    quote 快照不随时间变化，walk_forward 每期 screen() 的过滤结果相同，
+    因此提前裁剪候选池是**严格等效**的优化（screen 内部仍会按同一规则再过滤）。
+    """
+    return [c for c in codes if screener.passes_hard_filters(cfg, full_quotes.get(c) or {}, c)]
 
 
 def walk_forward(
@@ -71,6 +117,11 @@ def walk_forward(
     if len(timeline) < cfg.signal.slow_ma + 5:
         return _empty_result(cfg, len(codes))
 
+    # 预构建索引（一次），供切片/取价二分；候选池按 quote 静态硬过滤裁剪一次
+    date_index = _build_date_index(full_klines)
+    price_lk = _price_lookup(full_klines)
+    screen_codes = _prefilter_codes(cfg, codes, full_quotes)
+
     # 再平衡周期（按交易日数量，默认 20 个交易日约一个月）
     rebalance_every = getattr(cfg.backtest, "rebalance_days", 20)
 
@@ -81,22 +132,23 @@ def walk_forward(
     total_trades = 0
     total_wins = 0
     position_log: list[dict] = []  # 每再平衡期记录 {date, weights: {code: 占净值比例}}
+    # 与旧实现一致：market 未启用时保持 neutral（不判熊，仓位系数 1.0）
+    regime = {"state": "neutral", "position_factor": 1.0}
 
     rebalance_idx = 0  # 下一次再平衡所在 timeline 下标
     for i, d in enumerate(timeline):
         # —— 到再平衡日：平旧仓、重选票、建新仓 ——
         if i == rebalance_idx:
-            up_to_d = _slice_klines_by_date(full_klines, d)
+            up_to_d = _slice_klines_by_date(full_klines, date_index, d)
             # 判断截至当日的市场状态（决定当期仓位系数）
             mk = up_to_d.get(cfg.market.index_code) or []
-            regime = {"state": "neutral", "position_factor": 1.0}
             if cfg.market.enable:
                 rg = market_state.detect_regime(cfg, mk)
                 regime = {"state": rg["state"], "position_factor": rg["position_factor"]}
 
             # 先平掉上期持仓（按当日开盘价）
             for code in list(positions.keys()):
-                px = _price(full_klines.get(code, []), d)
+                px = _price(price_lk, code, d)
                 pos = positions.pop(code)
                 cash += pos["shares"] * px
                 total_trades += 1
@@ -107,8 +159,8 @@ def walk_forward(
             # 若市场允许建仓（非熊市），重选票并按风险预算分配现金
             eff_top_n = max(0, int(round(cfg.screener.top_n * regime["position_factor"])))
             if eff_top_n > 0:
-                dp = _rebuild_provider(full_klines, full_quotes, d)
-                screen_out = screener.screen(cfg, codes, dp, top_n_override=eff_top_n)
+                dp = _rebuild_provider(full_klines, date_index, full_quotes, d)
+                screen_out = screener.screen(cfg, screen_codes, dp, top_n_override=eff_top_n)
                 selected = screen_out["rows"][: cfg.signal.max_positions]
                 if selected:
                     cost = cfg.backtest.fee_rate + cfg.backtest.slippage
@@ -122,7 +174,7 @@ def walk_forward(
                     alloc = min(cash / len(selected), cash * max_w, risk_cap)
                     for r in selected:
                         code = r["code"]
-                        px = _price(full_klines.get(code, []), d)
+                        px = _price(price_lk, code, d)
                         if px <= 0:
                             continue
                         shares = alloc * (1 - cost) / px
@@ -130,13 +182,13 @@ def walk_forward(
                         positions[code] = {"shares": shares, "entry": px}
                     # 记录当期建仓权重（占净值比例），供风控审计/测试断言
                     equity_now = cash + sum(
-                        pos["shares"] * _price(full_klines.get(cd, []), d)
+                        pos["shares"] * _price(price_lk, cd, d)
                         for cd, pos in positions.items()
                     )
                     position_log.append({
                         "date": d,
                         "weights": {
-                            cd: round(pos["shares"] * _price(full_klines.get(cd, []), d) / equity_now, 4)
+                            cd: round(pos["shares"] * _price(price_lk, cd, d) / equity_now, 4)
                             for cd, pos in positions.items()
                         },
                     })
@@ -147,8 +199,7 @@ def walk_forward(
         # —— 日间：逐日检查持仓止损（盘中最低价触发）——
         for code in list(positions.keys()):
             pos = positions[code]
-            bars = full_klines.get(code, [])
-            low = _price(bars, d, "low")
+            low = _price(price_lk, code, d, "low")
             entry = pos["entry"]
             stop = cfg.signal.stop_loss_pct
             if low <= entry * (1 + stop):
@@ -162,7 +213,7 @@ def walk_forward(
         # —— 日末：组合市值 ——
         mv = cash
         for code, pos in positions.items():
-            px = _price(full_klines.get(code, []), d)
+            px = _price(price_lk, code, d)
             mv += pos["shares"] * px
         equity_curve.append(mv)
         curve_dates.append(d)

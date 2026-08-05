@@ -59,6 +59,41 @@ def _guess_board(code: str, name: str) -> str:
     return "main"
 
 
+def passes_hard_filters(cfg: config.AppConfig, quote: dict, code: str) -> bool:
+    """硬性过滤：流动性 / 估值 / 板块 / ST / 流通市值。
+
+    与 screen() 内部使用的过滤条件**完全一致**（同一份规则），
+    供 backtest/walk_forward.py 预先裁剪候选池复用，避免规则漂移。
+    任何字段缺失时按旧行为处理（or 0 → 通常被过滤，与 screen 一致）。
+    """
+    sc = cfg.screener
+    turnover = quote.get("turnover_pct") or 0
+    if turnover < sc.min_turnover_pct:
+        return False
+    pe = quote.get("pe_ttm") or 0
+    if pe <= 0 or pe > sc.max_pe_ttm:
+        return False
+    pb = quote.get("pb") or 0
+    if pb <= 0 or pb > sc.max_pb:
+        return False
+
+    name = quote.get("name") or code
+    _board = _guess_board(code, name)
+    if sc.boards and _board not in sc.boards:
+        return False
+    is_st = "ST" in name.upper() or "*" in name or "退" in name
+    if sc.st_filter == "exclude_st" and is_st:
+        return False
+    if sc.st_filter in ("only_st", "include_st") and not is_st:
+        return False
+    mcap_yi = quote.get("mcap_yi") or 0.0
+    if sc.mcap_min > 0 and mcap_yi < sc.mcap_min:
+        return False
+    if sc.mcap_max > 0 and mcap_yi > sc.mcap_max:
+        return False
+    return True
+
+
 def _robust_normalize(vals: list[float]) -> list[float]:
     """稳健 z-score（截断 ±3σ）后 min-max 到 [0,1]。
 
@@ -173,17 +208,22 @@ def screen(cfg: config.AppConfig, codes: list[str], dp=None, top_n_override: int
     rows: list[dict] = []
 
     for code in codes:
+        # 硬性过滤优先（quote 独立于 K 线）：不满足的票直接跳过，
+        # 省去无效票的 K 线拉取/拷贝与长度检查。过滤条件与旧实现逐条一致。
+        try:
+            quote = dp.fetch_quote(code)
+        except Exception:
+            continue
+        if not quote or not passes_hard_filters(cfg, quote, code):
+            continue
+
         try:
             kline = dp.fetch_kline(code, cfg.beg, cfg.end)
-            quote = dp.fetch_quote(code)
         except Exception:
             continue
         if not kline or len(kline) < sc.momentum_window + 2:
             continue
 
-        pe = quote.get("pe_ttm") or 0
-        pb = quote.get("pb") or 0
-        turnover = quote.get("turnover_pct") or 0
         # 资金流：主力净流入（元）。若数据源提供了才纳入；与流通市值归一化后作为因子
         fund_flow_raw = quote.get("fund_flow")  # 主力净流入额（元），可能为 None
         float_mcap_yi = quote.get("float_mcap_yi") or 0.0
@@ -194,33 +234,15 @@ def screen(cfg: config.AppConfig, codes: list[str], dp=None, top_n_override: int
                 fund_flow_pct = (float(fund_flow_raw) / (float_mcap_yi * 1e8)) * 1000.0
             except (TypeError, ValueError):
                 fund_flow_pct = None
-        # 硬性过滤：流动性差 / 估值过高 / 估值无效
-        if turnover < sc.min_turnover_pct:
-            continue
-        if pe <= 0 or pe > sc.max_pe_ttm:
-            continue
-        if pb <= 0 or pb > sc.max_pb:
-            continue
 
-        # 前置条件过滤：板块 / ST / 流通市值
+        # 前置条件过滤依赖的展示字段（板块 / ST / 流通市值）已在
+        # passes_hard_filters 中判定；此处仅保留展示所需变量。
         name = quote.get("name") or code
-        # 板块过滤（基于代码前缀或名称）
-        _board = _guess_board(code, name)
-        if sc.boards and _board not in sc.boards:
-            continue
-        # ST 过滤
-        is_st = "ST" in name.upper() or "*" in name or "退" in name
-        if sc.st_filter == "exclude_st" and is_st:
-            continue
-        # 兼容文档约定的 "include_st" 与代码旧名 "only_st"（二者均表示「仅选 ST」）
-        if sc.st_filter in ("only_st", "include_st") and not is_st:
-            continue
-        # 流通市值过滤（亿元）
         mcap_yi = quote.get("mcap_yi") or 0.0
-        if sc.mcap_min > 0 and mcap_yi < sc.mcap_min:
-            continue
-        if sc.mcap_max > 0 and mcap_yi > sc.mcap_max:
-            continue
+        # 硬过滤已保证 pe>0、pb>0、turnover>=min，此处取值供因子与展示使用
+        pe = quote.get("pe_ttm") or 0
+        pb = quote.get("pb") or 0
+        turnover = quote.get("turnover_pct") or 0
 
         closes = [float(b["close"]) for b in kline if b.get("close") is not None]
         if len(closes) < sc.momentum_window + 2:

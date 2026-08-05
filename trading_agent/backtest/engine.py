@@ -98,18 +98,23 @@ def backtest(code_klines: dict, code_signals: dict, cfg: config.AppConfig) -> di
     common = sorted(all_dates)
     n_codes = len(per_code) or 1
     portfolio = []
+    # 游标法聚合：每只票维护已消费的日期下标（dates 升序），随 common 单调前进，
+    # 每 (票, 日) 摊还 O(1)，消除旧实现「每日期对每票线性扫描 earlier」的 O(D×N×B)。
+    cursors = {c: 0 for c in per_code}
     for d in common:
         vals = []
-        for c in per_code.values():
-            v = c["d2e"].get(d)
-            if v is None:
-                earlier = [x for x in c["dates"] if x <= d]
-                if earlier:
-                    v = c["d2e"].get(max(earlier))
-                else:
-                    # d 早于该标的首个交易日（次新股等）：沿用起始净值（carry-forward）
-                    v = c["equity"][0] if c["equity"] else 0.0
-            vals.append(v)
+        for c, rec in per_code.items():
+            dates = rec["dates"]
+            ci = cursors[c]
+            while ci < len(dates) and dates[ci] <= d:
+                ci += 1
+            cursors[c] = ci
+            if ci > 0:
+                # 最近「<= d」的日期（carry-forward：沿用上一已知净值）
+                vals.append(rec["d2e"][dates[ci - 1]])
+            else:
+                # d 早于该标的首个交易日（次新股等）：沿用起始净值（carry-forward）
+                vals.append(rec["equity"][0] if rec["equity"] else 0.0)
         portfolio.append(sum(vals) / n_codes)
 
     m = metrics.compute_metrics(portfolio, cfg)
