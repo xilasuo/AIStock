@@ -5,6 +5,7 @@ import { findInvalidSell } from "../../../lib/domain/domain";
 import { buildMaxLossAlerts, extractMaxLossPercent, type MaxLossAlert, parseBrokerCsv, prepareTradeInput } from "../../../lib/domain/trade-import";
 import { getCurrentUser, requireApiUser } from "../../../lib/auth/auth";
 import { shanghaiIso } from "../../../lib/utils/time";
+import { estimateTradeFeeCents, fetchPreferences } from "../../../lib/utils/preferences";
 
 type ImportError = { line: number; symbol: string; reason: string };
 
@@ -26,6 +27,7 @@ export async function POST(request: Request) {
 
     await ensureSchema();
     const db = getDb();
+    const prefs = await fetchPreferences(db, user.id);
     const existingTrades = await db.select().from(tradeRecords).where(eq(tradeRecords.userId, user.id));
     let nextId = existingTrades.reduce((largest, trade) => Math.max(largest, trade.id), 0) + 1;
     const running = [...existingTrades];
@@ -36,6 +38,10 @@ export async function POST(request: Request) {
     const alertInserts: Array<typeof alertRules.$inferInsert> = [];
     for (const row of ordered) {
       const maxLoss = extractMaxLossPercent(row.reason);
+      // 交割单自带实际费用则原样保留；缺费用列(fee=0)时按「交易费用」设置自动补算，避免漏记成 0
+      const feeYuan = row.fee > 0
+        ? row.fee
+        : estimateTradeFeeCents(row.price * row.quantity, row.side, prefs) / 100;
       const prepared = prepareTradeInput({
         symbol: row.symbol,
         name: row.name,
@@ -43,7 +49,7 @@ export async function POST(request: Request) {
         price: row.price,
         quantity: row.quantity,
         tradeDate: row.tradeDate,
-        fee: row.fee,
+        fee: feeYuan,
         reason: row.reason,
         maxLoss: maxLoss === null ? undefined : maxLoss,
       });

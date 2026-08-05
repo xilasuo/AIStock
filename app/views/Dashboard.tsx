@@ -77,7 +77,7 @@ import {
 } from "../../lib/domain/domain";
 import type { SectorHeatmap as SectorHeatmapData } from "../../lib/market/sectors";
 import { calculatePortfolioInsights, type PortfolioInsights } from "../../lib/domain/portfolio-insights";
-import { calculateBuySummary, calculateTradeStatistics } from "../../lib/domain/trade-statistics";
+import { calculateBuySummary, calculateTradeStatistics, buildEarlyProfile } from "../../lib/domain/trade-statistics";
 import { TAKE_PROFIT_1_R, TAKE_PROFIT_2_R } from "../../lib/domain/trade-import";
 import { baseCloseSince, resolveStock, resolveStockByName, searchLocalStocks, type Oscillators } from "../../lib/domain/stocks";
 import {
@@ -91,7 +91,7 @@ import {
 } from "../../lib/utils/preferences";
 import type { AssistantContext } from "../../lib/ai/assistant";
 import { splitAssistantSections, conclusionTone } from "../../lib/ai/assistant";
-import { formatDateShanghai, formatDateTimeShanghai, shanghaiIso } from "../../lib/utils/time";
+import { formatDateTimeShanghai, shanghaiIso } from "../../lib/utils/time";
 import { readCache, writeCache, removeCache, removeCacheByPrefix, readKeyedCacheWithMeta, writeKeyedCache } from "../../lib/utils/client-cache";
 
 type View = "home" | "watchlist" | "trades" | "settings" | "analytics" | "analysis" | "scan" | "writeback";
@@ -1064,6 +1064,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 pendingReviews={pendingReviews}
                 trades={trades}
                 reviews={reviews}
+                prefs={preferences ?? DEFAULT_PREFERENCES}
                 onBuy={() => setTradeMode("buy")}
                 onNavigate={navigate}
                 onReview={setReviewCycleEndTradeId}
@@ -1528,7 +1529,7 @@ function StockAnalysisPanel({
 
 function Home({
   portfolio, portfolioInsights, quotes, alerts, pendingReviews,
-  trades, reviews, onBuy, onNavigate,
+  trades, reviews, prefs, onBuy, onNavigate,
   onReview, onAlertPlan, onAcknowledge, onCapitalSettings,
 }: {
   portfolio: ReturnType<typeof calculatePortfolio>;
@@ -1538,6 +1539,8 @@ function Home({
   pendingReviews: TradeCycle[];
   trades: Trade[];
   reviews: Review[];
+  /** 风险偏好与交易费用设置（初判卡片的集中度/费率阈值） */
+  prefs?: TradingPreferences;
   onBuy: () => void;
   onNavigate: (view: View) => void;
   onReview: (cycleEndTradeId: number) => void;
@@ -1595,13 +1598,16 @@ function Home({
               </div>
 
               {!!trades.length && (
-                <BehaviorCoach
-                  trades={trades}
-                  completedCycles={completedCycles}
-                  reviews={reviews}
-                  pendingReviews={pendingReviews}
-                  onReview={onReview}
-                />
+                <>
+                  <EarlyInsights trades={trades} portfolioInsights={portfolioInsights} prefs={prefs ?? DEFAULT_PREFERENCES} />
+                  <BehaviorCoach
+                    trades={trades}
+                    completedCycles={completedCycles}
+                    reviews={reviews}
+                    pendingReviews={pendingReviews}
+                    onReview={onReview}
+                  />
+                </>
               )}
 
               {/* 大盘行情：指数 + 板块热力，占通栏两列，宽度充足更易读 */}
@@ -1797,6 +1803,47 @@ function BeginnerStart({ onBuy }: { onBuy: () => void }) {
           <p>示例只展示复盘方法，不代表任何真实股票或收益。</p>
         </div>
       )}
+    </section>
+  );
+}
+
+/**
+ * 「交易画像 · 初判」：录入 3 笔买入即可生成的早期洞察卡片。
+ * 让新用户在等不到清仓周期之前，立刻看到记录的价值；
+ * 有足够已清仓周期后，BehaviorCoach 会接棒展示完整画像。
+ */
+function EarlyInsights({
+  trades,
+  portfolioInsights,
+  prefs,
+}: {
+  trades: Trade[];
+  portfolioInsights: PortfolioInsights;
+  prefs: TradingPreferences;
+}) {
+  const buyTrades = trades.filter((trade) => trade.side === "买入");
+  const completedCycles = buildTradeCycles(trades).filter((cycle) => cycle.endTradeId !== null).length;
+  // 只在前 3 笔起、且完整画像（已清仓周期）还不多时展示，避免与 BehaviorCoach 长期重复
+  if (buyTrades.length < 3 || completedCycles >= 3) return null;
+  const items = buildEarlyProfile(buyTrades, portfolioInsights.totalAssetsCents, prefs);
+  if (!items.length) return null;
+
+  return (
+    <section className="panel early-insights">
+      <SectionHeader
+        layout="stack"
+        eyebrow="你的记录正在说话"
+        title="交易画像 · 初判"
+        subtitle={`基于你最近 ${buyTrades.length} 笔买入——样本还少，先看趋势；继续记录会越画越准。`}
+      />
+      <div className="early-insights__grid">
+        {items.map((item) => (
+          <div key={item.key} className={`early-item early-item--${item.verdict}`}>
+            <span className="early-item__label">{item.label}</span>
+            <p>{item.text}</p>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
@@ -5107,15 +5154,30 @@ function TradeModal({ mode, stock, editTrade, positions, analysisQuote, livePric
             <Field label="数量（股）"><Input ref={qtyRef} name="quantity" type="number" min="1" step="1" defaultValue={defaultQuantity} required onChange={recalcFee} /></Field>
             <Field label="交易日期"><Input name="tradeDate" type="date" defaultValue={defaultTradeDate} max={localIsoDate()} required /></Field>
             <Field
-              label="总费用（可选）"
+              label="总费用"
               help={(() => {
                 const rate = (prefs?.commissionRateTenThousandths ?? DEFAULT_FEE_SETTINGS.commissionRateTenThousandths);
                 const minYuan = ((prefs?.minCommissionCents ?? DEFAULT_FEE_SETTINGS.minCommissionCents) / 100).toFixed(0);
                 const feeDesc = `${rate} 万 · 最低 ${minYuan} 元${(prefs?.minCommissionCents ?? 0) === 0 ? "（免5）" : ""}${mode === "sell" ? " · 卖出含印花税 0.05%" : ""}`;
-                return `按「${feeDesc}」自动估算，可修改；不确定就用交割单导入，自动带出实际费用。`;
+                return `按「${feeDesc}」自动估算；留空或为 0 保存时会按此设置自动补算，不会漏记。实际费用可直接填，或交割单导入自动带出。`;
               })()}
             >
-              <Input name="fee" type="number" min="0" step="0.01" value={feeValue} onChange={(event) => { setFeeValue(event.target.value); setFeeTouched(true); }} placeholder="自动估算" />
+              <Input name="fee" type="number" min="0" step="0.01" value={feeValue} onChange={(event) => {
+                const value = event.target.value;
+                setFeeValue(value);
+                if (value === "") {
+                  // 清空后立即按设置重新估算，避免保存成 0
+                  setFeeTouched(false);
+                  const p = Number(priceRef.current?.value);
+                  const q = Number(qtyRef.current?.value);
+                  if (Number.isFinite(p) && p > 0 && Number.isFinite(q) && q > 0) {
+                    const cents = estimateTradeFeeCents(p * q, mode === "sell" ? "卖出" : "买入", prefs ?? DEFAULT_PREFERENCES);
+                    setFeeValue((cents / 100).toFixed(2));
+                  }
+                } else {
+                  setFeeTouched(true);
+                }
+              }} placeholder="自动估算" />
             </Field>
             {mode === "buy" && (
               <details className="risk-settings" open={isEdit}>

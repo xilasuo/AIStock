@@ -7401,3 +7401,31 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
 .source-status i.is-warn {
   background: var(--danger);
 }
+
+/* 交易画像·初判卡片（录入 3 笔买入即显形的早期洞察） */
+.early-insights__grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+.early-item {
+  border-left: 3px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.early-item--good { border-left-color: var(--down, #0a9d6e); background: color-mix(in srgb, var(--down, #0a9d6e) 6%, transparent); }
+.early-item--info { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.early-item--warn { border-left-color: var(--danger); background: color-mix(in srgb, var(--danger) 6%, transparent); }
+.early-item__label {
+  color: var(--text-muted);
+  display: block;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.early-item p {
+  color: var(--text);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  margin: 0;
+}

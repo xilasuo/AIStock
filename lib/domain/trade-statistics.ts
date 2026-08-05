@@ -10,6 +10,93 @@
  * 对标：TraderVue / Edgewonk 的绩效面板。
  */
 import { buildTradeCycles, calculatePortfolio, type CapitalFlow, type Trade } from "./domain";
+import type { TradingPreferences } from "../utils/preferences";
+
+/** 初判卡片单项：verdict 决定卡片颜色（good=绿/info=蓝/warn=红） */
+export type EarlyProfileItem = {
+  key: string;
+  label: string;
+  verdict: "good" | "info" | "warn";
+  text: string;
+};
+
+/** 情绪驱动买入（与 Dashboard buyReasons 文案一致），初判中单独归为一类 */
+const EMOTIONAL_BUY_REASONS = new Set(["怕踏空追涨", "冲动买入"]);
+
+/** 单笔买入金额（分）：优先十毫（价格×10000），回退毫/分。与 domain 口径一致。 */
+function tradeAmountCents(trade: Trade): number {
+  const priceTenThousandths =
+    trade.priceTenThousandths ?? (trade.priceMillis ?? trade.priceCents * 10) * 10;
+  return Math.round((priceTenThousandths * trade.quantity) / 100) + (trade.feeCents ?? 0);
+}
+
+/**
+ * 「交易画像 · 初判」：仅凭 3 笔以上买入记录就能给出的早期洞察，
+ * 让新用户在等待完整清仓周期之前，立刻看到记录的价值。
+ * 纯函数、零外部依赖；所有结论都来自已录入的买卖字段，不猜测。
+ */
+export function buildEarlyProfile(
+  buyTrades: Trade[],
+  totalAssetsCents: number | null,
+  prefs: Pick<TradingPreferences, "maxConcentrationPercent" | "commissionRateTenThousandths">,
+): EarlyProfileItem[] {
+  if (buyTrades.length < 3) return [];
+  const total = buyTrades.length;
+  const items: EarlyProfileItem[] = [];
+
+  // 1) 计划纪律：几笔买入设了"最多接受亏损"（复盘闭环的锚）
+  const withPlan = buyTrades.filter((trade) => (trade.maxLossCents ?? 0) > 0).length;
+  const planRatio = withPlan / total;
+  if (planRatio >= 0.9) {
+    items.push({ key: "plan", label: "计划纪律", verdict: "good", text: `${withPlan}/${total} 笔买入都设了止损计划，起步就在守纪律。` });
+  } else if (planRatio >= 0.5) {
+    items.push({ key: "plan", label: "计划纪律", verdict: "info", text: `${withPlan}/${total} 笔设了止损计划，还有 ${total - withPlan} 笔没设——没有计划就没有复盘基准。` });
+  } else {
+    items.push({ key: "plan", label: "计划纪律", verdict: "warn", text: `${total} 笔买入里只有 ${withPlan} 笔设了止损。先养成"买前写最大亏损"的习惯，再谈选股。` });
+  }
+
+  // 2) 买入理由构成：规则买 vs 情绪买（情绪驱动是最容易亏钱的入场方式）
+  const emotional = buyTrades.filter((trade) => EMOTIONAL_BUY_REASONS.has(trade.reason)).length;
+  const emoRatio = emotional / total;
+  if (emoRatio >= 0.5) {
+    items.push({ key: "reason", label: "买入理由", verdict: "warn", text: `${emotional}/${total} 笔是情绪驱动（怕踏空/冲动），这是最容易亏钱的入场方式，下次先写清逻辑再下单。` });
+  } else if (emoRatio > 0) {
+    items.push({ key: "reason", label: "买入理由", verdict: "info", text: `${emotional}/${total} 笔是情绪买入，其余有明确依据——把依据也写进备注，复盘才能对账。` });
+  } else {
+    items.push({ key: "reason", label: "买入理由", verdict: "good", text: `买入都以基本面/技术面依据为主，入场有章法。` });
+  }
+
+  // 3) 单笔集中度：最大单笔金额 vs 用户单股上限（账户资金缺失时跳过）
+  if (totalAssetsCents != null && totalAssetsCents > 0) {
+    const maxAmount = Math.max(...buyTrades.map(tradeAmountCents));
+    const maxPct = (maxAmount / totalAssetsCents) * 100;
+    if (maxPct > prefs.maxConcentrationPercent) {
+      items.push({
+        key: "concentration",
+        label: "单笔集中度",
+        verdict: "warn",
+        text: `最大一笔买入占资产约 ${maxPct.toFixed(1)}%，超过你 ${prefs.maxConcentrationPercent}% 的单股上限——先降单票风险。`,
+      });
+    }
+  }
+
+  // 4) 交易成本：平均手续费占成交额（最低 5 元门槛在小单时会被放大）
+  const amountSum = buyTrades.reduce((sum, trade) => sum + tradeAmountCents(trade), 0);
+  const feeSum = buyTrades.reduce((sum, trade) => sum + (trade.feeCents ?? 0), 0);
+  if (amountSum > 0) {
+    const avgFeePct = ((feeSum / amountSum) * 1000); // 千分比
+    if (avgFeePct > 1) {
+      items.push({
+        key: "fee",
+        label: "交易成本",
+        verdict: "info",
+        text: `平均每笔手续费占成交额约 ${avgFeePct.toFixed(1)}‰——最低 5 元门槛在小单上会被放大，金额太小时成本偏高。`,
+      });
+    }
+  }
+
+  return items;
+}
 
 export type TagStat = {
   tag: string;

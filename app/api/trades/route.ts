@@ -6,6 +6,7 @@ import { buildMaxLossAlerts } from "../../../lib/domain/trade-import";
 import { canonicalStockName } from "../../../lib/domain/stocks";
 import { getCurrentUser, requireApiUser } from "../../../lib/auth/auth";
 import { shanghaiDate, shanghaiIso } from "../../../lib/utils/time";
+import { estimateTradeFeeCents, fetchPreferences } from "../../../lib/utils/preferences";
 
 export async function GET() {
   const unauthorized = await requireApiUser();
@@ -43,6 +44,7 @@ export async function POST(request: Request) {
     const rawFee = payload.fee === undefined || payload.fee === null || payload.fee === ""
       ? 0
       : Number(payload.fee);
+    const hasExplicitFee = rawFee > 0;
     const priceTenThousandths = toTenThousandths(rawPrice);
     const priceMillis = Math.round(priceTenThousandths / 10);
     const priceCents = Math.round(priceTenThousandths / 100);
@@ -51,7 +53,7 @@ export async function POST(request: Request) {
     const reason = String(payload.reason ?? "").trim();
     const otherReason = String(payload.otherReason ?? "").trim();
     const maxLossCents = rawMaxLoss === null ? null : toCents(rawMaxLoss);
-    const feeCents = toCents(rawFee);
+    let feeCents = toCents(rawFee);
     // 可选：技术面止损价（元），来自分析支撑位，优先于 maxLoss 反推止损
     const stopLossNumber = Number(payload.stopLoss);
     const stopLoss = payload.stopLoss !== undefined && payload.stopLoss !== null && payload.stopLoss !== "" && Number.isFinite(stopLossNumber) && stopLossNumber > 0
@@ -108,6 +110,12 @@ export async function POST(request: Request) {
 
     await ensureSchema();
     const db = getDb();
+    // 手续费兜底：显式填了 >0 保留；空或为 0 时按「交易费用」设置自动补算，避免手续费漏记成 0
+    if (!hasExplicitFee) {
+      const prefs = await fetchPreferences(db, user.id);
+      const amountYuan = (priceTenThousandths * quantity) / 10000;
+      feeCents = estimateTradeFeeCents(amountYuan, side === "卖出" ? "卖出" : "买入", prefs);
+    }
     const existingTrades = await db.select().from(tradeRecords).where(eq(tradeRecords.userId, user.id));
     const nextId = existingTrades.reduce((largest, trade) => Math.max(largest, trade.id), 0) + 1;
     const invalidSell = side === "卖出"
@@ -235,7 +243,14 @@ export async function PATCH(request: Request) {
       if (!Number.isFinite(fee) || fee < 0) {
         return Response.json({ error: "费用不正确" }, { status: 400 });
       }
-      next.feeCents = toCents(fee);
+      if (fee > 0) {
+        next.feeCents = toCents(fee);
+      } else {
+        // 清空为 0 → 按「交易费用」设置自动补算，与新增录入口径一致
+        const prefs = await fetchPreferences(db, user.id);
+        const amountYuan = ((next.priceTenThousandths ?? 0) * next.quantity) / 10000;
+        next.feeCents = estimateTradeFeeCents(amountYuan, next.side === "卖出" ? "卖出" : "买入", prefs);
+      }
     }
     if (payload.reason !== undefined) next.reason = String(payload.reason ?? "").trim();
     if (payload.otherReason !== undefined) next.otherReason = String(payload.otherReason ?? "").trim() || null;
