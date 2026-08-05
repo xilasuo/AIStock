@@ -1052,6 +1052,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 alerts={alerts}
                 capitalFlows={capitalFlows}
                 initialCapitalCents={initialCapitalCents}
+                quotes={quotes}
                 onBuy={() => setTradeMode("buy")}
                 onSell={() => setTradeMode("sell")}
                 onReview={setReviewCycleEndTradeId}
@@ -3876,13 +3877,15 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved, strategyScan }
   );
 }
 
-function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, onBuy, onSell, onReview, onDeleteTrade }: {
+function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, quotes, onBuy, onSell, onReview, onDeleteTrade }: {
   trades: Trade[];
   reviews: Review[];
   /** 用于在买入行内展示该股票当前的止损/止盈目标价 */
   alerts: AlertRule[];
   capitalFlows: CapitalFlow[];
   initialCapitalCents: number | null;
+  /** 当前行情快照：用于汇总买入里计算持仓浮盈亏 → 合计盈亏 */
+  quotes: Record<string, QuoteEntry>;
   onBuy: () => void;
   onSell: () => void;
   onReview: (cycleEndTradeId: number) => void;
@@ -3938,10 +3941,33 @@ function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, on
 
   // 按股票汇总买入次数、买入金额、当前持仓等
   const buySummary = useMemo(() => calculateBuySummary(trades), [trades]);
+  // 在汇总基础上叠加持仓浮盈亏 → 每只股票「合计盈亏」（已实现 + 未实现）
+  const buySummaryWithFloat = useMemo(() => {
+    const portfolio = calculatePortfolio(trades);
+    const posBySymbol = new Map(portfolio.positions.map((p) => [p.symbol, p]));
+    return buySummary.map((item) => {
+      const pos = posBySymbol.get(item.symbol);
+      const price = quotes[item.symbol]?.quote.price;
+      let floatCents: number | null = null;
+      let hasQuote = false;
+      if (pos && pos.quantity > 0 && typeof price === "number" && Number.isFinite(price)) {
+        hasQuote = true;
+        const marketValueCents = Math.round(price * 100 * pos.quantity);
+        const costCents = Math.round(pos.costTenThousandths / 100);
+        floatCents = marketValueCents - costCents;
+      }
+      return {
+        ...item,
+        floatCents,
+        hasQuote,
+        totalCents: item.realizedCents + (floatCents ?? 0),
+      };
+    });
+  }, [buySummary, trades, quotes]);
   // 汇总买入分页（trades 增删后自动收敛页码，避免越界）
-  const buySummaryTotalPages = Math.max(1, Math.ceil(buySummary.length / buySummaryPageSize));
+  const buySummaryTotalPages = Math.max(1, Math.ceil(buySummaryWithFloat.length / buySummaryPageSize));
   const buySummarySafePage = Math.min(buySummaryPage, buySummaryTotalPages);
-  const pagedBuySummary = buySummary.slice(
+  const pagedBuySummary = buySummaryWithFloat.slice(
     (buySummarySafePage - 1) * buySummaryPageSize,
     buySummarySafePage * buySummaryPageSize,
   );
@@ -4067,6 +4093,7 @@ function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, on
             <span>卖出次数</span>
             <span>当前持仓</span>
             <span>已实现盈亏</span>
+            <span>合计盈亏</span>
           </div>
           {pagedBuySummary.map((item) => (
             <div className="buy-summary-row" key={item.symbol}>
@@ -4081,6 +4108,16 @@ function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, on
               <span><strong>{item.currentPosition > 0 ? item.currentPosition.toLocaleString("zh-CN") : "—"}</strong>{item.currentPosition > 0 && <small>股</small>}</span>
               <span className={item.realizedCents >= 0 ? "up" : "down"}>
                 <strong>{item.realizedCents !== 0 ? money(item.realizedCents) : "—"}</strong>
+              </span>
+              <span className={item.totalCents >= 0 ? "up" : "down"} title={
+                item.floatCents !== null
+                  ? `已实现 ${money(item.realizedCents)} ＋ 持仓浮盈亏 ${money(item.floatCents)}`
+                  : item.currentPosition > 0
+                    ? "行情未加载，合计暂只含已实现盈亏"
+                    : undefined
+              }>
+                <strong>{item.totalCents !== 0 ? money(item.totalCents) : "—"}</strong>
+                {item.floatCents !== null && item.floatCents !== 0 && <small>含浮{item.floatCents > 0 ? "盈" : "亏"}</small>}
               </span>
             </div>
           ))}

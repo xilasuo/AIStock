@@ -4120,13 +4120,13 @@ svg { display: block; }
 
 .trade-list { overflow: hidden; }
 
-/* 按股票汇总买入：股票 / 买入次数 / 买入股数 / 买入金额 / 卖出次数 / 当前持仓 / 已实现盈亏 */
+/* 按股票汇总买入：股票 / 买入次数 / 买入股数 / 买入金额 / 卖出次数 / 当前持仓 / 已实现盈亏 / 合计盈亏 */
 .buy-summary-head,
 .buy-summary-row {
   align-items: center;
   display: grid;
   gap: 16px;
-  grid-template-columns: 1fr 80px 90px 110px 80px 90px 110px;
+  grid-template-columns: 1fr 80px 90px 110px 80px 90px 110px 120px;
   padding: 11px 17px;
 }
 
@@ -4152,12 +4152,15 @@ svg { display: block; }
   .buy-summary-head,
   .buy-summary-row {
     gap: 10px;
-    grid-template-columns: 1fr 64px 72px 90px;
+    grid-template-columns: 1fr 56px 84px 92px;
     padding: 12px 14px;
   }
+  /* 移动端只保留：股票 / 买入次数 / 买入金额 / 合计盈亏（隐藏股数、卖出次数、当前持仓、已实现盈亏） */
+  .buy-summary-head > span:nth-child(3),
   .buy-summary-head > span:nth-child(5),
   .buy-summary-head > span:nth-child(6),
   .buy-summary-head > span:nth-child(7),
+  .buy-summary-row > span:nth-child(3),
   .buy-summary-row > span:nth-child(5),
   .buy-summary-row > span:nth-child(6),
   .buy-summary-row > span:nth-child(7) { display: none; }
