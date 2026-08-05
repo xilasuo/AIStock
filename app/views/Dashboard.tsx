@@ -3918,6 +3918,9 @@ function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, on
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20;
+  // 「按股票汇总买入」独立分页（标的数通常远少于明细，每页 10 只）
+  const [buySummaryPage, setBuySummaryPage] = useState(1);
+  const buySummaryPageSize = 10;
 
   // 绩效统计：复用 lib/domain/trade-statistics，在交易记录页直接给出复盘分析
   const stats = useMemo(() => calculateTradeStatistics(
@@ -3935,6 +3938,13 @@ function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, on
 
   // 按股票汇总买入次数、买入金额、当前持仓等
   const buySummary = useMemo(() => calculateBuySummary(trades), [trades]);
+  // 汇总买入分页（trades 增删后自动收敛页码，避免越界）
+  const buySummaryTotalPages = Math.max(1, Math.ceil(buySummary.length / buySummaryPageSize));
+  const buySummarySafePage = Math.min(buySummaryPage, buySummaryTotalPages);
+  const pagedBuySummary = buySummary.slice(
+    (buySummarySafePage - 1) * buySummaryPageSize,
+    buySummarySafePage * buySummaryPageSize,
+  );
 
   // 已完成的交易周期显示在上方，便于先看结果再补复盘；其余按交易日期倒序
   const sortedTrades = [...trades].sort((a, b) => {
@@ -4058,7 +4068,7 @@ function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, on
             <span>当前持仓</span>
             <span>已实现盈亏</span>
           </div>
-          {buySummary.map((item) => (
+          {pagedBuySummary.map((item) => (
             <div className="buy-summary-row" key={item.symbol}>
               <span>
                 <b>{item.name}</b>
@@ -4074,6 +4084,17 @@ function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, on
               </span>
             </div>
           ))}
+          {buySummaryTotalPages > 1 && (
+            <div className="trade-pager buy-summary-pager">
+              <span className="trade-pager__meta">
+                第 {buySummarySafePage} / {buySummaryTotalPages} 页 · 共 {buySummary.length} 只 · 每页 {buySummaryPageSize} 只
+              </span>
+              <div className="trade-pager__btns">
+                <Button variant="ghost" size="sm" disabled={buySummarySafePage <= 1} onClick={() => setBuySummaryPage((p) => Math.max(1, p - 1))}>上一页</Button>
+                <Button variant="ghost" size="sm" disabled={buySummarySafePage >= buySummaryTotalPages} onClick={() => setBuySummaryPage((p) => Math.min(buySummaryTotalPages, p + 1))}>下一页</Button>
+              </div>
+            </div>
+          )}
         </section>
       )}
       {stats.totalTrades > 0 && (
