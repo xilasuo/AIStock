@@ -31,7 +31,6 @@ import os
 import shutil
 import subprocess
 import sys
-from datetime import datetime
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
@@ -61,6 +60,7 @@ import config
 from data.provider import StaticProvider, default_provider
 from hub import run as hub_run, _build_signals
 from strategy import presets
+from timeutil import sh_now, sh_now_aware
 
 
 def _norm_bar(b: dict) -> dict:
@@ -149,7 +149,7 @@ def pull_cloud_overrides(url: str, user: str, password: str, profile: str = "pre
         "source": "local-fallback",
         "base_url": url or "",
         "endpoint": "/api/strategy-scan/config",
-        "fetched_at": datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %z"),
+        "fetched_at": sh_now_aware().strftime("%Y-%m-%d %H:%M:%S %z"),
         "http_status": None,
         "login_ok": False,
         "config_sha256": "",
@@ -465,7 +465,7 @@ def push_scan(url: str, token: str, payload: dict, cookie: str | None = None) ->
 
 def build_writeback_payload(signals: list[dict]) -> dict:
     return {
-        "generatedAt": datetime.now().isoformat(timespec="seconds"),
+        "generatedAt": sh_now().isoformat(timespec="seconds"),
         "dryRun": True,
         "channel": "tdx-connector（本环境仅查询工具，无 place_order；回写为模拟 dry-run）",
         "signals": signals,
@@ -480,7 +480,7 @@ def render_wechat_digest(payload: dict, signals: list[dict]) -> tuple[str, str]:
     """把选股结果渲染成微信推送用的 (标题, Markdown正文)。"""
     sel = payload.get("selected", [])
     bm = payload.get("backtest", {}).get("baseMetrics", {})
-    date = datetime.now().strftime("%Y-%m-%d")
+    date = sh_now().strftime("%Y-%m-%d")
     title = f"盘前选股 {date} · 入选 {payload.get('selectedCount', len(sel))} 只"
     lines: list[str] = []
     if sel:
@@ -561,7 +561,7 @@ def render_wecom_markdown(payload: dict, signals: list[dict], receipt: dict | No
     sel = payload.get("selected", [])
     bm = payload.get("backtest", {}).get("baseMetrics", {})
     ms = payload.get("marketState", {}) or {}
-    date = datetime.now().strftime("%Y-%m-%d")
+    date = sh_now().strftime("%Y-%m-%d")
     lines: list[str] = []
     lines.append(f"# 盘前选股 {date}")
     lines.append("")
@@ -666,7 +666,7 @@ def render_wecom_text(payload: dict, signals: list[dict], receipt: dict | None) 
     sel = payload.get("selected", [])
     bm = payload.get("backtest", {}).get("baseMetrics", {})
     ms = payload.get("marketState", {}) or {}
-    date = datetime.now().strftime("%Y-%m-%d")
+    date = sh_now().strftime("%Y-%m-%d")
     lines: list[str] = []
     lines.append(f"【盘前选股 {date}】")
     state = ms.get("state", "unknown")
@@ -929,7 +929,7 @@ def main():
             "source": "local-fallback",
             "base_url": args.cloud_config_url or "",
             "endpoint": "/api/strategy-scan/config",
-            "fetched_at": datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %z"),
+            "fetched_at": sh_now_aware().strftime("%Y-%m-%d %H:%M:%S %z"),
             "http_status": None,
             "login_ok": False,
             "config_sha256": "",

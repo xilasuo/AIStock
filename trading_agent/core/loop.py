@@ -5,13 +5,13 @@
 from __future__ import annotations
 
 import copy
-from datetime import datetime
 
 import config
 from data import universe as universe_mod, provider
 from data.provider import StaticProvider
 from strategy import screener, signals, market_state
 from backtest import engine
+from timeutil import sh_now
 
 
 def _zero_metrics() -> dict:
@@ -82,7 +82,7 @@ def run(cfg: config.AppConfig, dp=None) -> dict:
     if not selected_codes:
         result = {
             "meta": {
-                "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "generated_at": sh_now().strftime("%Y-%m-%d %H:%M:%S"),
                 "beg": cfg.beg,
                 "end": cfg.end,
                 "universe_size": len(codes),

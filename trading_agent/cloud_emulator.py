@@ -100,9 +100,9 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def _now() -> str:
-    from datetime import datetime
+    from timeutil import sh_now
 
-    return datetime.now().isoformat(timespec="seconds")
+    return sh_now().isoformat(timespec="seconds")
 
 
 def main():

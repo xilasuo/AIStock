@@ -11,9 +11,9 @@ import csv
 import glob
 import json
 import os
-from datetime import datetime
 
 import config
+from timeutil import sh_now
 
 
 def _pct(x: float) -> str:
@@ -37,7 +37,7 @@ def _sparkline(equity: list[float], width: int = 40) -> str:
 
 def write_report(result: dict, cfg: config.AppConfig) -> str:
     os.makedirs(config.REPORT_DIR, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    ts = sh_now().strftime("%Y%m%d_%H%M%S")
     md_path = os.path.join(config.REPORT_DIR, f"report_{ts}.md")
     json_path = os.path.join(config.REPORT_DIR, f"report_{ts}.json")
     csv_path = os.path.join(config.REPORT_DIR, f"equity_{ts}.csv")

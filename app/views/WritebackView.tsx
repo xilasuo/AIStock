@@ -10,6 +10,7 @@ import {
   LoadingState,
 } from "../components/ui";
 import { useApi } from "../../lib/utils/use-api";
+import { formatEngineTime } from "../../lib/utils/time";
 
 /* ----------------------------- 数据类型 ----------------------------- */
 export type WritebackSignal = {
@@ -103,7 +104,7 @@ export function WritebackView() {
       <SectionHeader
         eyebrow="交易回写"
         title="回写结果"
-        subtitle={`生成于 ${writeback.generatedAt} ｜ 候选信号 ${writeback.signals.length} 笔`}
+        subtitle={`生成于 ${formatEngineTime(writeback.generatedAt)}（上海时间）｜ 候选信号 ${writeback.signals.length} 笔`}
         desc="由 trading_agent 引擎生成的候选回写信号（当前为模拟回写 dry-run）。"
       />
 

@@ -57,3 +57,21 @@ export function formatDateShanghai(input: string | number | Date): string {
     day: "numeric",
   }).format(date);
 }
+
+/**
+ * 引擎时间戳展示（trading_agent 生成的「生成于 / generatedAt / selectedAt」等）。
+ * 约定（与 trading_agent/timeutil.py 配套）：
+ * - naive 无时区字符串（如 "2026-08-04T22:41:13"）→ 引擎已按上海墙钟输出，直接展示，
+ *   不再交给 new Date() 按浏览器本地时区二次解析（避免跨时区浏览器显示偏移）；
+ * - 带时区后缀（"Z" / "+08:00" 等）→ 视为瞬时，换算成上海可读时间。
+ */
+export function formatEngineTime(ts: string | undefined | null): string {
+  if (!ts) return "—";
+  const s = ts.trim();
+  if (!s) return "—";
+  if (/Z$|[+-]\d{2}:?\d{2}$/.test(s)) {
+    return formatDateTimeShanghai(s);
+  }
+  const cleaned = s.replace("T", " ");
+  return cleaned.length >= 19 ? cleaned.slice(0, 19) : cleaned;
+}

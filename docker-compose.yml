@@ -48,6 +48,7 @@ services:
     # AI 模型源（可选）；不配置则自动降级为"自动解释"模式
     # docker compose 自动加载同级 .env 文件的值
     environment:
+      - TZ=Asia/Shanghai
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
       - AI_PROVIDER=${AI_PROVIDER:-}
       - AI_API_KEY=${AI_API_KEY:-}

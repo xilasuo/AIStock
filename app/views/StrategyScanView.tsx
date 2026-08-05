@@ -18,6 +18,7 @@ import {
   Spinner,
 } from "../components/ui";
 import { ScreenerConfigPanel, type ScreenerOverrides } from "./ScreenerConfigPanel";
+import { formatEngineTime } from "../../lib/utils/time";
 
 /* ----------------------------- 数据类型 ----------------------------- */
 export type ScanSelected = {
@@ -440,7 +441,7 @@ export function StrategyScanView({
       <SectionHeader
         eyebrow="文件桥接"
         title="策略扫描"
-        subtitle={`【${PROFILE_LABEL[scan.profile ?? "pre_market"] ?? "盘前"}】候选池 ${scan.universeSize} 只 → 选出 ${scan.selectedCount} 只 ｜ 生成于 ${scan.generatedAt}`}
+        subtitle={`【${PROFILE_LABEL[scan.profile ?? "pre_market"] ?? "盘前"}】候选池 ${scan.universeSize} 只 → 选出 ${scan.selectedCount} 只 ｜ 生成于 ${formatEngineTime(scan.generatedAt)}（上海时间）`}
         desc="由 trading_agent 回测引擎生成，经文件桥同步到本页展示。"
       />
 

@@ -11,9 +11,12 @@ WORKDIR /app
 # 换 Debian 国内镜像源（百度云等国内环境加速 apt）
 RUN sed -i 's/deb.debian.org/mirrors.ustc.edu.cn/g' /etc/apt/sources.list.d/debian.sources
 
-# 安装运行时依赖（curl 用于健康检查）
-RUN apt-get update && apt-get install -y --no-install-recommends curl && \
+# 安装运行时依赖（curl 用于健康检查；tzdata 供容器内时间统一为上海时区）
+RUN apt-get update && apt-get install -y --no-install-recommends curl tzdata && \
     rm -rf /var/lib/apt/lists/*
+
+# 容器默认 UTC，若不设置会导致 datetime.now()/new Date() 输出差 8 小时；统一上海时区
+ENV TZ=Asia/Shanghai
 
 # 统一走 npmmirror 国内镜像加速（含 @cloudflare/* 与 wrangler/workerd 二进制包均已同步）。
 # 注意：不要将 @cloudflare scope 指向 registry.npmjs.org，国内访问极慢会导致构建卡死。

@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import os
 import threading
-from datetime import datetime
+from timeutil import sh_now
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FEEDBACK_FILE = os.path.join(BASE_DIR, "feedback.jsonl")
@@ -19,7 +19,7 @@ _LOCK = threading.Lock()
 def save_feedback(feedback: dict) -> dict:
     """追加一条反馈。feedback: {code, name, verdict(有效/无效), note, source}"""
     record = {
-        "ts": datetime.now().isoformat(timespec="seconds"),
+        "ts": sh_now().isoformat(timespec="seconds"),
         "code": feedback.get("code", ""),
         "name": feedback.get("name", ""),
         "verdict": feedback.get("verdict", "有效"),
