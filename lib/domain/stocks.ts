@@ -112,6 +112,15 @@ export function stockNameFromList(code: string): string | undefined {
   return A_STOCK_LIST[code];
 }
 
+/** 名称规范化：去空格/全角空格、全角字母数字转半角、统一小写。
+ * 使「万科A」「万  科Ａ」等写法能命中官方名「万  科Ａ」。 */
+function normalizeStockName(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[\s\u3000]+/g, "")
+    .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+}
+
 /**
  * 按股票名称反查代码（纯本地，浏览器可用，无网络请求）。
  * 命中顺序：本地名称精确匹配（resolveStock）→ 规范化精确匹配 → 唯一模糊匹配。
@@ -126,24 +135,62 @@ export function resolveStockByName(name: string): { code: string; name: string }
   const exact = resolveStock(clean);
   if (exact && exact.code !== exact.name) return exact;
 
-  const normalize = (value: string) => value
-    .toLowerCase()
-    .replace(/[\s\u3000]+/g, "")
-    .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
-
-  const norm = normalize(clean);
+  const norm = normalizeStockName(clean);
   if (!norm) return null;
 
   const entries = Object.entries(A_STOCK_LIST) as Array<[string, string]>;
-  const exactNorm = entries.find(([, n]) => normalize(n) === norm);
+  const exactNorm = entries.find(([, n]) => normalizeStockName(n) === norm);
   if (exactNorm) return { code: exactNorm[0], name: exactNorm[1] };
 
   const fuzzy = entries.filter(([, n]) => {
-    const nn = normalize(n);
+    const nn = normalizeStockName(n);
     return (nn.includes(norm) || norm.includes(nn)) && nn !== norm;
   });
   if (fuzzy.length === 1) return { code: fuzzy[0][0], name: fuzzy[0][1] };
   return null;
+}
+
+/**
+ * 全市场联想搜索（纯本地，浏览器可用，无网络请求）。
+ * 顺序：代码前缀命中 → 名称规范化包含命中；结果按代码前缀优先排序，limit 截断。
+ * 供个股分析输入框联想使用：输入任意片段（代码/名称/简称）即可出候选。
+ */
+export function searchLocalStocks(
+  query: string,
+  limit = 8,
+): Array<{ code: string; name: string }> {
+  const clean = query.trim();
+  if (!clean) return [];
+  const norm = normalizeStockName(clean);
+  const entries = Object.entries(A_STOCK_LIST) as Array<[string, string]>;
+
+  const codeHits: Array<{ code: string; name: string }> = [];
+  const nameHits: Array<{ code: string; name: string }> = [];
+  const seen = new Set<string>();
+
+  for (const [code, name] of entries) {
+    if (code.startsWith(clean)) {
+      seen.add(code);
+      codeHits.push({ code, name });
+    }
+  }
+  for (const [code, name] of entries) {
+    if (seen.has(code)) continue;
+    if (normalizeStockName(name).includes(norm)) {
+      seen.add(code);
+      nameHits.push({ code, name });
+    }
+  }
+
+  // 基金/ETF 名称也参与联想（如 513180 华夏恒生科技ETF）
+  for (const [code, fund] of Object.entries(FUND_PROFILES)) {
+    if (seen.has(code)) continue;
+    if (code.startsWith(clean) || normalizeStockName(fund.name).includes(norm)) {
+      nameHits.push({ code, name: fund.name });
+    }
+  }
+
+  return [...codeHits, ...nameHits].slice(0, limit);
 }
 
 export function canonicalStockName(code: string, fallback: string = code): string {

@@ -79,7 +79,7 @@ import type { SectorHeatmap as SectorHeatmapData } from "../../lib/market/sector
 import { calculatePortfolioInsights, type PortfolioInsights } from "../../lib/domain/portfolio-insights";
 import { calculateBuySummary, calculateTradeStatistics } from "../../lib/domain/trade-statistics";
 import { TAKE_PROFIT_1_R, TAKE_PROFIT_2_R } from "../../lib/domain/trade-import";
-import { baseCloseSince, resolveStock, resolveStockByName, type Oscillators } from "../../lib/domain/stocks";
+import { baseCloseSince, resolveStock, resolveStockByName, searchLocalStocks, type Oscillators } from "../../lib/domain/stocks";
 import {
   DEFAULT_PREFERENCES,
   RISK_PRESETS,
@@ -1320,34 +1320,56 @@ function StockAnalysisPanel({
     void onAnalyze(undefined, initialSymbol.trim());
   }, [initialSymbol, onAnalyze, setQuery]);
 
-  // 合并「关注列表 + 最近分析」作为搜索联想来源，按分组返回
+  // 搜索联想：随输入过滤（关注列表 + 最近分析），不足时用本地全量 A 股表兜底。
+  // 输入为空时返回空数组，下拉自然收起——不再出现「输入内容却弹出整份关注列表」。
   const searchSuggestions = useMemo((): StockSuggestionGroup[] => {
+    const q = query.trim();
+    if (!q) return [];
+    const normQuery = q.toLowerCase().replace(/[\s\u3000]+/g, "");
+    const hit = (item: { symbol: string; name: string }) =>
+      item.symbol.includes(q) ||
+      item.name.toLowerCase().replace(/[\s\u3000]+/g, "").includes(normQuery);
+
     const groups: StockSuggestionGroup[] = [];
 
-    // 关注列表
+    // 关注列表（匹配命中）
     const watchItems: StockSuggestion[] = [];
     const watchSeen = new Set<string>();
     for (const item of watchlist) {
       if (watchSeen.has(item.symbol)) continue;
       watchSeen.add(item.symbol);
-      watchItems.push({ symbol: item.symbol, name: item.name });
+      if (hit(item)) watchItems.push({ symbol: item.symbol, name: item.name });
     }
     if (watchItems.length > 0) {
-      groups.push({ label: "关注列表", items: watchItems });
+      groups.push({ label: "关注列表", items: watchItems.slice(0, 5) });
     }
 
-    // 最近分析（排除已在关注中的）
+    // 最近分析（排除已在关注中的，匹配命中）
     const recentItems: StockSuggestion[] = [];
     for (const item of recentAnalyses) {
       if (watchSeen.has(item.stock.code)) continue;
-      recentItems.push({ symbol: item.stock.code, name: item.stock.name });
+      if (hit({ symbol: item.stock.code, name: item.stock.name })) {
+        recentItems.push({ symbol: item.stock.code, name: item.stock.name });
+      }
     }
     if (recentItems.length > 0) {
-      groups.push({ label: "最近分析", items: recentItems.slice(0, 10) });
+      groups.push({ label: "最近分析", items: recentItems.slice(0, 5) });
+    }
+
+    // 全市场兜底（本地全量 A 股，排除已在关注/最近中的）
+    const seen = new Set<string>([
+      ...watchSeen,
+      ...recentItems.map((item) => item.symbol),
+    ]);
+    const localItems = searchLocalStocks(q, 8)
+      .filter((item) => !seen.has(item.code))
+      .map((item) => ({ symbol: item.code, name: item.name }));
+    if (localItems.length > 0) {
+      groups.push({ label: "全市场", items: localItems });
     }
 
     return groups;
-  }, [watchlist, recentAnalyses]);
+  }, [watchlist, recentAnalyses, query]);
 
   return (
     <div className="page-content inner-page">
