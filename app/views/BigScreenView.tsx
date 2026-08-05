@@ -226,6 +226,12 @@ export function BigScreenView() {
     return items;
   }, [watchlist, positions, quotes]);
 
+  // 最近交易：按日期倒序取前 6 条
+  const recentTrades = useMemo(
+    () => [...trades].sort((a, b) => b.tradeDate.localeCompare(a.tradeDate) || b.id - a.id).slice(0, 6),
+    [trades],
+  );
+
   const activeIndices = indices.slice(0, 3);
   const timeText = now ? formatDateTimeShanghai(now) : "——:——:——";
   const profitColor = (insights.totalProfitCents ?? 0) >= 0 ? UP : DOWN;
@@ -277,6 +283,18 @@ export function BigScreenView() {
                   {insights.cashCents !== null ? money(insights.cashCents) : "—"}
                 </div>
               </div>
+              <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 16px" }}>
+                <div style={{ fontSize: 11, color: MUTED }}>已实现盈亏</div>
+                <div style={{ fontSize: 22, fontWeight: 500, fontFamily: "var(--font-mono)", marginTop: 6, color: insights.realizedCents >= 0 ? UP : DOWN }}>
+                  {money(insights.realizedCents)}
+                </div>
+              </div>
+              <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 16px" }}>
+                <div style={{ fontSize: 11, color: MUTED }}>未实现盈亏</div>
+                <div style={{ fontSize: 22, fontWeight: 500, fontFamily: "var(--font-mono)", marginTop: 6, color: insights.unrealizedCents >= 0 ? UP : DOWN }}>
+                  {money(insights.unrealizedCents)}
+                </div>
+              </div>
             </div>
             <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 16px" }}>
               <div style={{ fontSize: 11, color: MUTED, marginBottom: 8 }}>大盘指数</div>
@@ -293,36 +311,59 @@ export function BigScreenView() {
             </div>
           </section>
 
-          <section style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "16px 18px", display: "flex", flexDirection: "column", minWidth: 0 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <span style={{ fontSize: 12, color: MUTED }}>资产走势 · 近 60 个节点（最新价估算）</span>
+          <section style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "16px 18px", display: "flex", flexDirection: "column", flex: 5, minHeight: 0 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <span style={{ fontSize: 12, color: MUTED }}>资产走势 · 近 60 个节点（最新价估算）</span>
+                {chart && (
+                  <span style={{ fontSize: 13, color: CHART, fontFamily: "var(--font-mono)" }}>
+                    {pct(((chart.latest - chart.first) / chart.first) * 100)}
+                  </span>
+                )}
+              </div>
+              {chart ? (
+                <svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} width="100%" style={{ flex: 1, minHeight: 0 }}>
+                  <line x1={CHART_PAD} y1={CHART_PAD} x2={CHART_W - CHART_PAD} y2={CHART_PAD} stroke={BORDER} strokeWidth="0.5" />
+                  <line x1={CHART_PAD} y1={CHART_H / 2} x2={CHART_W - CHART_PAD} y2={CHART_H / 2} stroke={BORDER} strokeWidth="0.5" />
+                  <line x1={CHART_PAD} y1={CHART_H - CHART_PAD} x2={CHART_W - CHART_PAD} y2={CHART_H - CHART_PAD} stroke={BORDER} strokeWidth="0.5" />
+                  <path d={chart.area} fill="rgba(255,107,107,.10)" />
+                  <path d={chart.line} fill="none" stroke="rgba(255,107,107,.25)" strokeWidth="5" strokeLinecap="round" />
+                  <path d={chart.line} fill="none" stroke={CHART} strokeWidth="1.6" strokeLinecap="round" />
+                  <circle cx={chart.pts[chart.pts.length - 1].x} cy={chart.pts[chart.pts.length - 1].y} r="3.5" fill={CHART} />
+                </svg>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flex: 1, color: MUTED, fontSize: 13 }}>
+                  记录交易并设置初始资金后，这里会生成净值曲线
+                </div>
+              )}
               {chart && (
-                <span style={{ fontSize: 13, color: CHART, fontFamily: "var(--font-mono)" }}>
-                  {pct(((chart.latest - chart.first) / chart.first) * 100)}
-                </span>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: MUTED, marginTop: 6, fontFamily: "var(--font-mono)" }}>
+                  <span>{series.slice(-60)[0]?.date}</span>
+                  <span>今日</span>
+                </div>
               )}
             </div>
-            {chart ? (
-              <svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} width="100%" style={{ flex: 1, minHeight: 0 }}>
-                <line x1={CHART_PAD} y1={CHART_PAD} x2={CHART_W - CHART_PAD} y2={CHART_PAD} stroke={BORDER} strokeWidth="0.5" />
-                <line x1={CHART_PAD} y1={CHART_H / 2} x2={CHART_W - CHART_PAD} y2={CHART_H / 2} stroke={BORDER} strokeWidth="0.5" />
-                <line x1={CHART_PAD} y1={CHART_H - CHART_PAD} x2={CHART_W - CHART_PAD} y2={CHART_H - CHART_PAD} stroke={BORDER} strokeWidth="0.5" />
-                <path d={chart.area} fill="rgba(255,107,107,.10)" />
-                <path d={chart.line} fill="none" stroke="rgba(255,107,107,.25)" strokeWidth="5" strokeLinecap="round" />
-                <path d={chart.line} fill="none" stroke={CHART} strokeWidth="1.6" strokeLinecap="round" />
-                <circle cx={chart.pts[chart.pts.length - 1].x} cy={chart.pts[chart.pts.length - 1].y} r="3.5" fill={CHART} />
-              </svg>
-            ) : (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flex: 1, color: MUTED, fontSize: 13 }}>
-                记录交易并设置初始资金后，这里会生成净值曲线
-              </div>
-            )}
-            {chart && (
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: MUTED, marginTop: 6, fontFamily: "var(--font-mono)" }}>
-                <span>{series.slice(-60)[0]?.date}</span>
-                <span>今日</span>
-              </div>
-            )}
+            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 18px", flex: 3, minHeight: 0, overflow: "hidden" }}>
+              <div style={{ fontSize: 12, color: MUTED, marginBottom: 6 }}>最近交易</div>
+              {recentTrades.length === 0 && <div style={{ fontSize: 12, color: MUTED }}>暂无交易记录</div>}
+              {recentTrades.map((trade) => {
+                const quote = quotes[trade.symbol];
+                return (
+                  <div key={trade.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5, padding: "8px 0", borderBottom: "0.5px solid rgba(22,78,99,.55)" }}>
+                    <span style={{ fontFamily: "var(--font-mono)", color: MUTED, width: 62, flexShrink: 0 }}>{trade.tradeDate.slice(5)}</span>
+                    <span style={{ width: 84, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{trade.name}</span>
+                    <span style={{ color: trade.side === "买入" ? ACCENT : "#f5a524", width: 40, flexShrink: 0, fontWeight: 500 }}>{trade.side}</span>
+                    <span style={{ fontFamily: "var(--font-mono)", width: 78, flexShrink: 0, textAlign: "right" }}>
+                      {((trade.priceTenThousandths ?? (trade.priceMillis ?? trade.priceCents * 10) * 10) / 10000).toFixed(2)}
+                    </span>
+                    <span style={{ fontFamily: "var(--font-mono)", width: 66, flexShrink: 0, textAlign: "right" }}>{trade.quantity} 股</span>
+                    <span style={{ fontFamily: "var(--font-mono)", width: 70, flexShrink: 0, textAlign: "right", color: quote ? (quote.changePercent >= 0 ? UP : DOWN) : MUTED }}>
+                      {quote ? pct(quote.changePercent) : "—"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </section>
 
           <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -365,11 +406,9 @@ export function BigScreenView() {
               <div style={{ display: "flex", flexDirection: "column", height: "calc(100% - 24px)" }}>
                 {positions.map((pos) => (
                   <div key={pos.symbol} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, padding: "7px 0", borderBottom: `0.5px solid rgba(22,78,99,.55)` }}>
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "60%" }}>{pos.name}</span>
-                    <span style={{ fontFamily: "var(--font-mono)" }}>
-                      <span style={{ color: pos.returnPercent >= 0 ? UP : DOWN }}>{pct(pos.returnPercent)}</span>{" "}
-                      <span style={{ color: MUTED, fontSize: 11 }}>{money(pos.unrealizedCents)}</span>
-                    </span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "38%" }}>{pos.name}</span>
+                    <span style={{ fontFamily: "var(--font-mono)", color: BRIGHT }}>{money(pos.marketValueCents)}</span>
+                    <span style={{ fontFamily: "var(--font-mono)", color: pos.returnPercent >= 0 ? UP : DOWN }}>{pct(pos.returnPercent)}</span>
                   </div>
                 ))}
               </div>
