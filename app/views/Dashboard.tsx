@@ -252,6 +252,8 @@ type AssistantMessage = {
   // 重生成没有意义、复制也没有价值，只会让页面看起来更杂乱。
   kind?: "primer";
   error?: boolean;
+  // 流式生成中：内容逐步追加，渲染时光标动画提示“正在生成”
+  streaming?: boolean;
   // 当某条 assistant 消息是失败占位时，保留用户原始问题以便点"重试"复用
   pendingQuestion?: string;
 };
@@ -393,6 +395,8 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   const [alerts, setAlerts] = useState<AlertRule[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [status, setStatus] = useState<Status | null>(null);
+  /** 本地引擎守护进程（local_engine_server @127.0.0.1:8787）是否在线：null=探测中 */
+  const [engineOnline, setEngineOnline] = useState<boolean | null>(null);
   const [initialCapitalCents, setInitialCapitalCents] = useState<number | null>(null);
   const [capitalFlows, setCapitalFlows] = useState<CapitalFlow[]>([]);
   const [preferences, setPreferences] = useState<TradingPreferences | null>(null);
@@ -518,6 +522,30 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     const timer = window.setTimeout(() => void loadData(), 0);
     return () => window.clearTimeout(timer);
   }, [loadData]);
+
+  // 本地引擎守护进程在线状态：进入页面探测一次，之后每 60s 刷新。
+  // 云端部署时本机无守护进程 → 恒离线（此时选股走 WorkBuddy 跑批，不依赖它）。
+  useEffect(() => {
+    const ENGINE_HEALTH_URL = "http://127.0.0.1:8787/health";
+    let cancelled = false;
+    async function probe() {
+      try {
+        const response = await fetch(ENGINE_HEALTH_URL, {
+          signal: AbortSignal.timeout(3000),
+          cache: "no-store",
+        });
+        if (!cancelled) setEngineOnline(response.ok);
+      } catch {
+        if (!cancelled) setEngineOnline(false);
+      }
+    }
+    void probe();
+    const timer = window.setInterval(() => void probe(), 60_000);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearInterval(timer);
+    };
+  }, []);
 
   // 隐身模式：根据偏好给根节点挂 class，CSS 变量切换低存在感配色
   useEffect(() => {
@@ -924,6 +952,13 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
         <div className="source-status">
           <i />
           <span><b>{status?.deepseekConfigured ? "在线分析" : "自动解释模式"}</b><small>{status?.mairuiEnabled ? "麦蕊智数(优先) + 腾讯/东方财富" : (status?.dataSource ?? "正在检查数据源")}</small></span>
+        </div>
+        <div className={`engine-status${engineOnline === null ? " is-probing" : engineOnline ? " is-online" : " is-offline"}`} title={engineOnline === null ? "正在探测本地引擎…" : engineOnline ? "本地引擎守护进程在线，可跑选股扫描" : "本地引擎未启动；选股扫描由云端/WorkBuddy 跑批执行"}>
+          <i aria-hidden />
+          <span>
+            <b>{engineOnline === null ? "本地引擎 · 探测中" : engineOnline ? "本地引擎 · 在线" : "本地引擎 · 未启动"}</b>
+            <small>{engineOnline === null ? "正在检查 127.0.0.1:8787…" : engineOnline ? "桥接可用，可跑选股扫描" : "云端/自动跑批，不影响使用"}</small>
+          </span>
         </div>
       </aside>
 
@@ -2477,6 +2512,10 @@ function SmartAssistant(
     } catch {
       restored = [];
     }
+    // 清理遗留的流式占位（如生成中途刷新页面），避免出现空内容气泡
+    restored = restored
+      .filter((m) => !m.streaming || m.content.trim().length > 0)
+      .map((m) => (m.streaming ? { ...m, streaming: false } : m));
     if (restored.length > 0) {
       setMessages(restored);
       setPrimed(true);
@@ -2551,6 +2590,9 @@ function SmartAssistant(
     setQuestion("");
     setAsking(true);
     setRegeneratingId(replaceId ? null : regeneratingId);
+    // 先插入一条空的 assistant 占位，流式内容逐块追加进去
+    const placeholderId = nextId();
+    setMessages((current) => [...current, { role: "assistant", content: "", id: placeholderId, streaming: true }]);
     try {
       // 全局模式：若用户问某只持仓股，先静默拉取行情数据再发问，避免 AI 因缺数据只能回"数据缺失"
       let context = buildContext();
@@ -2565,30 +2607,73 @@ function SmartAssistant(
           }
         }
       }
-      const result = await jsonRequest<{ answer: string; mode: "ai" | "fallback" }>("/api/assistant", {
+      // 多给几条历史（最多 14 条），由后端在历史过长时自动做摘要压缩
+      const historyMessages = messages
+        .filter((m) => !m.error && !m.streaming && m.kind !== "primer")
+        .slice(-14)
+        .map((m) => ({ role: m.role, content: m.content }));
+      const response = await fetch("/api/assistant", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           question: clean,
-          messages: messages.slice(-8),
+          messages: historyMessages,
           context,
         }),
       });
-      setMessages((current) => [...current, {
-        role: "assistant",
-        content: result.answer,
-        id: nextId(),
-        mode: result.mode,
-      }]);
+      if (!response.ok || !response.body) {
+        const payload = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(payload?.error ?? "这次追问暂时没有回答，请稍后重试。");
+      }
+      // 流式解析 SSE：data: {type:"delta"|"done", content, mode}
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let accumulated = "";
+      let finalMode: "ai" | "fallback" = "fallback";
+      let done = false;
+      const patch = (content: string, streaming: boolean) => {
+        setMessages((current) => current.map((m) =>
+          m.id === placeholderId ? { ...m, content, streaming, mode: finalMode } : m
+        ));
+      };
+      while (!done) {
+        const { done: readDone, value } = await reader.read();
+        if (readDone) break;
+        const chunk = decoder.decode(value, { stream: true });
+        for (const rawLine of chunk.split("\n")) {
+          const line = rawLine.trim();
+          if (!line.startsWith("data:")) continue;
+          const payloadText = line.slice(5).trim();
+          if (!payloadText) continue;
+          try {
+            const frame = JSON.parse(payloadText) as { type?: string; content?: string; mode?: "ai" | "fallback" };
+            if (frame.type === "delta" && typeof frame.content === "string") {
+              accumulated += frame.content;
+              patch(accumulated, true);
+            } else if (frame.type === "done") {
+              finalMode = frame.mode ?? (accumulated.trim() ? "ai" : "fallback");
+              done = true;
+            }
+          } catch {
+            // 忽略无法解析的帧
+          }
+        }
+      }
+      if (!accumulated.trim()) {
+        throw new Error("这次追问暂时没有回答，请稍后重试。");
+      }
+      patch(accumulated, false);
     } catch (error) {
-      setMessages((current) => [...current, {
-        role: "assistant",
-        content: error instanceof Error ? error.message : "这次追问暂时没有回答，请稍后重试。",
-        id: nextId(),
-        error: true,
-        // 失败时把原问题挂到消息上，点"重试"就能重发
-        pendingQuestion: clean,
-      }]);
+      setMessages((current) => current
+        .filter((m) => m.id !== placeholderId)
+        .concat([{
+          role: "assistant",
+          content: error instanceof Error ? error.message : "这次追问暂时没有回答，请稍后重试。",
+          id: nextId(),
+          error: true,
+          // 失败时把原问题挂到消息上，点"重试"就能重发
+          pendingQuestion: clean,
+        }]));
     } finally {
       setAsking(false);
       setRegeneratingId(null);
@@ -2725,10 +2810,19 @@ function SmartAssistant(
               <div className="sa-msg__main">
                 {regen ? (
                   <span className="sa-dots" aria-label="正在重新生成"><span /><span /><span /></span>
+                ) : message.streaming && !message.content ? (
+                  // 正在思考：内容还没到，显示三点
+                  <span className="sa-dots" aria-label="正在思考"><span /><span /><span /></span>
+                ) : message.streaming ? (
+                  // 正在生成：纯文本逐块追加 + 末尾光标（markdown 结构不完整，先不切结构化渲染）
+                  <div className="sa-streaming">
+                    <span className="sa-stream-text">{message.content}</span>
+                    <span className="sa-caret" aria-hidden />
+                  </div>
                 ) : (
                   <AssistantAnswer content={message.content} />
                 )}
-                {!regen && message.kind !== "primer" && (
+                {!regen && !message.streaming && message.kind !== "primer" && (
                   <div className="sa-msg__meta">
                     {message.error ? (
                       message.pendingQuestion && (
@@ -2771,12 +2865,6 @@ function SmartAssistant(
             </div>
           );
         })}
-        {asking && (
-          <div className="sa-msg sa-msg--assistant sa-msg--typing" aria-label="助手正在思考">
-            <div className="sa-msg__avatar" aria-hidden><Bot size={16} /></div>
-            <span className="sa-dots"><span /><span /><span /></span>
-          </div>
-        )}
         {showPrompts && prompts.length > 0 && (
           <div className="sa-prompts" role="group" aria-label="推荐提问">
             {prompts.map((prompt) => (

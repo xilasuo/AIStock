@@ -298,6 +298,30 @@ svg { display: block; }
 .source-status b { color: var(--text); }
 .source-status small { color: var(--muted); margin-top: 2px; }
 
+/* —— 本地引擎在线状态（local_engine_server 桥接探测） —— */
+.engine-status {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  padding: 10px 8px 2px;
+}
+.engine-status i {
+  background: var(--muted);
+  border-radius: 50%;
+  height: 7px;
+  width: 7px;
+}
+.engine-status.is-online i { background: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 18%, transparent); }
+.engine-status.is-offline i { background: var(--red); box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 15%, transparent); }
+.engine-status.is-probing i { animation: sa-blink 1s step-start infinite; background: var(--muted); }
+.engine-status b,
+.engine-status small {
+  display: block;
+  font-size: var(--fs-xs);
+}
+.engine-status b { color: var(--text); font-weight: 600; }
+.engine-status small { color: var(--muted); margin-top: 2px; }
+
 .main {
   margin-left: var(--sidebar-width);
   min-height: 100vh;
@@ -2945,6 +2969,35 @@ svg { display: block; }
 @keyframes sa-typing {
   0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
   30%           { opacity: 1;    transform: translateY(-3px); }
+}
+
+/* —— 流式生成：内容实时追加 + 末尾闪烁光标，暗示“还在写” —— */
+.sa-streaming {
+  align-items: flex-start;
+  display: flex;
+  min-width: 0;
+}
+.sa-stream-text {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.sa-caret {
+  animation: sa-blink 0.9s step-start infinite;
+  background: var(--accent);
+  border-radius: 1px;
+  display: inline-block;
+  flex: 0 0 auto;
+  height: 1em;
+  margin-left: 2px;
+  margin-top: 2px;
+  width: 2px;
+}
+@keyframes sa-blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sa-caret { animation: none; opacity: 0.6; }
 }
 
 /* —— 推荐提问：在 msgs 容器内自然换行展示，作为「开场快捷提问」跟在消息流底部 —— */

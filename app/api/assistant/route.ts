@@ -1,11 +1,11 @@
-import { getAiConfig } from "../../../lib/ai/ai-config";
+import { getAiConfig, type AiConfig } from "../../../lib/ai/ai-config";
 import { buildFallbackAnswer, isValidContext, type AssistantContext } from "../../../lib/ai/assistant";
 import { getCurrentUser, requireApiUser } from "../../../lib/auth/auth";
 import { ensureSchema, getDb } from "../../../db";
 import { DEFAULT_PREFERENCES, fetchPreferences, type TradingPreferences } from "../../../lib/utils/preferences";
 
 type ChatMessage = {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system";
   content: string;
 };
 
@@ -14,6 +14,63 @@ type ChatResponse = {
 };
 
 const OFFLINE_NOTE = "（操盘手离线值班：当前未接入 AI，以下是按你的纪律和盘面本地算出的参考，话一样直接，但判断请以实盘为准。）\n";
+
+/** SSE 帧：data: {json}\n\n */
+function sseFrame(obj: unknown): string {
+  return `data: ${JSON.stringify(obj)}\n\n`;
+}
+
+/** 把多个帧拼成一个 SSE Response */
+function sseResponse(frames: Array<{ type: string; content?: string; mode?: string }>): Response {
+  const body = frames.map((f) => sseFrame(f)).join("");
+  return new Response(body, {
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+    },
+  });
+}
+
+/**
+ * 多轮上下文摘要：把最旧的历史对话交给 AI 压成一条摘要（保留用户目标、
+ * 持仓、已给结论、风险偏好），避免长对话丢前文。独立小请求，失败返回 null。
+ */
+async function summarizeHistory(messages: ChatMessage[], ai: AiConfig): Promise<string | null> {
+  try {
+    const text = messages
+      .map((m) => `${m.role}: ${m.content}`)
+      .join("\n")
+      .slice(-4000);
+    const response = await fetch(`${ai.apiBase}/chat/completions`, {
+      method: "POST",
+      signal: AbortSignal.timeout(12_000),
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${ai.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: ai.model,
+        // 摘要要的是忠实压缩，不是发挥，温度压低
+        temperature: 0.2,
+        messages: [
+          {
+            role: "system",
+            content:
+              "把下面的对话历史压缩成不超过150字的中文摘要，只保留对后续判断仍有价值的信息：用户持有的股票、已给出的买卖结论、关键价位、用户的风险偏好与纪律。只输出摘要正文，不要任何前缀、不要寒暄。",
+          },
+          { role: "user", content: text },
+        ],
+      }),
+    });
+    if (!response.ok) return null;
+    const result = (await response.json().catch(() => null)) as ChatResponse | null;
+    const summary = result?.choices?.[0]?.message?.content?.trim();
+    return summary ? summary.slice(0, 300) : null;
+  } catch {
+    return null;
+  }
+}
 
 function summarizeContext(ctx: AssistantContext): string {
   const s = ctx.stock;
@@ -100,7 +157,7 @@ export async function POST(request: Request) {
           return [];
         }
         return [{ role: message.role, content: message.content.slice(0, 1200) }];
-      }).slice(-8)
+      }).slice(-14) // 多给几条历史，让后端有摘要空间
     : [];
 
   let prefs: TradingPreferences = DEFAULT_PREFERENCES;
@@ -113,13 +170,28 @@ export async function POST(request: Request) {
   const fallback = buildFallbackAnswer(question, payload.context as AssistantContext, prefs);
   const ai = getAiConfig();
   if (!ai.configured) {
-    return Response.json({ answer: OFFLINE_NOTE + fallback, mode: "fallback" });
+    // 无 AI：一次性输出 fallback（SSE 协议一致，前端无需分支）
+    return sseResponse([
+      { type: "delta", content: OFFLINE_NOTE + fallback },
+      { type: "done", mode: "fallback" },
+    ]);
   }
 
+  // 多轮摘要：历史超过 10 条时，最旧的（除最近 4 条原文）交给 AI 压成摘要
+  let history: ChatMessage[] = messages;
+  if (messages.length > 10) {
+    const old = messages.slice(0, messages.length - 4);
+    const recent = messages.slice(-4);
+    const summary = await summarizeHistory(old, ai);
+    history = summary ? [{ role: "system", content: `此前对话摘要：${summary}` }, ...recent] : recent;
+  }
+
+  let upstream: Response;
   try {
-    const response = await fetch(`${ai.apiBase}/chat/completions`, {
+    upstream = await fetch(`${ai.apiBase}/chat/completions`, {
       method: "POST",
-      signal: AbortSignal.timeout(25_000),
+      // 流式生成通常 15~40s，25s 容易在生成途中被掐断，放宽到 60s
+      signal: AbortSignal.timeout(60_000),
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${ai.apiKey}`,
@@ -129,6 +201,7 @@ export async function POST(request: Request) {
         // 0.6：既保留“果断、敢于给方向”的操盘手风格，又不至于失控乱给结论。
         // 过低(0.2)会让回答偏保守、模式化，与硬约束要求的直给动作相悖。
         temperature: 0.6,
+        stream: true,
         messages: [
           {
             role: "system",
@@ -157,22 +230,75 @@ export async function POST(request: Request) {
               `context=\n${summarizeContext(payload.context as AssistantContext)}`,
             ].join("\n"),
           },
-          ...messages,
+          ...history,
           { role: "user", content: question },
         ],
       }),
     });
-    if (!response.ok) {
-      return Response.json({ answer: OFFLINE_NOTE + fallback, mode: "fallback" });
+    if (!upstream.ok || !upstream.body) {
+      return sseResponse([
+        { type: "delta", content: OFFLINE_NOTE + fallback },
+        { type: "done", mode: "fallback" },
+      ]);
     }
-
-    const result = await response.json().catch(() => null) as ChatResponse | null;
-    const answer = result?.choices?.[0]?.message?.content?.trim();
-    return Response.json({
-      answer: answer ? answer.slice(0, 3000) : OFFLINE_NOTE + fallback,
-      mode: answer ? "ai" : "fallback",
-    });
   } catch {
-    return Response.json({ answer: OFFLINE_NOTE + fallback, mode: "fallback" });
+    return sseResponse([
+      { type: "delta", content: OFFLINE_NOTE + fallback },
+      { type: "done", mode: "fallback" },
+    ]);
   }
+
+  // 把上游 OpenAI 兼容 SSE 流逐 delta 转发为 {type:"delta"} 帧
+  const reader = upstream.body.getReader();
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  let full = "";
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      try {
+        let buffer = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith("data:")) continue;
+            const payload = trimmed.slice(5).trim();
+            if (!payload || payload === "[DONE]") continue;
+            try {
+              const parsed = JSON.parse(payload) as { choices?: Array<{ delta?: { content?: string } }> };
+              const delta = parsed?.choices?.[0]?.delta?.content;
+              if (typeof delta === "string" && delta) {
+                full += delta;
+                controller.enqueue(encoder.encode(sseFrame({ type: "delta", content: delta })));
+              }
+            } catch {
+              // 跳过无法解析的帧
+            }
+          }
+        }
+        // 上游空响应（模型没吐任何字）：回退到本地兜底，避免前端拿到空回复
+        if (!full.trim()) {
+          controller.enqueue(encoder.encode(sseFrame({ type: "delta", content: OFFLINE_NOTE + fallback })));
+        }
+        controller.enqueue(encoder.encode(sseFrame({ type: "done", mode: full.trim() ? "ai" : "fallback" })));
+      } catch {
+        // 上游中途断流：已收到的内容保留，其余交给前端兜底
+        controller.enqueue(encoder.encode(sseFrame({ type: "done", mode: full.trim() ? "ai" : "fallback" })));
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+    },
+  });
 }

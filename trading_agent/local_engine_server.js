@@ -82,6 +82,12 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // GET /health —— 轻量健康检查（不触发 Python，供前端探测桥接是否在线）
+  if (req.method === "GET" && req.url === "/health") {
+    sendJson(res, 200, { ok: true, service: "local-engine", pid: process.pid });
+    return;
+  }
+
   // GET /config —— 读取 strategy_config.yaml 摊平结果
   if (req.method === "GET" && req.url === "/config") {
     try {
