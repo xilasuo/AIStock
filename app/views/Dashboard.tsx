@@ -258,6 +258,10 @@ type AssistantMessage = {
   streaming?: boolean;
   // 当某条 assistant 消息是失败占位时，保留用户原始问题以便点"重试"复用
   pendingQuestion?: string;
+  /** 该回复基于的数据时间（context.source.fetchedAt），渲染时效标注，避免旧快照误导 */
+  fetchedAt?: string;
+  /** 流式生成被上游中断（已收到部分内容但未正常收尾），渲染"回复可能不完整" */
+  interrupted?: boolean;
 };
 
 let assistantMessageCounter = 0;
@@ -1217,6 +1221,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
         watchlist={watchlist}
         recentAnalyses={recentAnalyses}
         fetchAnalysis={fetchAnalysis}
+        quotes={quotes}
         userId={user.id}
       />
       <ConfirmDialog
@@ -2574,6 +2579,7 @@ function SmartAssistant(
     analysis,
     position,
     portfolioInsights,
+    quotes,
     floating = false,
     page = false,
     onClose,
@@ -2584,6 +2590,8 @@ function SmartAssistant(
     analysis: Analysis | null;
     position: Position | null;
     portfolioInsights: PortfolioInsights;
+    /** 页面最新行情快照（每分钟轻量刷新），用于覆盖 context 里的旧价格，避免旧快照误导 */
+    quotes?: Record<string, QuoteEntry>;
     floating?: boolean;
     // 移动端全屏对话页模式：占满视口、头部显示返回箭头而非收起叉
     page?: boolean;
@@ -2682,9 +2690,26 @@ function SmartAssistant(
   }, []);
 
   function buildContext() {
-    return analysis
-      ? buildAnalysisContext(analysis, position, portfolioInsights)
-      : buildPlaceholderContext(portfolioInsights);
+    if (!analysis) return buildPlaceholderContext(portfolioInsights);
+    const context = buildAnalysisContext(analysis, position, portfolioInsights);
+    // 行情增量：用页面最新报价（每分钟轻量刷新）覆盖快照里的价格/涨跌幅/行情时间，
+    // 其余字段（支撑阻力/财务/指标）保留快照——它们是日级数据，短时间不变。
+    const latest = quotes?.[analysis.stock.code]?.quote;
+    if (latest && Number.isFinite(latest.price)) {
+      context.quote = {
+        ...context.quote,
+        price: latest.price,
+        changePercent: latest.changePercent,
+        marketTime: latest.marketTime,
+      };
+      if (context.position && position && position.averageCostTenThousandths > 0) {
+        context.position = {
+          ...context.position,
+          returnPercent: ((latest.price * 10_000 / position.averageCostTenThousandths) - 1) * 100,
+        };
+      }
+    }
+    return context;
   }
 
   async function ask(text: string, opts?: { replaceAssistantId?: string }) {
@@ -2718,11 +2743,13 @@ function SmartAssistant(
           }
         }
       }
-      // 多给几条历史（最多 14 条），由后端在历史过长时自动做摘要压缩
+      // 多给几条历史（最多 30 条），由后端在历史过长时自动做摘要压缩
       const historyMessages = messages
         .filter((m) => !m.error && !m.streaming && m.kind !== "primer")
-        .slice(-14)
+        .slice(-30)
         .map((m) => ({ role: m.role, content: m.content }));
+      // 记录本次回复基于的数据时间（用于时效标注；行情已用最新 quotes 覆盖）
+      const dataTime = context.source?.fetchedAt ?? context.quote?.marketTime ?? null;
       const response = await fetch("/api/assistant", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -2736,15 +2763,17 @@ function SmartAssistant(
         const payload = await response.json().catch(() => null) as { error?: string } | null;
         throw new Error(payload?.error ?? "这次追问暂时没有回答，请稍后重试。");
       }
-      // 流式解析 SSE：data: {type:"delta"|"done", content, mode}
+      // 流式解析 SSE：data: {type:"delta"|"done"|"interrupted", content, mode}
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let accumulated = "";
       let finalMode: "ai" | "fallback" = "fallback";
       let done = false;
-      const patch = (content: string, streaming: boolean) => {
+      let receivedDone = false;
+      let interrupted = false;
+      const patch = (content: string, streaming: boolean, extra?: Partial<AssistantMessage>) => {
         setMessages((current) => current.map((m) =>
-          m.id === placeholderId ? { ...m, content, streaming, mode: finalMode } : m
+          m.id === placeholderId ? { ...m, content, streaming, mode: finalMode, ...extra } : m
         ));
       };
       while (!done) {
@@ -2761,8 +2790,11 @@ function SmartAssistant(
             if (frame.type === "delta" && typeof frame.content === "string") {
               accumulated += frame.content;
               patch(accumulated, true);
+            } else if (frame.type === "interrupted") {
+              interrupted = true;
             } else if (frame.type === "done") {
               finalMode = frame.mode ?? (accumulated.trim() ? "ai" : "fallback");
+              receivedDone = true;
               done = true;
             }
           } catch {
@@ -2770,10 +2802,16 @@ function SmartAssistant(
           }
         }
       }
+      // 上游断流：循环自然结束但没收到 done（或后端明确发了 interrupted），
+      // 已收到的内容保留，并标记"回复可能不完整"，不再静默吞掉。
+      if (!receivedDone && accumulated.trim()) interrupted = true;
       if (!accumulated.trim()) {
         throw new Error("这次追问暂时没有回答，请稍后重试。");
       }
-      patch(accumulated, false);
+      patch(accumulated, false, {
+        fetchedAt: dataTime ?? undefined,
+        interrupted: interrupted || undefined,
+      });
     } catch (error) {
       setMessages((current) => current
         .filter((m) => m.id !== placeholderId)
@@ -2948,6 +2986,8 @@ function SmartAssistant(
                       )
                     ) : (
                       <>
+                        {message.interrupted && <span className="sa-msg__warn">回复可能不完整</span>}
+                        {message.fetchedAt && <span className="sa-msg__time">基于 {formatDateTimeShanghai(message.fetchedAt)} 数据</span>}
                         <button
                           type="button"
                           className="sa-link"
@@ -3015,7 +3055,7 @@ function SmartAssistant(
 }
 
 function FloatingAssistantLauncher(
-  { open, onToggle, analysis, position, portfolioInsights, portfolio, watchlist, recentAnalyses, fetchAnalysis, userId }: {
+  { open, onToggle, analysis, position, portfolioInsights, portfolio, watchlist, recentAnalyses, fetchAnalysis, quotes, userId }: {
     open: boolean;
     onToggle: () => void;
     analysis: Analysis | null;
@@ -3025,6 +3065,8 @@ function FloatingAssistantLauncher(
     watchlist: WatchItem[];
     recentAnalyses: Analysis[];
     fetchAnalysis: (query: string, showResult?: boolean) => Promise<Analysis | null>;
+    /** 页面最新行情快照（每分钟轻量刷新），透传给 SmartAssistant 覆盖旧快照 */
+    quotes: Record<string, QuoteEntry>;
     userId?: string | number;
   },
 ) {
@@ -3214,6 +3256,7 @@ function FloatingAssistantLauncher(
             analysis={activeAnalysis}
             position={activePosition}
             portfolioInsights={portfolioInsights}
+            quotes={quotes}
             userId={userId}
             onClose={onToggle}
             headerSlot={linkerSlot}
@@ -3233,6 +3276,7 @@ function FloatingAssistantLauncher(
             analysis={activeAnalysis}
             position={activePosition}
             portfolioInsights={portfolioInsights}
+            quotes={quotes}
             userId={userId}
             onClose={onToggle}
             headerSlot={linkerSlot}

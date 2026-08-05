@@ -7378,3 +7378,16 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
   color: var(--text-muted);
   font-size: var(--fs-2xs);
 }
+
+/* 助手消息时效标注与中断提示 */
+.sa-msg__time {
+  color: var(--text-muted);
+  font-size: var(--fs-2xs);
+  margin-right: 6px;
+}
+.sa-msg__warn {
+  color: var(--danger);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  margin-right: 6px;
+}

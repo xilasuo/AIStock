@@ -286,7 +286,11 @@ export async function POST(request: Request) {
         }
         controller.enqueue(encoder.encode(sseFrame({ type: "done", mode: full.trim() ? "ai" : "fallback" })));
       } catch {
-        // 上游中途断流：已收到的内容保留，其余交给前端兜底
+        // 上游中途断流：已收到的内容保留；有内容时发 interrupted 帧让前端标注
+        // "回复可能不完整"，没内容时前端会自动走空响应兜底。
+        if (full.trim()) {
+          controller.enqueue(encoder.encode(sseFrame({ type: "interrupted" })));
+        }
         controller.enqueue(encoder.encode(sseFrame({ type: "done", mode: full.trim() ? "ai" : "fallback" })));
       } finally {
         controller.close();
