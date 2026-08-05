@@ -7499,6 +7499,130 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
 }
 @keyframes bs-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes bs-drawer-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
+
+/* ===== 大屏华丽增强：环境光 / 卡片辉光 / 顶部动态条 / 涨跌分布 / 隐身 ===== */
+.bigscreen { position: relative; isolation: isolate; }
+
+/* 环境光背景：细网格 + 两枚缓慢漂移的辉光球，置于内容之下，纯装饰不挡交互 */
+.bs-ambient {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(0, 229, 255, .05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 229, 255, .05) 1px, transparent 1px);
+  background-size: 46px 46px;
+  background-position: center;
+  -webkit-mask-image: radial-gradient(ellipse 82% 72% at 50% 38%, #000 38%, transparent 100%);
+  mask-image: radial-gradient(ellipse 82% 72% at 50% 38%, #000 38%, transparent 100%);
+}
+.bs-ambient::before,
+.bs-ambient::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: .5;
+}
+.bs-ambient::before {
+  width: 46vw; height: 46vw;
+  left: -12vw; top: -16vw;
+  background: radial-gradient(circle, rgba(0, 229, 255, .35), transparent 70%);
+  animation: bs-orb-a 19s ease-in-out infinite;
+}
+.bs-ambient::after {
+  width: 40vw; height: 40vw;
+  right: -10vw; bottom: -14vw;
+  background: radial-gradient(circle, rgba(43, 140, 255, .35), transparent 70%);
+  animation: bs-orb-b 23s ease-in-out infinite;
+}
+@keyframes bs-orb-a { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(4vw, 3vw); } }
+@keyframes bs-orb-b { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(-3vw, -2vw); } }
+
+/* 顶部动态渐变条（科技感点缀） */
+.bs-topbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  z-index: 30;
+  background: linear-gradient(90deg, var(--accent), #2b8cff, var(--accent));
+  background-size: 220% 100%;
+  animation: bs-shimmer 6s linear infinite;
+}
+@keyframes bs-shimmer { from { background-position: 0% 0; } to { background-position: 220% 0; } }
+
+/* 卡片霓虹辉光：所有 .bs-panel 统一抬起感 */
+.bigscreen .bs-panel {
+  box-shadow: 0 0 0 0.5px var(--border), 0 12px 32px -18px rgba(0, 229, 255, .4);
+}
+
+/* 总资产英雄数字：青蓝紫渐变填充 */
+.bs-hero {
+  background: linear-gradient(94deg, #00e5ff, #5cc8ff 58%, #b98cff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+/* 涨跌家数分布条（监控池：自选 + 持仓） */
+.bs-breadth {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+.bs-breadth-label { flex-shrink: 0; letter-spacing: 1px; }
+.bs-breadth-bar {
+  flex: 1;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  display: flex;
+  background: var(--surface-strong);
+  border: 0.5px solid var(--border);
+}
+.bs-breadth-seg { height: 100%; transition: width .5s var(--ease-standard); }
+.bs-breadth-seg.up { background: linear-gradient(90deg, #ff6b8a, #ff4d6d); }
+.bs-breadth-seg.flat { background: #4a5663; }
+.bs-breadth-seg.down { background: linear-gradient(90deg, #21e6a4, #15c98f); }
+.bs-breadth b.up { color: var(--up); }
+.bs-breadth b.down { color: var(--down); }
+.bs-breadth b { font-weight: 600; }
+
+/* 隐身模式（老板键 Esc）：整屏降饱和 + 压暗，红绿近乎不可辨，像普通后台系统 */
+html.stealth .bigscreen {
+  filter: saturate(.16) brightness(.52) contrast(.94);
+  transition: filter .3s var(--ease-standard);
+}
+html.stealth .bs-ambient,
+html.stealth .bs-topbar { opacity: .22; }
+html.stealth .bs-ambient::before,
+html.stealth .bs-ambient::after { animation: none; }
+
+/* 隐身提示角标（仅隐身时显示） */
+.bs-stealth-hint {
+  display: none;
+  position: fixed;
+  bottom: 10px;
+  left: 12px;
+  z-index: 35;
+  font-size: 11px;
+  color: var(--muted);
+  background: rgba(0, 0, 0, .4);
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-family: var(--font-mono);
+}
+html.stealth .bs-stealth-hint { display: block; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bs-ambient::before, .bs-ambient::after, .bs-topbar { animation: none; }
+}
 .bigscreen-drawer .bs-row {
   display: flex;
   justify-content: space-between;

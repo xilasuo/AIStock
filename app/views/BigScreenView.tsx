@@ -13,6 +13,7 @@
  * 复用现有 API，不改任何业务逻辑，也不额外拉取逐日 K 线。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { calculatePortfolioInsights } from "../../lib/domain/portfolio-insights";
 import type { CapitalFlow, Trade } from "../../lib/domain/domain";
 import { formatDateTimeShanghai, shanghaiDate } from "../../lib/utils/time";
@@ -255,6 +256,10 @@ export function BigScreenView() {
   const dataTimerRef = useRef<number | null>(null);
   const [detail, setDetail] = useState<DetailData | null>(null);
   const [aiOpen, setAiOpen] = useState(false);
+  const router = useRouter();
+  // 隐身模式（老板键）：与 Dashboard 共用偏好，亮屏/暗屏一键切换
+  const [stealth, setStealth] = useState(false);
+  const prefsRef = useRef<Record<string, unknown> | null>(null);
 
   const loadData = useCallback(async () => {
     setLastLoadAt(Date.now());
@@ -344,17 +349,52 @@ export function BigScreenView() {
     };
   }, [loadSlowData]);
 
-  // Esc 关闭抽屉 / 智能解读面板
+  // 挂载时同步隐身偏好（与 Dashboard 共用 <html>.stealth），保证跨页一致
+  useEffect(() => {
+    let cancelled = false;
+    jsonRequest<Record<string, unknown>>("/api/preferences")
+      .then((prefs) => {
+        if (cancelled) return;
+        prefsRef.current = prefs;
+        const on = !!prefs.stealthMode;
+        setStealth(on);
+        document.documentElement.classList.toggle("stealth", on);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // 切换隐身模式：更新 class + 整对象回写偏好（PUT 须传全量，否则默认值会覆盖其他项）
+  const toggleStealth = useCallback(() => {
+    const base = prefsRef.current ?? {};
+    const next = { ...base, stealthMode: !stealth } as Record<string, unknown>;
+    prefsRef.current = next;
+    setStealth(!stealth);
+    document.documentElement.classList.toggle("stealth", !stealth);
+    void fetch("/api/preferences", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(next),
+    }).catch(() => undefined);
+  }, [stealth]);
+
+  // Esc：优先关抽屉/面板；无浮层时作为老板键切换隐身模式
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (e.key !== "Escape") return;
+      if (detail || aiOpen) {
         setDetail(null);
         setAiOpen(false);
+        return;
       }
+      e.preventDefault();
+      toggleStealth();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [detail, aiOpen, toggleStealth]);
 
   const prices = useMemo(
     () => Object.fromEntries(Object.entries(quotes).map(([symbol, q]) => [symbol, q.price])),
@@ -495,6 +535,35 @@ export function BigScreenView() {
     [trades],
   );
 
+  /** 涨跌分布：统计监控池（自选 + 持仓）中上涨/平盘/下跌家数，零额外请求。 */
+  const breadth = useMemo(() => {
+    let up = 0;
+    let down = 0;
+    let flat = 0;
+    for (const item of marqueeSymbols) {
+      const cp = item.quote?.changePercent;
+      if (cp == null) continue;
+      if (cp > 0) up += 1;
+      else if (cp < 0) down += 1;
+      else flat += 1;
+    }
+    const total = up + down + flat || 1;
+    return { up, down, flat, total };
+  }, [marqueeSymbols]);
+
+  /** 交易时段：盘前/开盘中/午间休市/已收盘/周末，驱动头部状态标签。 */
+  const sessionLabel = useMemo(() => {
+    if (!now) return "";
+    const { h, m, day } = shanghaiParts(now);
+    if (day === 0 || day === 6) return "周末休市";
+    const t = h * 60 + m;
+    if (t < 9 * 60 + 30) return "盘前";
+    if (t <= 11 * 60 + 30) return "开盘中";
+    if (t < 13 * 60) return "午间休市";
+    if (t <= 15 * 60) return "开盘中";
+    return "已收盘";
+  }, [now]);
+
   const scanPicks = (scan?.selected ?? []).slice(0, 8);
   const marketStateKey = scan?.marketState?.state ?? "";
   const marketStateLabel = MARKET_STATE_LABEL[marketStateKey] ?? (marketStateKey || "—");
@@ -583,11 +652,34 @@ export function BigScreenView() {
 
   return (
     <div className="bigscreen" style={{ background: BG, color: TEXT, height: "100vh", overflow: "hidden", fontFamily: "var(--font-sans)" }}>
+      <div className="bs-topbar" />
+      <div className="bs-ambient" />
+      <div className="bs-stealth-hint">隐身模式 · 按 Esc 退出</div>
       <div style={{ width: "100%", padding: "18px 24px", display: "flex", flexDirection: "column", height: "100%" }}>
-        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 14 }}>
-          <div>
-            <div style={{ fontSize: 12, color: MUTED, letterSpacing: 2 }}>ACCOUNT OVERVIEW · 大屏展示</div>
-            <div style={{ fontSize: 24, fontWeight: 500, marginTop: 4 }}>我的仓位与盈亏</div>
+        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 14, gap: 14 }}>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 14 }}>
+            <button
+              type="button"
+              onClick={() => router.push("/")}
+              className="interactive bs-panel"
+              style={{
+                background: "rgba(255,255,255,.04)",
+                border: "0.5px solid var(--border)",
+                color: TEXT,
+                borderRadius: 999,
+                padding: "6px 14px",
+                fontSize: 12.5,
+                fontFamily: "var(--font-sans)",
+                cursor: "pointer",
+                flexShrink: 0,
+              }}
+            >
+              ← 主页
+            </button>
+            <div>
+              <div style={{ fontSize: 12, color: MUTED, letterSpacing: 2 }}>ACCOUNT OVERVIEW · 大屏展示</div>
+              <div style={{ fontSize: 24, fontWeight: 500, marginTop: 4 }}>我的仓位与盈亏</div>
+            </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 14, fontFamily: "var(--font-mono)", fontSize: 13, color: MUTED }}>
             {scan?.marketState?.state && (
@@ -617,7 +709,7 @@ export function BigScreenView() {
             <button
               type="button"
               onClick={() => setAiOpen(true)}
-              className="interactive"
+              className="interactive bs-panel"
               style={{
                 background: "rgba(0,229,255,.10)",
                 border: "0.5px solid rgba(0,229,255,.4)",
@@ -631,6 +723,7 @@ export function BigScreenView() {
             >
               智能解读
             </button>
+            <span style={{ color: sessionLabel === "开盘中" ? ACCENT : MUTED, fontSize: 12 }}>{sessionLabel}</span>
             <span>{timeText}</span>
           </div>
         </header>
@@ -674,18 +767,30 @@ export function BigScreenView() {
           )}
         </div>
 
+        <div className="bs-breadth" style={{ marginBottom: 12 }}>
+          <span className="bs-breadth-label">涨跌分布</span>
+          <div className="bs-breadth-bar">
+            <div className="bs-breadth-seg up" style={{ width: `${(breadth.up / breadth.total) * 100}%` }} />
+            <div className="bs-breadth-seg flat" style={{ width: `${(breadth.flat / breadth.total) * 100}%` }} />
+            <div className="bs-breadth-seg down" style={{ width: `${(breadth.down / breadth.total) * 100}%` }} />
+          </div>
+          <span><b className="up">{breadth.up}</b> 涨</span>
+          <span>{breadth.flat} 平</span>
+          <span><b className="down">{breadth.down}</b> 跌</span>
+        </div>
+
         <main style={{ display: "grid", gridTemplateColumns: "minmax(230px, 290px) minmax(0, 1fr) minmax(270px, 330px) minmax(250px, 310px)", gap: 14, flex: 1, minHeight: 0 }}>
           <section style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
-            <div className="interactive" style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 18px" }}>
+            <div className="interactive bs-panel" style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 18px" }}>
               <div style={{ fontSize: 12, color: MUTED }}>总资产</div>
-              <div style={{ fontSize: 30, fontWeight: 500, fontFamily: "var(--font-mono)", color: BRIGHT, margin: "6px 0 4px" }}>
+              <div className="bs-hero" style={{ fontSize: 30, fontWeight: 600, fontFamily: "var(--font-mono)", margin: "6px 0 4px" }}>
                 <Rolling value={insights.totalAssetsCents} format={money} fallback="待设置" />
               </div>
               <div style={{ fontSize: 13, color: profitColor, fontFamily: "var(--font-mono)" }}>
                 账户总盈亏 {pct(insights.totalProfitPercent)}
               </div>
             </div>
-            <div className="interactive" style={{ background: CARD, border: `0.5px solid ${todayPnl ? (todayPnl.gainCents >= 0 ? "rgba(255,107,107,.45)" : "rgba(45,212,191,.45)") : BORDER}`, borderRadius: 14, padding: "14px 18px" }}>
+            <div className="interactive bs-panel" style={{ background: CARD, border: `0.5px solid ${todayPnl ? (todayPnl.gainCents >= 0 ? "rgba(255,107,107,.45)" : "rgba(45,212,191,.45)") : BORDER}`, borderRadius: 14, padding: "14px 18px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ fontSize: 12, color: MUTED }}>今日盈亏</span>
                 <span style={{ fontSize: 10, color: MUTED }}>{todayPnl ? `${todayPnl.covered} 只持仓` : "等待行情"}</span>
@@ -698,32 +803,32 @@ export function BigScreenView() {
               </div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <div className="interactive" style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "11px 14px" }}>
+              <div className="interactive bs-panel" style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "11px 14px" }}>
                 <div style={{ fontSize: 11, color: MUTED }}>总仓位</div>
                 <div style={{ fontSize: 19, fontWeight: 500, fontFamily: "var(--font-mono)", marginTop: 5 }}>
                   <Rolling value={insights.totalPositionPercent} format={(v) => `${v.toFixed(1)}%`} />
                 </div>
               </div>
-              <div className="interactive" style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "11px 14px" }}>
+              <div className="interactive bs-panel" style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "11px 14px" }}>
                 <div style={{ fontSize: 11, color: MUTED }}>可用现金</div>
                 <div style={{ fontSize: 19, fontWeight: 500, fontFamily: "var(--font-mono)", marginTop: 5 }}>
                   <Rolling value={insights.cashCents} format={money} />
                 </div>
               </div>
-              <div className="interactive" style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "11px 14px" }}>
+              <div className="interactive bs-panel" style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "11px 14px" }}>
                 <div style={{ fontSize: 11, color: MUTED }}>已实现盈亏</div>
                 <div style={{ fontSize: 19, fontWeight: 500, fontFamily: "var(--font-mono)", marginTop: 5, color: insights.realizedCents >= 0 ? UP : DOWN }}>
                   <Rolling value={insights.realizedCents} format={money} />
                 </div>
               </div>
-              <div className="interactive" style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "11px 14px" }}>
+              <div className="interactive bs-panel" style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "11px 14px" }}>
                 <div style={{ fontSize: 11, color: MUTED }}>未实现盈亏</div>
                 <div style={{ fontSize: 19, fontWeight: 500, fontFamily: "var(--font-mono)", marginTop: 5, color: insights.unrealizedCents >= 0 ? UP : DOWN }}>
                   <Rolling value={insights.unrealizedCents} format={money} />
                 </div>
               </div>
             </div>
-            <div className="interactive" style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "12px 16px", flex: 1, minHeight: 0 }}>
+            <div className="interactive bs-panel" style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "12px 16px", flex: 1, minHeight: 0 }}>
               <div style={{ fontSize: 11, color: MUTED, marginBottom: 6 }}>大盘指数</div>
               {activeIndices.length === 0 && <div style={{ fontSize: 12, color: MUTED }}>暂无指数数据</div>}
               {activeIndices.map((index) => (
@@ -1036,7 +1141,7 @@ export function BigScreenView() {
               <button
                 type="button"
                 onClick={() => setDetail(null)}
-                className="interactive"
+                className="interactive bs-panel"
                 style={{ background: "transparent", border: "0.5px solid var(--border)", color: MUTED, borderRadius: 8, width: 28, height: 28, cursor: "pointer", fontSize: 14 }}
                 aria-label="关闭"
               >
@@ -1073,7 +1178,7 @@ export function BigScreenView() {
               <button
                 type="button"
                 onClick={() => setAiOpen(false)}
-                className="interactive"
+                className="interactive bs-panel"
                 style={{ background: "transparent", border: "0.5px solid var(--border)", color: MUTED, borderRadius: 8, width: 28, height: 28, cursor: "pointer", fontSize: 14 }}
                 aria-label="关闭"
               >
