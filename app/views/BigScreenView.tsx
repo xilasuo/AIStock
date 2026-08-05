@@ -47,6 +47,7 @@ const MUTED = "#6f93a8";
 const BRIGHT = "#a5f3fc";
 const ACCENT = "#22d3ee";
 const CHART = "#ff6b6b";
+const RING_R = 9;
 
 const MARKET_STATE_LABEL: Record<string, string> = {
   bull: "多头",
@@ -206,6 +207,31 @@ function recentDates(count: number): string[] {
   });
 }
 
+/** 取上海墙钟的 时/分/星期，统一用 Intl(timeZone=Asia/Shanghai)，不依赖容器时区。 */
+function shanghaiParts(date: Date): { h: number; m: number; day: number } {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Shanghai",
+    hour: "2-digit",
+    minute: "2-digit",
+    weekday: "short",
+    hour12: false,
+  }).formatToParts(date);
+  const get = (t: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === t)?.value ?? "";
+  const dayMap: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 0 };
+  return { h: parseInt(get("hour"), 10) || 0, m: parseInt(get("minute"), 10) || 0, day: dayMap[get("weekday")] ?? 0 };
+}
+
+const TRADING_OPEN_MS = 30_000;
+const TRADING_CLOSED_MS = 300_000;
+/** 盘中 30s 轮询，收盘/午休/周末降到 5 分钟，省请求。 */
+function marketRefreshMs(date: Date): number {
+  const { h, m, day } = shanghaiParts(date);
+  if (day === 0 || day === 6) return TRADING_CLOSED_MS;
+  const t = h * 60 + m;
+  const inSession = (t >= 9 * 60 + 30 && t <= 11 * 60 + 30) || (t >= 13 * 60 && t <= 15 * 60);
+  return inSession ? TRADING_OPEN_MS : TRADING_CLOSED_MS;
+}
+
 export function BigScreenView() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [watchlist, setWatchlist] = useState<WatchItem[]>([]);
@@ -217,8 +243,13 @@ export function BigScreenView() {
   const [sectors, setSectors] = useState<{ date: string; items: SectorMove[] } | null>(null);
   const [now, setNow] = useState<Date | null>(null);
   const [error, setError] = useState("");
+  const [refreshMs, setRefreshMs] = useState<number>(TRADING_OPEN_MS);
+  const [lastLoadAt, setLastLoadAt] = useState<number | null>(null);
+  const dataTimerRef = useRef<number | null>(null);
 
   const loadData = useCallback(async () => {
+    setLastLoadAt(Date.now());
+    setRefreshMs(marketRefreshMs(new Date()));
     try {
       const [tradeData, watchData, accountData, indexData] = await Promise.all([
         jsonRequest<{ trades: Trade[] }>("/api/trades"),
@@ -274,13 +305,22 @@ export function BigScreenView() {
   }, []);
 
   useEffect(() => {
-    const initial = window.setTimeout(() => void loadData(), 0);
-    const dataTimer = window.setInterval(() => void loadData(), 30_000);
+    let cancelled = false;
+    const run = () => {
+      void loadData().finally(() => {
+        if (cancelled) return;
+        const interval = marketRefreshMs(new Date());
+        setRefreshMs(interval);
+        dataTimerRef.current = window.setTimeout(run, interval);
+      });
+    };
+    const initial = window.setTimeout(run, 0);
     const clockInitial = window.setTimeout(() => setNow(new Date()), 0);
     const clockTimer = window.setInterval(() => setNow(new Date()), 1_000);
     return () => {
+      cancelled = true;
       window.clearTimeout(initial);
-      window.clearInterval(dataTimer);
+      if (dataTimerRef.current) window.clearTimeout(dataTimerRef.current);
       window.clearTimeout(clockInitial);
       window.clearInterval(clockTimer);
     };
@@ -385,6 +425,37 @@ export function BigScreenView() {
     });
   }, [positions, quotes]);
 
+  /** 风险预警：只从已有持仓/行情/账户指标派生，零额外请求。 */
+  type RiskAlert = { level: "high" | "warn"; label: string; detail: string };
+  const riskAlerts = useMemo<RiskAlert[]>(() => {
+    const alerts: RiskAlert[] = [];
+    let maxAlloc = 0;
+    let maxAllocName = "";
+    for (const p of positions) {
+      if (p.allocationPercent != null && p.allocationPercent > maxAlloc) {
+        maxAlloc = p.allocationPercent;
+        maxAllocName = p.name;
+      }
+    }
+    if (maxAlloc >= 40) alerts.push({ level: "high", label: "持仓集中", detail: `${maxAllocName} 占 ${maxAlloc.toFixed(0)}%` });
+    else if (maxAlloc >= 30) alerts.push({ level: "warn", label: "持仓偏集中", detail: `${maxAllocName} 占 ${maxAlloc.toFixed(0)}%` });
+    for (const p of positions) {
+      const cp = quotes[p.symbol]?.changePercent;
+      if (cp != null && cp <= -5) {
+        alerts.push({ level: cp <= -8 ? "high" : "warn", label: "今日大跌", detail: `${p.name} ${pct(cp)}` });
+      }
+    }
+    const total = insights.totalAssetsCents ?? 0;
+    const cash = insights.cashCents ?? 0;
+    if (total > 0 && cash / total < 0.1) {
+      alerts.push({ level: "warn", label: "现金偏低", detail: `现金 ${(cash / total *100).toFixed(0)}%` });
+    }
+    if ((insights.totalProfitCents ?? 0) < 0) {
+      alerts.push({ level: "warn", label: "账户浮亏", detail: pct(insights.totalProfitPercent) });
+    }
+    return alerts.slice(0, 6);
+  }, [positions, quotes, insights]);
+
   // 跑马灯：自选 + 持仓行情串联，复制一份实现无缝滚动
   const marqueeSymbols = useMemo(() => {
     const seen = new Set<string>();
@@ -414,6 +485,15 @@ export function BigScreenView() {
   const profitColor = (insights.totalProfitCents ?? 0) >= 0 ? UP : DOWN;
   const todayColor = (todayPnl?.gainCents ?? 0) >= 0 ? UP : DOWN;
 
+  // 刷新倒计时（秒）：基于上次加载时刻与当前节奏，驱动右上角倒计时环
+  const countdown = useMemo(() => {
+    if (!now || lastLoadAt == null) return Math.ceil(refreshMs / 1000);
+    const elapsed = Math.floor((now.getTime() - lastLoadAt) / 1000);
+    return Math.max(0, Math.ceil(refreshMs / 1000) - elapsed);
+  }, [now, refreshMs, lastLoadAt]);
+  const ringProgress = refreshMs > 0 ? countdown / (refreshMs / 1000) : 0;
+  const ringCircumference = 2 * Math.PI * RING_R;
+
   return (
     <div className="bigscreen" style={{ background: BG, color: TEXT, height: "100vh", overflow: "hidden", fontFamily: "var(--font-sans)" }}>
       <div style={{ width: "100%", padding: "18px 24px", display: "flex", flexDirection: "column", height: "100%" }}>
@@ -426,8 +506,25 @@ export function BigScreenView() {
             {scan?.marketState?.state && (
               <span style={{ color: marketStateColor }}>大盘状态 {marketStateLabel}</span>
             )}
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-              <span className="bigscreen-live-dot" style={{ width: 8, height: 8, borderRadius: "50%", background: ACCENT, display: "inline-block" }} />
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden>
+                <circle cx="11" cy="11" r={RING_R} fill="none" stroke="rgba(34,211,238,.16)" strokeWidth="2.5" />
+                <circle
+                  cx="11"
+                  cy="11"
+                  r={RING_R}
+                  fill="none"
+                  stroke={ACCENT}
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeDasharray={ringCircumference}
+                  strokeDashoffset={ringCircumference * (1 - ringProgress)}
+                  transform="rotate(-90 11 11)"
+                />
+                <text x="11" y="14.5" textAnchor="middle" fontSize="8" fill={MUTED} fontFamily="var(--font-mono)">
+                  {countdown}
+                </text>
+              </svg>
               实时连接
             </span>
             <span>{timeText}</span>
@@ -436,9 +533,42 @@ export function BigScreenView() {
 
         {error && (
           <div style={{ background: "rgba(255,107,107,.12)", border: "0.5px solid rgba(255,107,107,.4)", color: "#ffb4b4", borderRadius: 10, padding: "8px 14px", fontSize: 12, marginBottom: 10 }}>
-            部分数据读取失败：{error}（30 秒后自动重试）
+            部分数据读取失败：{error}（稍后自动重试）
           </div>
         )}
+
+        <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+          {riskAlerts.length === 0 ? (
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(45,212,191,.10)", border: "0.5px solid rgba(45,212,191,.35)", color: "#9ff0e2", borderRadius: 10, padding: "7px 14px", fontSize: 12.5 }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#2dd4bf", display: "inline-block" }} />
+              风险可控 · 无显著预警
+            </div>
+          ) : (
+            riskAlerts.map((a, index) => {
+              const high = a.level === "high";
+              const color = high ? "#ff6b6b" : "#f5a524";
+              return (
+                <div
+                  key={index}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    background: high ? "rgba(255,107,107,.12)" : "rgba(245,165,36,.10)",
+                    border: `0.5px solid ${high ? "rgba(255,107,107,.4)" : "rgba(245,165,36,.38)"}`,
+                    color,
+                    borderRadius: 10,
+                    padding: "7px 14px",
+                    fontSize: 12.5,
+                  }}
+                >
+                  <span style={{ fontWeight: 600 }}>{a.label}</span>
+                  <span style={{ color: high ? "#ffc9c9" : "#ffe2b0", fontFamily: "var(--font-mono)" }}>{a.detail}</span>
+                </div>
+              );
+            })
+          )}
+        </div>
 
         <main style={{ display: "grid", gridTemplateColumns: "minmax(230px, 290px) minmax(0, 1fr) minmax(270px, 330px) minmax(250px, 310px)", gap: 14, flex: 1, minHeight: 0 }}>
           <section style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
