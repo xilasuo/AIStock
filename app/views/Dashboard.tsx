@@ -77,7 +77,6 @@ import {
   type TradeCycle,
 } from "../../lib/domain/domain";
 import type { SectorHeatmap as SectorHeatmapData } from "../../lib/market/sectors";
-import type { MarketBreadth } from "../../lib/market/breadth";
 import { calculatePortfolioInsights, type PortfolioInsights } from "../../lib/domain/portfolio-insights";
 import { calculateBuySummary, calculateTradeStatistics, buildEarlyProfile } from "../../lib/domain/trade-statistics";
 import { TAKE_PROFIT_1_R, TAKE_PROFIT_2_R } from "../../lib/domain/trade-import";
@@ -1623,7 +1622,6 @@ function Home({
               <div className="home-market">
                 <MarketIndices />
                 <SectorHeatmap />
-                <MarketBreadthWidget />
               </div>
             </div>
 
@@ -1954,80 +1952,6 @@ function MarketIndices() {
                 </div>
               );
             })}
-          </div>
-          <div className="market-indices-foot">
-            <span>数据时间 {formatDateTimeShanghai(payload.source.fetchedAt)}</span>
-            <a href={payload.source.url} target="_blank" rel="noreferrer">数据来源：{payload.source.name} ↗</a>
-          </div>
-        </>
-      )}
-    </section>
-  );
-}
-
-function MarketBreadthWidget() {
-  const [payload, setPayload] = useState<MarketBreadth | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState("");
-
-  useEffect(() => {
-    let active = true;
-    const tick = () =>
-      jsonRequest<MarketBreadth>("/api/market-breadth")
-        .then((result) => {
-          if (!active) return;
-          setPayload(result);
-          setLoading(false);
-          setMessage("");
-        })
-        .catch((err) => {
-          if (!active) return;
-          setMessage(err instanceof Error ? err.message : "全市场涨跌分布获取失败");
-          setLoading(false);
-        });
-    void tick();
-    const timer = window.setInterval(tick, 60_000);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, []);
-
-  const upPct = payload && payload.total > 0 ? (payload.up / payload.total) * 100 : 0;
-
-  return (
-    <section className="panel market-breadth-card" aria-label="全市场涨跌分布">
-      <SectionHeader eyebrow="市场温度" title="全市场涨跌分布" subtitle="沪深两市全部 A 股" />
-      {loading && <div className="market-indices-state">正在获取市场宽度…</div>}
-      {!loading && message && <div className="market-indices-state error" role="alert">{message}</div>}
-      {!loading && payload && payload.total > 0 && (
-        <>
-          <div className="breadth-bar" role="img" aria-label={`上涨 ${payload.up} 家，下跌 ${payload.down} 家，平盘 ${payload.flat} 家`}>
-            <div className="breadth-seg up" style={{ width: `${(payload.up / payload.total) * 100}%` }} />
-            <div className="breadth-seg flat" style={{ width: `${(payload.flat / payload.total) * 100}%` }} />
-            <div className="breadth-seg down" style={{ width: `${(payload.down / payload.total) * 100}%` }} />
-          </div>
-          <div className="breadth-stats">
-            <div className="breadth-stat up">
-              <span className="breadth-num">{payload.up}</span>
-              <span className="breadth-label">上涨 · {upPct.toFixed(1)}%</span>
-            </div>
-            <div className="breadth-stat flat">
-              <span className="breadth-num">{payload.flat}</span>
-              <span className="breadth-label">平盘</span>
-            </div>
-            <div className="breadth-stat down">
-              <span className="breadth-num">{payload.down}</span>
-              <span className="breadth-label">下跌</span>
-            </div>
-            <div className="breadth-stat limit">
-              <span className="breadth-num">{payload.limitUp}</span>
-              <span className="breadth-label">涨停</span>
-            </div>
-            <div className="breadth-stat limit">
-              <span className="breadth-num">{payload.limitDown}</span>
-              <span className="breadth-label">跌停</span>
-            </div>
           </div>
           <div className="market-indices-foot">
             <span>数据时间 {formatDateTimeShanghai(payload.source.fetchedAt)}</span>

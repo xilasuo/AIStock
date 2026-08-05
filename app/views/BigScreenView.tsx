@@ -37,6 +37,7 @@ type ScanBrief = {
   marketState?: { state?: string; positionFactor?: number };
 };
 type SectorMove = { code: string; name: string; changePercent: number };
+type AlertRule = { symbol: string; type: "止损" | "止盈一" | "止盈二"; targetPriceCents: number; targetPriceMillis: number | null };
 /** 点击任意条目滑出的详情抽屉内容（统一结构，避免为每类建独立类型）。 */
 type DetailData = {
   title: string;
@@ -84,6 +85,14 @@ function money(cents: number): string {
 
 function signedMoney(cents: number): string {
   return `${cents >= 0 ? "+" : "-"}${money(Math.abs(cents))}`;
+}
+
+/** 把某持仓在 /api/alerts 里的止损/止盈价换算成展示串；未按该 symbol+type 设定时回退「未设定」。 */
+function formatAlertPrice(alerts: AlertRule[], symbol: string, type: AlertRule["type"]): string {
+  const a = alerts.find((al) => al.symbol === symbol && al.type === type);
+  if (!a) return "未设定";
+  const yuan = a.targetPriceMillis != null ? a.targetPriceMillis / 1000 : a.targetPriceCents / 100;
+  return `¥${yuan.toFixed(a.targetPriceMillis != null ? 3 : 2)}`;
 }
 
 function pct(value: number | null): string {
@@ -250,21 +259,14 @@ export function BigScreenView() {
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
   const [scan, setScan] = useState<ScanBrief | null>(null);
   const [sectors, setSectors] = useState<{ date: string; items: SectorMove[] } | null>(null);
-  /** 全市场涨跌分布（大盘宽度）：沪深两市全部 A 股，来源 /api/market-breadth。 */
-  const [marketBreadth, setMarketBreadth] = useState<{
-    up: number;
-    down: number;
-    flat: number;
-    limitUp: number;
-    limitDown: number;
-    total: number;
-  } | null>(null);
   const [now, setNow] = useState<Date | null>(null);
   const [error, setError] = useState("");
   const [refreshMs, setRefreshMs] = useState<number>(TRADING_OPEN_MS);
   const [lastLoadAt, setLastLoadAt] = useState<number | null>(null);
   const dataTimerRef = useRef<number | null>(null);
   const [hover, setHover] = useState<{ data: DetailData; pos: { left: number; top: number }; side: "right" | "left" } | null>(null);
+  const [curveIdx, setCurveIdx] = useState<number | null>(null);
+  const [alerts, setAlerts] = useState<AlertRule[]>([]);
   const [aiOpen, setAiOpen] = useState(false);
   const router = useRouter();
   // 隐身模式（老板键）：与 Dashboard 共用偏好，亮屏/暗屏一键切换
@@ -275,26 +277,19 @@ export function BigScreenView() {
     setLastLoadAt(Date.now());
     setRefreshMs(marketRefreshMs(new Date()));
     try {
-      const [tradeData, watchData, accountData, indexData, breadthData] = await Promise.all([
+      const [tradeData, watchData, accountData, indexData, alertData] = await Promise.all([
         jsonRequest<{ trades: Trade[] }>("/api/trades"),
         jsonRequest<{ items: WatchItem[] }>("/api/watchlist"),
         jsonRequest<{ initialCapitalCents: number | null; capitalFlows: CapitalFlow[] }>("/api/account"),
         jsonRequest<{ indices: MarketIndex[] }>("/api/indices"),
-        jsonRequest<{
-          up: number;
-          down: number;
-          flat: number;
-          limitUp: number;
-          limitDown: number;
-          total: number;
-        }>("/api/market-breadth").catch(() => null),
+        jsonRequest<{ alerts: AlertRule[] }>("/api/alerts"),
       ]);
       setTrades(tradeData.trades);
       setWatchlist(watchData.items);
       setInitialCapitalCents(accountData.initialCapitalCents);
       setCapitalFlows(accountData.capitalFlows ?? []);
       setIndices(indexData.indices ?? []);
-      if (breadthData) setMarketBreadth(breadthData);
+      setAlerts(alertData.alerts ?? []);
       const symbols = [
         ...new Set([
           ...tradeData.trades.map((t) => t.symbol),
@@ -415,6 +410,52 @@ export function BigScreenView() {
     setHover({ data, pos: { left, top }, side });
   };
 
+  // 资产走势曲线悬停：按鼠标 x 吸附最近节点，弹出跟随式浮层 + 游标
+  const handleCurveMove = (e: MouseEvent<SVGSVGElement>) => {
+    if (!chart) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const vx = ((e.clientX - rect.left) / rect.width) * CHART_W;
+    let idx = 0;
+    let best = Infinity;
+    for (let i = 0; i < chart.pts.length; i++) {
+      const d = Math.abs(chart.pts[i].x - vx);
+      if (d < best) {
+        best = d;
+        idx = i;
+      }
+    }
+    setCurveIdx(idx);
+    const node = chart.recent[idx];
+    const delta = node.value - chart.first;
+    const pctv = (delta / chart.first) * 100;
+    const data: DetailData = {
+      title: node.date,
+      subtitle: "账户净值估算",
+      rows: [
+        { k: "净值", v: money(node.value), c: "accent" },
+        { k: "较首点", v: signedMoney(delta), c: delta >= 0 ? "up" : "down" },
+        { k: "区间最高", v: money(chart.max), c: "accent" },
+        { k: "区间最低", v: money(chart.min), c: "accent" },
+      ],
+    };
+    const POP_W = 264;
+    let left = e.clientX + 14;
+    let side: "right" | "left" = "right";
+    if (left + POP_W > window.innerWidth - 12) {
+      left = e.clientX - POP_W - 14;
+      side = "left";
+    }
+    let top = e.clientY + 14;
+    const estH = 92 + data.rows.length * 30;
+    if (top + estH > window.innerHeight - 12) top = Math.max(12, window.innerHeight - 12 - estH);
+    setHover({ data, pos: { left, top }, side });
+  };
+
+  const handleCurveLeave = () => {
+    setCurveIdx(null);
+    setHover(null);
+  };
+
   // Esc：优先关浮层/面板；无浮层时作为老板键切换隐身模式
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -463,7 +504,7 @@ export function BigScreenView() {
     }));
     const line = toPath(pts);
     const area = `${line} L${pts[pts.length - 1].x.toFixed(1)},${CHART_H} L${pts[0].x.toFixed(1)},${CHART_H} Z`;
-    return { pts, line, area, min, max, latest: recent[recent.length - 1].value, first: recent[0].value };
+    return { pts, line, area, min, max, latest: recent[recent.length - 1].value, first: recent[0].value, recent };
   }, [series]);
 
   const positions = insights.positions.filter((p) => p.marketValueCents > 0);
@@ -862,22 +903,6 @@ export function BigScreenView() {
                   </span>
                 </div>
               ))}
-              {marketBreadth && marketBreadth.total > 0 && (
-                <div className="bs-breadth-compact">
-                  <div className="bs-breadth-mini-bar">
-                    <span className="up" style={{ width: `${(marketBreadth.up / marketBreadth.total) * 100}%` }} />
-                    <span className="flat" style={{ width: `${(marketBreadth.flat / marketBreadth.total) * 100}%` }} />
-                    <span className="down" style={{ width: `${(marketBreadth.down / marketBreadth.total) * 100}%` }} />
-                  </div>
-                  <div className="bs-breadth-mini-stats">
-                    <span><b className="up">{marketBreadth.up}</b> 涨</span>
-                    <span>{marketBreadth.flat} 平</span>
-                    <span><b className="down">{marketBreadth.down}</b> 跌</span>
-                    <span className="limit">↑{marketBreadth.limitUp}</span>
-                    <span className="limit">↓{marketBreadth.limitDown}</span>
-                  </div>
-                </div>
-              )}
             </div>
           </section>
 
@@ -892,7 +917,13 @@ export function BigScreenView() {
                 )}
               </div>
               {chart ? (
-                <svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} width="100%" style={{ flex: 1, minHeight: 0 }}>
+                <svg
+                  viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+                  width="100%"
+                  style={{ flex: 1, minHeight: 0, cursor: "crosshair" }}
+                  onMouseMove={handleCurveMove}
+                  onMouseLeave={handleCurveLeave}
+                >
                   <line x1={CHART_PAD} y1={CHART_PAD} x2={CHART_W - CHART_PAD} y2={CHART_PAD} stroke={BORDER} strokeWidth="0.5" />
                   <line x1={CHART_PAD} y1={CHART_H / 2} x2={CHART_W - CHART_PAD} y2={CHART_H / 2} stroke={BORDER} strokeWidth="0.5" />
                   <line x1={CHART_PAD} y1={CHART_H - CHART_PAD} x2={CHART_W - CHART_PAD} y2={CHART_H - CHART_PAD} stroke={BORDER} strokeWidth="0.5" />
@@ -900,6 +931,27 @@ export function BigScreenView() {
                   <path d={chart.line} fill="none" stroke="rgba(255,107,107,.25)" strokeWidth="5" strokeLinecap="round" />
                   <path d={chart.line} fill="none" stroke={CHART} strokeWidth="1.6" strokeLinecap="round" />
                   <circle cx={chart.pts[chart.pts.length - 1].x} cy={chart.pts[chart.pts.length - 1].y} r="3.5" fill={CHART} />
+                  {curveIdx !== null && (
+                    <g pointerEvents="none">
+                      <line
+                        x1={chart.pts[curveIdx].x}
+                        y1={0}
+                        x2={chart.pts[curveIdx].x}
+                        y2={CHART_H}
+                        stroke="rgba(0,229,255,.45)"
+                        strokeWidth="0.5"
+                        strokeDasharray="3 2"
+                      />
+                      <circle
+                        cx={chart.pts[curveIdx].x}
+                        cy={chart.pts[curveIdx].y}
+                        r="4.5"
+                        fill="var(--accent)"
+                        stroke="#060b14"
+                        strokeWidth="1"
+                      />
+                    </g>
+                  )}
                 </svg>
               ) : (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flex: 1, color: MUTED, fontSize: 13 }}>
@@ -1011,6 +1063,8 @@ export function BigScreenView() {
                           rows: [
                             { k: "现价", v: quote ? quote.price.toFixed(2) : "—" },
                             { k: "今日涨跌", v: quote ? pct(quote.changePercent) : "—", c: quote ? (quote.changePercent >= 0 ? "up" : "down") : undefined },
+                            { k: "止损价", v: formatAlertPrice(alerts, pos.symbol, "止损"), c: "down" },
+                            { k: "止盈价", v: formatAlertPrice(alerts, pos.symbol, "止盈一"), c: "up" },
                             { k: "持仓市值", v: money(pos.marketValueCents) },
                             { k: "持仓占比", v: pos.allocationPercent != null ? `${pos.allocationPercent.toFixed(1)}%` : "—" },
                             { k: "累计盈亏", v: pct(pos.returnPercent), c: pos.returnPercent >= 0 ? "up" : "down" },
