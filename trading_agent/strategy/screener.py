@@ -114,9 +114,24 @@ def _robust_normalize(vals: list[float]) -> list[float]:
     return [(z - lo) / (hi - lo) for z in zs]
 
 
-def _rsi_factor(rsi_val: float) -> float:
-    """把 RSI(0~100) 映射为 0~1 选股偏好：偏好 50~70 健康强势，
-    超买(>70)线性衰减，弱势(<50)线性偏低。"""
+def _rsi_factor(rsi_val: float, direction: str = "normal") -> float:
+    """把 RSI(0~100) 映射为 0~1 选股偏好。
+
+    direction="normal"（默认，强势偏好）：偏好 50~70 健康强势，
+    超买(>70)线性衰减，弱势(<50)线性偏低。
+    direction="reversal"（超跌反转）：偏好 30~50 超跌区域，
+    越低越接近反弹买点，>50 线性衰减，避免追高。供
+    bottom_reversal / divergence_reversal 等超跌类预设使用。
+    """
+    if direction == "reversal":
+        r = rsi_val
+        if r <= 30:
+            return 0.4 + 0.4 * (r / 30.0)  # 0~30：从 0.4 升到 0.8（极超跌偏谨慎，避免接飞刀）
+        if r <= 50:
+            return 0.8 + 0.2 * ((50 - r) / 20.0)  # 30~50：0.8~1.0（最佳反弹区）
+        if r <= 70:
+            return 0.6 * ((70 - r) / 20.0)  # 50~70：0.6~0（越强分越低）
+        return 0.0  # >70 超买，超跌策略不碰
     r = rsi_val
     if r <= 50:
         return 0.6 * (r / 50.0)
@@ -318,7 +333,7 @@ def screen(cfg: config.AppConfig, codes: list[str], dp=None, top_n_override: int
             "configured": {}, "applied": {}, "skipped": [],
         }}
     mom_n = _robust_normalize([r["risk_adj_momentum"] for r in rows])
-    rsi_n = _robust_normalize([_rsi_factor(r["rsi"]) for r in rows])
+    rsi_n = _robust_normalize([_rsi_factor(r["rsi"], sc.rsi_direction) for r in rows])
     macd_n = _robust_normalize([r["macd"] for r in rows])
     trend_n = _robust_normalize([r["trend"] for r in rows])
     ey_n = _robust_normalize([r["earnings_yield"] for r in rows])

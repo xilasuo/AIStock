@@ -30,7 +30,7 @@ const ALLOWED_KEYS = new Set([
   "top_n", "max_per_sector", "momentum_window",
   "w_momentum", "w_value", "w_liquidity", "w_rsi", "w_macd", "w_trend", "w_size", "w_quality",
   "w_fund_flow",
-  "rsi_window", "macd_fast", "macd_slow", "macd_signal", "vol_window",
+  "rsi_window", "rsi_direction", "macd_fast", "macd_slow", "macd_signal", "vol_window",
   "min_turnover_pct", "max_pe_ttm", "max_pb",
   "boards", "st_filter", "mcap_min", "mcap_max",
   "fast_ma", "slow_ma", "use_breakout_filter", "breakout_window", "stop_loss_pct", "max_positions",

@@ -124,6 +124,7 @@ const FALLBACK_CONFIG = {
     w_size: 0.04,
     w_quality: 0.06,
     rsi_window: 14,
+    rsi_direction: "normal", // RSI 因子方向：normal(偏好强势) | reversal(超跌反转，bottom_reversal 用)
     macd_fast: 12,
     macd_slow: 26,
     macd_signal: 9,

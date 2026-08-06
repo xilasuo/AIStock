@@ -333,6 +333,8 @@ def apply_config(cfg: config.AppConfig, ov: dict):
         sc.w_fund_flow = float(ov["w_fund_flow"])
     if "rsi_window" in ov:
         sc.rsi_window = int(ov["rsi_window"])
+    if "rsi_direction" in ov:
+        sc.rsi_direction = str(ov["rsi_direction"])
     if "macd_fast" in ov:
         sc.macd_fast = int(ov["macd_fast"])
     if "macd_slow" in ov:
