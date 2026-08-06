@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Target, Sparkles, AlertCircle, X } from "lucide-react";
+import { Target, Sparkles, AlertCircle } from "lucide-react";
 import type { AssistantContext } from "../../lib/ai/assistant";
 import { calculatePortfolio, type Trade } from "../../lib/domain/domain";
 import type { PortfolioInsights } from "../../lib/domain/portfolio-insights";
@@ -189,14 +189,14 @@ export function StrategyModal({
 
   return (
     <Modal title={`${name}（${code}）操盘策略`} onClose={onClose}>
-      <div style={{ minWidth: 560, maxWidth: 720, maxHeight: "80vh", display: "flex", flexDirection: "column" }}>
-        <div style={{ padding: "16px 20px 0" }}>
+      <div style={{ width: "100%", maxWidth: 760, maxHeight: "80vh", display: "flex", flexDirection: "column" }}>
+        <div style={{ padding: "16px 24px 0" }}>
           <p style={{ margin: 0, fontSize: 13, color: "var(--muted)" }}>
             结合你的持仓与账户概况，由 AI 生成该股操作建议。仅作为复盘参考，不构成投资建议。
           </p>
         </div>
 
-        <div style={{ flex: 1, overflow: "auto", padding: "16px 20px 20px" }}>
+        <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "16px 24px 20px" }}>
           {loading && (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: 40 }}>
               <Sparkles size={18} className="spin" style={{ color: "var(--accent)" }} />
@@ -233,21 +233,6 @@ export function StrategyModal({
               <StrategyBlocks content={strategy.content} />
             </div>
           )}
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "flex-end",
-            gap: 10,
-            padding: "12px 20px",
-            borderTop: "0.5px solid var(--border)",
-          }}
-        >
-          <button type="button" className="btn btn--secondary" onClick={onClose}>
-            <X size={14} />
-            关闭
-          </button>
         </div>
       </div>
     </Modal>

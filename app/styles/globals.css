@@ -400,6 +400,77 @@ svg { display: block; }
   gap: 12px;
 }
 
+/* 顶部全局搜索框：放在 top-actions 内，紧邻账户按钮 */
+.topbar-search {
+  width: 260px;
+}
+
+.topbar-search .stock-search.compact {
+  background: var(--surface-soft);
+  border-color: var(--line);
+  box-shadow: none;
+  padding: 2px;
+}
+
+.topbar-search .stock-search.compact:focus-within {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.topbar-search .stock-search.compact input {
+  font-size: var(--fs-sm);
+  padding: 6px 0;
+}
+
+.topbar-search .stock-search.compact .search-icon {
+  margin: 0 6px 0 4px;
+}
+
+.topbar-search .stock-search.compact button[type="submit"] {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .topbar-search { display: none; }
+}
+
+/* 侧边栏股票搜索框：置于主导航下方，宽度跟随侧栏内宽 */
+.sidebar-search {
+  margin: 14px 0 4px;
+}
+
+.sidebar-search .stock-search.compact {
+  background: var(--surface-soft);
+  border-color: var(--line);
+  box-shadow: none;
+  padding: 2px;
+  width: 100%;
+}
+
+.sidebar-search .stock-search.compact:focus-within {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.sidebar-search .stock-search.compact input {
+  font-size: var(--fs-sm);
+  padding: 6px 0;
+}
+
+.sidebar-search .stock-search.compact .search-icon {
+  margin: 0 6px 0 4px;
+}
+
+.sidebar-search .stock-search.compact button[type="submit"] {
+  display: none;
+}
+
+.sidebar-search .stock-search__suggestions {
+  left: 0;
+  right: 0;
+  width: auto;
+}
+
 .privacy-pill {
   align-items: center;
   background: var(--green-soft);
@@ -2441,9 +2512,9 @@ svg { display: block; }
 }
 
 .strategy-card {
-  background: linear-gradient(180deg, var(--accent-soft) 0%, var(--surface) 100%);
-  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
-  padding: 22px;
+  background: var(--surface);
+  border-color: var(--line);
+  padding: 20px 22px;
 }
 
 .strategy-empty {
@@ -2535,56 +2606,65 @@ svg { display: block; }
   gap: 10px;
 }
 
+/* 统一、克制的编辑式排版：所有块用同一套极简样式，
+   仅用细分隔线 + 小号灰字 label 区分，去掉花哨的彩色块。 */
 .strategy-block {
   border: 1px solid var(--line);
-  border-radius: var(--radius-control);
+  border-radius: 8px;
   background: var(--surface);
   overflow: hidden;
 }
 
 .strategy-block--plain {
-  background: color-mix(in srgb, var(--text) 3%, var(--surface));
-  border-style: dashed;
+  border-color: var(--line);
+  background: var(--surface);
 }
 
 .strategy-block__head {
   align-items: center;
   display: flex;
   gap: 8px;
-  padding: 9px 13px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--line);
-  background: var(--surface-strong);
+  background: transparent;
 }
 
 .strategy-block__icon {
   align-items: center;
-  color: var(--accent-ink);
+  color: var(--text-muted);
   display: inline-flex;
   flex: none;
 }
 
 .strategy-block__label {
   color: var(--text-soft);
-  font-size: var(--fs-2xs);
+  font-size: var(--fs-xs);
   font-weight: 600;
-  letter-spacing: .04em;
-  text-transform: uppercase;
+  letter-spacing: .03em;
 }
 
 .strategy-block__body {
-  padding: 11px 13px;
+  padding: 13px 14px;
 }
 
 .strategy-block__body .markdown-body {
   color: var(--text);
-  font-size: var(--fs-sm);
-  line-height: 1.7;
+  font-size: var(--fs-base);
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .strategy-block__body .markdown-body > :first-child { margin-top: 0; }
 .strategy-block__body .markdown-body > :last-child { margin-bottom: 0; }
 .strategy-block__body .markdown-body p { margin: 0 0 8px; }
 .strategy-block__body .markdown-body strong { color: var(--text); font-weight: 600; }
+.strategy-block__body .markdown-body p,
+.strategy-block__body .markdown-body li,
+.strategy-block__body .markdown-body blockquote {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .strategy-block__body .markdown-body ul,
 .strategy-block__body .markdown-body ol { margin: 0 0 8px; padding-left: 18px; }
 .strategy-block__body .markdown-body li { margin-bottom: 4px; }
@@ -2598,10 +2678,10 @@ svg { display: block; }
    避免浏览器默认 h3 过大、与正文断层。同时给相邻同色块留出节段感。 */
 .strategy-block__body .markdown-body .md-h {
   align-items: center;
-  color: var(--accent-ink);
+  color: var(--text-soft);
   display: flex;
   font-size: var(--fs-sm);
-  font-weight: 700;
+  font-weight: 600;
   gap: 6px;
   line-height: 1.4;
   margin: 12px 0 4px;
@@ -2609,7 +2689,7 @@ svg { display: block; }
 .strategy-block__body .markdown-body .md-h:first-child { margin-top: 0; }
 .strategy-block__body .markdown-body .md-h::before {
   align-self: center;
-  background: var(--accent);
+  background: var(--line-strong);
   border-radius: 2px;
   content: "";
   flex: 0 0 auto;
@@ -2632,7 +2712,7 @@ svg { display: block; }
 
 .strategy-block__body .markdown-body table {
   border-collapse: collapse;
-  border-radius: 8px;
+  border-radius: 6px;
   border-spacing: 0;
   display: block;
   font-size: var(--fs-2xs);
@@ -2673,53 +2753,65 @@ svg { display: block; }
   word-break: break-word;
 }
 
-/* 结论：高亮分区 */
+/* 结论：仅以左侧细 accent 条 + 加粗文字强调，整块不上色，保持克制 */
 .strategy-block--verdict {
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
-  background: color-mix(in srgb, var(--accent-soft) 60%, var(--surface));
+  border-color: var(--line);
+  background: var(--surface);
+  border-left: 3px solid var(--accent);
 }
 
 .strategy-block--verdict .strategy-block__head {
-  background: color-mix(in srgb, var(--accent) 14%, var(--surface-strong));
-  border-bottom-color: color-mix(in srgb, var(--accent) 30%, var(--line));
+  background: transparent;
+  border-bottom-color: var(--line);
 }
 
 .strategy-block--verdict .strategy-block__label { color: var(--accent-ink); }
 
 .strategy-block--verdict .strategy-block__body .markdown-body {
   font-size: var(--fs-base);
-  font-weight: 500;
+  font-weight: 600;
   line-height: 1.6;
 }
 
-/* 风险与缺口：警示色调 */
-.strategy-block--risk {
-  border-color: color-mix(in srgb, var(--down) 32%, var(--line));
-}
-
-.strategy-block--risk .strategy-block__head {
-  background: color-mix(in srgb, var(--down) 10%, var(--surface-strong));
-  border-bottom-color: color-mix(in srgb, var(--down) 22%, var(--line));
-}
-
+/* 风险与缺口：仅 label 用红色文字，不上色块 */
 .strategy-block--risk .strategy-block__icon { color: var(--down); }
 .strategy-block--risk .strategy-block__label { color: var(--down); }
 
-/* 下一步：行动色调 */
-.strategy-block--next {
-  border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
-}
-
-.strategy-block--next .strategy-block__icon { color: var(--accent-ink); }
+/* 下一步：仅 label 用 accent 文字 */
+.strategy-block--next .strategy-block__icon { color: var(--text-muted); }
 .strategy-block--next .strategy-block__label { color: var(--accent-ink); }
+
+/* 止盈：仅 label 用上涨绿 */
+.strategy-block--take-profit .strategy-block__icon { color: var(--up); }
+.strategy-block--take-profit .strategy-block__label { color: var(--up); }
+
+/* 止损：仅 label 用下跌红 */
+.strategy-block--stop-loss .strategy-block__icon { color: var(--down); }
+.strategy-block--stop-loss .strategy-block__label { color: var(--down); }
+
+/* 加仓：仅 label 用信息蓝 */
+.strategy-block--add .strategy-block__icon { color: var(--info, var(--accent)); }
+.strategy-block--add .strategy-block__label { color: var(--info, var(--accent)); }
+
+/* 减仓/清仓：仅 label 用警示橙 */
+.strategy-block--reduce .strategy-block__icon { color: var(--warning, #f59e0b); }
+.strategy-block--reduce .strategy-block__label { color: var(--warning, #f59e0b); }
+
+/* 仓位计算：仅 label 用中性灰 */
+.strategy-block--calc .strategy-block__icon { color: var(--muted); }
+.strategy-block--calc .strategy-block__label { color: var(--muted); }
+
+/* 依据：仅 label 用 accent */
+.strategy-block--basis .strategy-block__icon { color: var(--text-muted); }
+.strategy-block--basis .strategy-block__label { color: var(--accent-ink); }
 
 .strategy-footer {
   align-items: center;
-  border-top: 1px dashed var(--line-strong);
+  border-top: 1px solid var(--line);
   display: flex;
   gap: 14px;
   justify-content: space-between;
-  margin-top: 14px;
+  margin-top: 16px;
   padding-top: 14px;
 }
 
@@ -6614,14 +6706,14 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
 /* ---------------- 弹窗增强 ---------------- */
 .modal--sm { max-width: 420px; }
 .modal--md { max-width: 560px; }
-.modal--lg { max-width: 760px; }
-.modal__body { padding: 4px 24px 22px; }
+.modal--lg { max-width: 880px; }
+.modal__body { padding: 6px 28px 26px; font-size: 15px; line-height: 1.7; }
 .modal__footer {
   border-top: 1px solid var(--line);
   display: flex;
   gap: 8px;
   justify-content: flex-end;
-  padding: 14px 24px 20px;
+  padding: 16px 28px 22px;
 }
 .modal form { padding: 4px 24px 22px; }
 

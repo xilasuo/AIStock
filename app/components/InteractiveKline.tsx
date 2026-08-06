@@ -20,11 +20,13 @@ import {
   LineSeries,
   LineType,
   TickMarkType,
+  createSeriesMarkers,
   type IChartApi,
   type IPriceLine,
   type ISeriesApi,
   type LineStyle,
   type LineWidth,
+  type SeriesMarker,
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
@@ -118,6 +120,8 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
   const maRefs = useRef<Record<number, ISeriesApi<"Line"> | null>>({});
   const priceLinesRef = useRef<IPriceLine[]>([]);
   const lineSpecsRef = useRef<PriceLineEntry[]>([]);
+  // 往前推第 20 日蜡烛的标记插件实例
+  const day20MarkersRef = useRef<ReturnType<typeof createSeriesMarkers<UTCTimestamp>> | null>(null);
   // 与 lineSpecsRef 镜像的 state：仅在 render 中消费图例数据时使用，避免在渲染期读取 ref。
   const [lineSpecs, setLineSpecs] = useState<PriceLineEntry[]>([]);
   const [period, setPeriod] = useState<KPeriod>("day");
@@ -311,6 +315,7 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
     return () => {
       window.removeEventListener("resize", onResize);
       priceLinesRef.current = [];
+      day20MarkersRef.current = null;
       chart.remove();
       chartRef.current = null;
       candleRef.current = null;
@@ -339,26 +344,68 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
       color: b.close >= b.open ? "rgba(239,68,68,.45)" : "rgba(34,197,94,.45)",
     }));
 
-    candle.setData(candleData as { time: Time; open: number; high: number; low: number; close: number }[]);
-    vol.setData(volData);
-
-    // 计算并填充均线 MA5/10/20/60
-    const closes = bars.map((b) => b.close);
-    for (const period of [5, 10, 20, 60]) {
-      const ma = maRefs.current[period];
-      if (!ma) continue;
-      const maData: { time: Time; value: number }[] = [];
-      for (let i = period - 1; i < bars.length; i++) {
-        let sum = 0;
-        for (let j = i - period + 1; j <= i; j++) sum += closes[j];
-        maData.push({ time: toTimestamp(bars[i].date) as UTCTimestamp, value: sum / period });
+    // 切换周期（日/周/月）时，先清空再写入，避免跨周期时间轴冲突导致 setData 静默失败、图表不更新。
+    // 用 try/catch 兜住，单个 setData 异常不应阻断其余渲染。
+    try {
+      candle.setData([]);
+      vol.setData([]);
+      for (const period of [5, 10, 20, 60]) {
+        const ma = maRefs.current[period];
+        if (ma) ma.setData([]);
       }
-      ma.setData(maData);
+      candle.setData(candleData as { time: Time; open: number; high: number; low: number; close: number }[]);
+      vol.setData(volData);
+
+      // 计算并填充均线 MA5/10/20/60
+      const closes = bars.map((b) => b.close);
+      for (const period of [5, 10, 20, 60]) {
+        const ma = maRefs.current[period];
+        if (!ma) continue;
+        const maData: { time: Time; value: number }[] = [];
+        for (let i = period - 1; i < bars.length; i++) {
+          let sum = 0;
+          for (let j = i - period + 1; j <= i; j++) sum += closes[j];
+          maData.push({ time: toTimestamp(bars[i].date) as UTCTimestamp, value: sum / period });
+        }
+        ma.setData(maData);
+      }
+    } catch (e) {
+      // 数据时间轴异常时降级：保留现有图表，不阻断视图
+      if (process.env.NODE_ENV !== "production") console.warn("[InteractiveKline] setData failed:", e);
     }
 
     // 应用可见窗口：range>0 显示最近 N 根，否则显示全部
     const visible = range > 0 ? Math.min(range, bars.length) : bars.length;
-    chart.timeScale().setVisibleLogicalRange({ from: bars.length - visible, to: bars.length - 1 });
+    try {
+      chart.timeScale().setVisibleLogicalRange({ from: bars.length - visible, to: bars.length - 1 });
+    } catch {
+      /* 忽略时间轴范围设置异常 */
+    }
+
+    // 标记「往前推第 20 日」的蜡烛：取最新一根往前数第 20 根（索引 bars.length-1-20）。
+    // 仅当数据足够（>=21 根）时绘制，避免无效时间轴位置。
+    try {
+      if (!day20MarkersRef.current) {
+        day20MarkersRef.current = createSeriesMarkers(candle, []);
+      }
+      const idx = bars.length - 1 - 20;
+      if (idx >= 0) {
+        const bar = bars[idx];
+        const marker: SeriesMarker<UTCTimestamp> = {
+          time: toTimestamp(bar.date) as UTCTimestamp,
+          position: "aboveBar",
+          shape: "circle",
+          color: "#f59e0b",
+          text: "第20日",
+          size: 1,
+        };
+        day20MarkersRef.current.setMarkers([marker]);
+      } else {
+        day20MarkersRef.current.setMarkers([]);
+      }
+    } catch {
+      /* 标记插件异常时降级，不阻断图表 */
+    }
   }, [bars, range]);
 
   /**

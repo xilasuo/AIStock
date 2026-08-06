@@ -1,7 +1,19 @@
 "use client";
 
 import React from "react";
-import { Target, ClipboardCheck, Scale, ShieldAlert, ArrowRightCircle } from "lucide-react";
+import {
+  Target,
+  ClipboardCheck,
+  Scale,
+  ShieldAlert,
+  ArrowRightCircle,
+  TrendingUp,
+  TrendingDown,
+  PlusCircle,
+  MinusCircle,
+  Calculator,
+  AlertTriangle,
+} from "lucide-react";
 import { MarkdownMessage } from "./MarkdownMessage";
 
 export const STRATEGY_BLOCK_META: Record<string, { icon: React.ReactNode; cls: string; label: string }> = {
@@ -9,7 +21,16 @@ export const STRATEGY_BLOCK_META: Record<string, { icon: React.ReactNode; cls: s
   依据: { icon: <ClipboardCheck size={15} />, cls: "strategy-block--basis", label: "依据" },
   建议仓位: { icon: <Scale size={15} />, cls: "strategy-block--position", label: "建议仓位" },
   仓位与止损: { icon: <Scale size={15} />, cls: "strategy-block--position", label: "仓位与止损" },
+  仓位计算: { icon: <Calculator size={15} />, cls: "strategy-block--calc", label: "仓位计算" },
+  止盈: { icon: <TrendingUp size={15} />, cls: "strategy-block--take-profit", label: "止盈" },
+  止损: { icon: <TrendingDown size={15} />, cls: "strategy-block--stop-loss", label: "止损" },
+  加仓: { icon: <PlusCircle size={15} />, cls: "strategy-block--add", label: "加仓" },
+  减仓: { icon: <MinusCircle size={15} />, cls: "strategy-block--reduce", label: "减仓" },
+  清仓: { icon: <MinusCircle size={15} />, cls: "strategy-block--reduce", label: "清仓" },
+  减仓清仓: { icon: <MinusCircle size={15} />, cls: "strategy-block--reduce", label: "减仓/清仓" },
+  "减仓/清仓": { icon: <MinusCircle size={15} />, cls: "strategy-block--reduce", label: "减仓/清仓" },
   风险与缺口: { icon: <ShieldAlert size={15} />, cls: "strategy-block--risk", label: "风险与缺口" },
+  风险: { icon: <AlertTriangle size={15} />, cls: "strategy-block--risk", label: "风险" },
   下一步: { icon: <ArrowRightCircle size={15} />, cls: "strategy-block--next", label: "下一步" },
 };
 
