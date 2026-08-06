@@ -464,7 +464,8 @@ export function BigScreenView() {
     try {
       const existing = watchlist.find((w) => w.symbol === klinePick.code);
       if (existing) {
-        await jsonRequest("/api/watchlist", { method: "DELETE", body: JSON.stringify({ id: existing.id }) });
+        // 取消关注：服务端 DELETE 从 query 读取 symbol
+        await jsonRequest(`/api/watchlist?symbol=${encodeURIComponent(existing.symbol)}`, { method: "DELETE" });
       } else {
         await jsonRequest("/api/watchlist", {
           method: "POST",
