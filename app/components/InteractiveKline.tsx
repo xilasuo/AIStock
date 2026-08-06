@@ -138,6 +138,7 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
   const [reloadKey, setReloadKey] = useState(0);
   const [hoveredMarker, setHoveredMarker] = useState<MarkerKey | null>(null);
   const [legendPos, setLegendPos] = useState<{ left: number; top: number } | null>(null);
+  const [legendExpanded, setLegendExpanded] = useState(false);
   const [dragging, setDragging] = useState(false);
   const dragStateRef = useRef<{ startX: number; startY: number; originLeft: number; originTop: number } | null>(null);
   const legendRef = useRef<HTMLDivElement>(null);
@@ -175,6 +176,7 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
   }, [dragging]);
 
   const startDrag = (e: React.MouseEvent) => {
+    if (!legendExpanded) return;
     e.preventDefault();
     const container = containerRef.current?.parentElement;
     if (!container) return;
@@ -577,80 +579,153 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
         )}
         <div ref={containerRef} style={{ width: "100%", height: "100%", opacity: loading || error ? 0 : 1 }} />
 
-        {/* Marker 图例：在图表右上角，列出 5 条参考线的标签 + 价格。
-            之前这些文字全部贴在右侧价格轴上，5 条同时叠加会堆成一团挡住 K 线；
-            改为浮层后默认完全可见，hover 对应条目可加亮 K 线上同色价格线。
-            pointer-events:auto 覆盖父元素 none，避免点击穿透到 canvas。 */}
+        {/* Marker 图例：默认折叠为右上角小按钮，点击展开后显示参考线标签+价格。
+            展开状态可拖动、双击复位；关闭按钮可收起，彻底解决默认遮挡 K 线的问题。 */}
         {!loading && !error && legendItems.length > 0 && (
-          <div
-            ref={legendRef}
-            className="kline-marker-legend"
-            onMouseDown={startDrag}
-            onDoubleClick={() => setLegendPos(null)}
-            title={dragging ? "拖动中…" : "拖动可移动图例，双击复位"}
-            style={{
-              position: "absolute",
-              ...(legendPos
-                ? { left: legendPos.left, top: legendPos.top, right: "auto" }
-                : { top: 8, right: 8 }),
-              padding: "8px 10px",
-              background: "rgba(8,16,28,.72)",
-              backdropFilter: "blur(6px)",
-              WebkitBackdropFilter: "blur(6px)",
-              border: "0.5px solid rgba(148,163,184,.25)",
-              borderRadius: 8,
-              boxShadow: "0 4px 16px rgba(0,0,0,.28)",
-              display: "flex",
-              flexDirection: "column",
-              gap: 4,
-              minWidth: 132,
-              maxWidth: 220,
-              pointerEvents: "auto",
-              zIndex: 2,
-              cursor: dragging ? "grabbing" : "grab",
-            }}
-          >
-            {legendItems.map((item) => {
-              const active = hoveredMarker === item.key;
-              const dimmed = hoveredMarker !== null && !active;
-              return (
+          <>
+            {!legendExpanded && (
+              <button
+                type="button"
+                onClick={() => setLegendExpanded(true)}
+                title="显示指标参考线"
+                style={{
+                  position: "absolute",
+                  top: 8,
+                  right: 8,
+                  width: 26,
+                  height: 26,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: 6,
+                  border: "0.5px solid rgba(148,163,184,.25)",
+                  background: "rgba(8,16,28,.72)",
+                  backdropFilter: "blur(6px)",
+                  WebkitBackdropFilter: "blur(6px)",
+                  color: "var(--text)",
+                  cursor: "pointer",
+                  pointerEvents: "auto",
+                  zIndex: 2,
+                  padding: 0,
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="3" y1="8" x2="21" y2="8" />
+                  <line x1="3" y1="12" x2="21" y2="12" />
+                  <line x1="3" y1="16" x2="21" y2="16" />
+                </svg>
+              </button>
+            )}
+
+            {legendExpanded && (
+              <div
+                ref={legendRef}
+                className="kline-marker-legend"
+                onMouseDown={startDrag}
+                onDoubleClick={() => { setLegendPos(null); }}
+                title={dragging ? "拖动中…" : "拖动可移动图例，双击复位"}
+                style={{
+                  position: "absolute",
+                  ...(legendPos
+                    ? { left: legendPos.left, top: legendPos.top, right: "auto" }
+                    : { top: 8, right: 8 }),
+                  padding: "8px 10px",
+                  background: "rgba(8,16,28,.72)",
+                  backdropFilter: "blur(6px)",
+                  WebkitBackdropFilter: "blur(6px)",
+                  border: "0.5px solid rgba(148,163,184,.25)",
+                  borderRadius: 8,
+                  boxShadow: "0 4px 16px rgba(0,0,0,.28)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                  minWidth: 132,
+                  maxWidth: 220,
+                  pointerEvents: "auto",
+                  zIndex: 2,
+                  cursor: dragging ? "grabbing" : "grab",
+                }}
+              >
                 <div
-                  key={item.key}
-                  onMouseEnter={() => !dragging && setHoveredMarker(item.key)}
-                  onMouseLeave={() => !dragging && setHoveredMarker((curr) => (curr === item.key ? null : curr))}
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 6,
-                    padding: "2px 4px",
-                    borderRadius: 4,
-                    cursor: "pointer",
-                    opacity: dimmed ? 0.45 : 1,
-                    background: active ? "rgba(255,255,255,.06)" : "transparent",
-                    transition: "opacity .15s, background .15s",
+                    justifyContent: "space-between",
+                    marginBottom: 2,
+                    padding: "0 2px",
+                    borderBottom: "0.5px solid rgba(148,163,184,.15)",
+                    paddingBottom: 4,
                   }}
-                  title={`高亮 K 线上的「${item.label}」`}
                 >
-                  <span
+                  <span style={{ fontSize: 10, color: "var(--muted)", fontWeight: 500 }}>指标参考线</span>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setLegendExpanded(false); setLegendPos(null); }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    title="收起"
                     style={{
-                      width: 10,
-                      height: 2,
-                      background: item.color,
-                      borderRadius: 1,
-                      flexShrink: 0,
-                      display: "inline-block",
+                      width: 16,
+                      height: 16,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      border: "none",
+                      background: "transparent",
+                      color: "var(--muted)",
+                      cursor: "pointer",
+                      borderRadius: 4,
+                      padding: 0,
                     }}
-                  />
-                  <span style={{ fontSize: 11, color: "var(--text)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {item.label}
-                  </span>
-                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text)", fontWeight: 500 }}>
-                    {item.price.toFixed(2)}
-                  </span>
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
                 </div>
-              );
-            })}
-          </div>
+                {legendItems.map((item) => {
+                  const active = hoveredMarker === item.key;
+                  const dimmed = hoveredMarker !== null && !active;
+                  return (
+                    <div
+                      key={item.key}
+                      onMouseEnter={() => !dragging && setHoveredMarker(item.key)}
+                      onMouseLeave={() => !dragging && setHoveredMarker((curr) => (curr === item.key ? null : curr))}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "2px 4px",
+                        borderRadius: 4,
+                        cursor: "pointer",
+                        opacity: dimmed ? 0.45 : 1,
+                        background: active ? "rgba(255,255,255,.06)" : "transparent",
+                        transition: "opacity .15s, background .15s",
+                      }}
+                      title={`高亮 K 线上的「${item.label}」`}
+                    >
+                      <span
+                        style={{
+                          width: 10,
+                          height: 2,
+                          background: item.color,
+                          borderRadius: 1,
+                          flexShrink: 0,
+                          display: "inline-block",
+                        }}
+                      />
+                      <span style={{ fontSize: 11, color: "var(--text)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {item.label}
+                      </span>
+                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text)", fontWeight: 500 }}>
+                        {item.price.toFixed(2)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
