@@ -1,4 +1,4 @@
-import { requireApiUser } from "../../../../lib/auth/auth";
+import { requireApiUser, getCurrentUser } from "../../../../lib/auth/auth";
 import { execFileSync } from "child_process";
 import { readFileSync, existsSync } from "fs";
 import {
@@ -7,6 +7,8 @@ import {
   isExecNotImplemented,
 } from "../../../../lib/utils/pythonExec";
 import path from "path";
+import { getDb, ensureSchema } from "../../../../db";
+import { fetchPreferences } from "../../../../lib/utils/preferences";
 
 /**
  * 探测项目根目录。
@@ -58,6 +60,9 @@ function projectRoot(): string {
 const ALLOWED_KEYS = new Set([
   // 策略预设（配方名，由后端解析为权重/阈值基线）
   "preset",
+  // 操作模式角色卡：ultra_short/short/swing/long（与 trade_mode.py 对齐）。
+  // 前端未显式传值时，后端会用用户的交易风格偏好(tradingPreferences.tradeMode)填充。
+  "trade_mode",
   // screener
   "top_n", "max_per_sector", "momentum_window",
   "w_momentum", "w_value", "w_liquidity", "w_rsi", "w_macd", "w_trend", "w_size", "w_quality",
@@ -177,6 +182,36 @@ export async function POST(req: Request) {
   }
 
   const overrides = sanitizeOverrides(body);
+
+  // 操作模式来源：优先用前端显式选择的 trade_mode；否则回退到用户的
+  // 交易风格偏好(tradingPreferences.tradeMode，即「系统设置→交易风格」)，
+  // 让选股引擎与用户在前端设置的交易风格保持一致。最后兜底为 short。
+  let tradeModeSource: "ui" | "preference" | "default" = "default";
+  let resolvedTradeMode: "ultra_short" | "short" | "swing" | "long" = "short";
+  const uiTradeMode =
+    typeof overrides.trade_mode === "string" && overrides.trade_mode.length > 0
+      ? (overrides.trade_mode as typeof resolvedTradeMode)
+      : null;
+  if (uiTradeMode) {
+    resolvedTradeMode = uiTradeMode;
+    tradeModeSource = "ui";
+  } else {
+    try {
+      const me = await getCurrentUser();
+      await ensureSchema();
+      const prefs = await fetchPreferences(getDb(), me.id);
+      const prefMode = prefs.tradeMode as typeof resolvedTradeMode | undefined;
+      const VALID = new Set(["ultra_short", "short", "swing", "long"]);
+      if (prefMode && VALID.has(prefMode)) {
+        resolvedTradeMode = prefMode;
+        tradeModeSource = "preference";
+      }
+    } catch {
+      // 偏好读取失败时静默回退到 default(short)
+    }
+  }
+  overrides.trade_mode = resolvedTradeMode;
+
   const overridesStr = JSON.stringify(overrides);
   // 时段档位：决定拉取云端哪一档配置、以及跑哪套选股条件
   const PROFILES = ["pre_market", "intraday", "post_market"];
@@ -216,6 +251,8 @@ export async function POST(req: Request) {
         appliedOverrides: overrides,
         appliedProfile: profile,
         appliedPreset: presetArg || PROFILE_PRESET_UI[profile] || "breakout",
+        appliedTradeMode: resolvedTradeMode,
+        tradeModeSource,
         candidatePool: PREFETCHED,
         engineLog: stdout.slice(-200),
       });

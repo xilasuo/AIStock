@@ -27,6 +27,7 @@ const HOST = process.env.LOCAL_ENGINE_HOST || "127.0.0.1";
 // 守护进程直接收前端 body 转发给 run_hub.py，必须复用同一白名单，防止未知键直传引擎。
 const ALLOWED_KEYS = new Set([
   "preset",
+  "trade_mode",
   "top_n", "max_per_sector", "momentum_window",
   "w_momentum", "w_value", "w_liquidity", "w_rsi", "w_macd", "w_trend", "w_size", "w_quality",
   "w_fund_flow",

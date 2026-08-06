@@ -17,7 +17,7 @@ import {
   Hint,
   Spinner,
 } from "../components/ui";
-import { ScreenerConfigPanel, type ScreenerOverrides } from "./ScreenerConfigPanel";
+import { ScreenerConfigPanel, TRADE_MODES, type ScreenerOverrides } from "./ScreenerConfigPanel";
 import { formatEngineTime } from "../../lib/utils/time";
 
 /* ----------------------------- 数据类型 ----------------------------- */
@@ -343,6 +343,8 @@ export function StrategyScanView({
   } | null>(null);
   // 当前扫描所属的时段档位（用于把反馈优化作用到正确的档位权重）
   const [scanProfile, setScanProfile] = useState<string>("pre_market");
+  // 本次扫描实际生效的操作模式（含来源：ui=手动选择 / preference=用我的交易风格 / default=兜底）
+  const [appliedTradeMode, setAppliedTradeMode] = useState<{ mode: string; source: string } | null>(null);
   async function optimizeFromFeedback() {
     if (optimizeBusy) return;
     setOptimizeBusy(true);
@@ -382,10 +384,18 @@ export function StrategyScanView({
         body: JSON.stringify(profile ? { ...overrides, profile } : overrides),
         signal: ctrl.signal,
       }).finally(() => window.clearTimeout(timer));
-      const json = (await res.json()) as { ok?: boolean; scan?: Scan; error?: string; code?: string };
+      const json = (await res.json()) as {
+        ok?: boolean; scan?: Scan; error?: string; code?: string;
+        appliedTradeMode?: string; tradeModeSource?: string;
+      };
       if (json.ok && json.scan) {
         setScan(json.scan);
         setScanError("");
+        setAppliedTradeMode(
+          json.appliedTradeMode
+            ? { mode: json.appliedTradeMode, source: json.tradeModeSource || "default" }
+            : null,
+        );
       } else {
         const msg = json.error || "扫描执行失败";
         // 云端不运行引擎时，给出更友好的提示
@@ -452,7 +462,9 @@ export function StrategyScanView({
       <SectionHeader
         eyebrow="文件桥接"
         title="策略扫描"
-        subtitle={`【${PROFILE_LABEL[scan.profile ?? "pre_market"] ?? "盘前"}】候选池 ${scan.universeSize} 只 → 选出 ${scan.selectedCount} 只 ｜ 生成于 ${formatEngineTime(scan.generatedAt)}（上海时间）`}
+        subtitle={`【${PROFILE_LABEL[scan.profile ?? "pre_market"] ?? "盘前"}】候选池 ${scan.universeSize} 只 → 选出 ${scan.selectedCount} 只${
+          appliedTradeMode ? ` ｜ 操作模式：${TRADE_MODES.find((m) => m.key === appliedTradeMode.mode)?.label ?? appliedTradeMode.mode}${appliedTradeMode.source === "preference" ? "（你的交易风格）" : appliedTradeMode.source === "ui" ? "（手动指定）" : ""}` : ""
+        } ｜ 生成于 ${formatEngineTime(scan.generatedAt)}（上海时间）`}
         desc="由 trading_agent 回测引擎生成，经文件桥同步到本页展示。"
       />
 

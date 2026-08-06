@@ -6,7 +6,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 export type ScreenerOverrides = {
   // 操作模式角色卡（与 trading_agent/trade_mode.py 的 MODE_CHOICES 保持一致）：
   // ultra_short(超短1-3天) / short(短线3-10天) / swing(波段1-3月) / long(长线6月+)
-  trade_mode?: "ultra_short" | "short" | "swing" | "long";
+  // 空串 "" 表示「自动」：由后端按用户交易风格偏好(tradingPreferences.tradeMode)决定。
+  trade_mode?: "" | "ultra_short" | "short" | "swing" | "long";
   // 策略预设（配方名：breakout / ma_golden / macd_cross）
   preset?: string;
   // 板块
@@ -279,7 +280,9 @@ export const STRATEGY_PRESETS: {
 
 /** 默认值（与 config.py ScreenerConfig 默认值对齐） */
 const DEFAULTS: Required<ScreenerOverrides> = {
-  trade_mode: "short",
+  // 空串表示「自动」：交由此次运行的后端按用户交易风格偏好(tradingPreferences.tradeMode)决定，
+  // 让用户在前端「系统设置→交易风格」的设置真正贯穿到选股引擎；手动选择后则覆盖偏好。
+  trade_mode: "",
   preset: "",
   boards: ["main", "cyb", "kc", "bj"],
   st_filter: "exclude_st",
@@ -741,7 +744,7 @@ export function ScreenerConfigPanel({
           <span className="screener-field-label">操作模式</span>
           <select
             className="screener-select"
-            value={ov.trade_mode || "short"}
+            value={ov.trade_mode || ""}
             onChange={(e) =>
               setOv((prev) => ({
                 ...prev,
@@ -749,16 +752,22 @@ export function ScreenerConfigPanel({
               }))
             }
           >
+            <option value="">自动（用我的交易风格）</option>
             {TRADE_MODES.map((m) => (
               <option key={m.key} value={m.key}>{m.label} · {m.hint}</option>
             ))}
           </select>
         </div>
         {(() => {
-          const sel = TRADE_MODES.find((m) => m.key === (ov.trade_mode || "short"))!;
+          const auto = !ov.trade_mode;
+          const sel = auto ? null : TRADE_MODES.find((m) => m.key === ov.trade_mode);
           return (
             <span className="screener-preset-desc">
-              <span className="screener-muted">{sel.hint}</span>
+              <span className="screener-muted">
+                {auto
+                  ? "未手动指定：本次扫描会自动使用「系统设置 → 交易风格」中的偏好（超短/短线/波段/长线）作为选股角色卡。"
+                  : sel?.hint}
+              </span>
             </span>
           );
         })()}

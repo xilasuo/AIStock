@@ -57,17 +57,6 @@ type PriceLineEntry = {
  */
 export type MarkerKey = "top" | "breakout" | "price" | "retest" | "support";
 
-/**
- * marker 价格线的可序列化描述（用于图例展示 + 状态对比）。
- * 不直接持有 IPriceLine，避免 hover 状态变更时重建图表。
- */
-type MarkerLegendItem = {
-  key: MarkerKey;
-  label: string;
-  price: number;
-  color: string;
-};
-
 const PERIODS: { key: KPeriod; label: string }[] = [
   { key: "day", label: "日K" },
   { key: "week", label: "周K" },
@@ -129,6 +118,8 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
   const maRefs = useRef<Record<number, ISeriesApi<"Line"> | null>>({});
   const priceLinesRef = useRef<IPriceLine[]>([]);
   const lineSpecsRef = useRef<PriceLineEntry[]>([]);
+  // 与 lineSpecsRef 镜像的 state：仅在 render 中消费图例数据时使用，避免在渲染期读取 ref。
+  const [lineSpecs, setLineSpecs] = useState<PriceLineEntry[]>([]);
   const [period, setPeriod] = useState<KPeriod>("day");
   const [range, setRange] = useState<number>(120);
   const [bars, setBars] = useState<KlineBar[]>(initialBars ?? []);
@@ -194,10 +185,11 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
   // 拉取指定周期 K 线数据 + markers（reloadKey 变化也会重新拉取，用于重试）
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError("");
     fetch(`/api/kline/${code}.json?period=${period}&t=${reloadKey}`, { headers: { "content-type": "application/json" } })
       .then(async (res) => {
+        // 进入异步回调后再标记加载态，避免在 effect 体内同步 setState 触发级联渲染
+        setLoading(true);
+        setError("");
         if (!res.ok) throw new Error(`接口 ${res.status}`);
         const data = (await res.json()) as { ok?: boolean; bars?: KlineBar[]; markers?: Markers; error?: string };
         if (!data.ok || !data.bars?.length) throw new Error(data.error || "无K线数据");
@@ -459,6 +451,7 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
 
     priceLinesRef.current = lines;
     lineSpecsRef.current = specs;
+    setLineSpecs(specs);
     setHoveredMarker(null);
   }, [markers]);
 
@@ -487,7 +480,7 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
     latest && bars.length >= 2 ? ((latest.close - bars[bars.length - 2].close) / bars[bars.length - 2].close) * 100 : null;
 
   // 图例数据：按价格从高到低，让顶部图例的自然顺序与价格轴自上而下的位置接近。
-  const legendItems: Array<{ key: MarkerKey; label: string; price: number; color: string; baseWidth: LineWidth }> = lineSpecsRef.current
+  const legendItems: Array<{ key: MarkerKey; label: string; price: number; color: string; baseWidth: LineWidth }> = lineSpecs
     .map((spec) => ({ key: spec.key, label: spec.label, price: spec.price, color: spec.color, baseWidth: spec.baseWidth }))
     .sort((a, b) => b.price - a.price);
 
