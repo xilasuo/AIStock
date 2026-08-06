@@ -860,6 +860,13 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
         if (editingTrade.side === "买入") {
           const maxLossRaw = data.get("maxLoss");
           payload.maxLoss = maxLossRaw && String(maxLossRaw).trim() ? Number(maxLossRaw) : "";
+          // 编辑风险计划：止损/止盈留空表示「回到自动推算」，空串不会触发服务端覆盖
+          const stopLossRaw = data.get("stopLoss");
+          payload.stopLoss = stopLossRaw && String(stopLossRaw).trim() ? Number(stopLossRaw) : "";
+          const takeProfit1Raw = data.get("takeProfit1");
+          payload.takeProfit1 = takeProfit1Raw && String(takeProfit1Raw).trim() ? Number(takeProfit1Raw) : "";
+          const takeProfit2Raw = data.get("takeProfit2");
+          payload.takeProfit2 = takeProfit2Raw && String(takeProfit2Raw).trim() ? Number(takeProfit2Raw) : "";
         }
         await jsonRequest<{ trade: Trade }>("/api/trades", {
           method: "PATCH",
@@ -1218,6 +1225,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
           })()}
           suggestedPrice={tradeMode === "buy" && !editingTrade ? analysis?.quote?.price : undefined}
           prefs={preferences ?? undefined}
+          alerts={alerts}
           onClose={() => { setTradeMode(null); setEditingTrade(null); }}
           onSubmit={saveTrade}
           onSwitchStock={async (symbol) => { await fetchAnalysis(symbol, true); }}
@@ -5003,7 +5011,7 @@ function CapitalSettings({ initialCapitalCents, capitalFlows, onSave, onAddFlow,
   );
 }
 
-function TradeModal({ mode, stock, editTrade, positions, analysisQuote, livePrice, planLossCents, suggestedPrice, prefs, onClose, onSubmit, onSwitchStock }: {
+function TradeModal({ mode, stock, editTrade, positions, analysisQuote, livePrice, planLossCents, suggestedPrice, prefs, alerts, onClose, onSubmit, onSwitchStock }: {
   mode: TradeMode;
   stock: { code?: string; symbol?: string; name: string } | null;
   /** 传入时进入编辑模式：股票代码/名称/方向只读，其余字段回显原值 */
@@ -5019,6 +5027,8 @@ function TradeModal({ mode, stock, editTrade, positions, analysisQuote, livePric
   suggestedPrice?: number;
   /** 交易费用设置（佣金费率 + 最低佣金），用于自动估算手续费 */
   prefs?: TradingPreferences;
+  /** 止损/止盈提醒规则，编辑买入时用于回显当前止损价与止盈价 */
+  alerts?: AlertRule[];
   onClose: () => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
   /** 对话框内手动切换到另一只股票时，重新拉取该股票的技术位（支撑位/1R/2R） */
@@ -5057,6 +5067,22 @@ function TradeModal({ mode, stock, editTrade, positions, analysisQuote, livePric
       : "";
   const defaultTradeDate = editTrade?.tradeDate ?? localIsoDate();
   const defaultMaxLoss = editTrade?.side === "买入" && editTrade?.maxLossCents ? String((editTrade.maxLossCents / 100).toFixed(2)) : "";
+  // 编辑买入时回显当前止损/止盈价（来自提醒规则 alertRules；未设置则为空）
+  const defaultStopLoss = useMemo(() => {
+    if (!editTrade || editTrade.side !== "买入") return "";
+    const rule = alerts?.find((al) => al.symbol === editTrade.symbol && al.type === "止损" && !al.acknowledgedAt);
+    return rule ? String((rule.targetPriceMillis ?? rule.targetPriceCents * 10) / 1000) : "";
+  }, [editTrade, alerts]);
+  const defaultTakeProfit1 = useMemo(() => {
+    if (!editTrade || editTrade.side !== "买入") return "";
+    const rule = alerts?.find((al) => al.symbol === editTrade.symbol && al.type === "止盈一" && !al.acknowledgedAt);
+    return rule ? String((rule.targetPriceMillis ?? rule.targetPriceCents * 10) / 1000) : "";
+  }, [editTrade, alerts]);
+  const defaultTakeProfit2 = useMemo(() => {
+    if (!editTrade || editTrade.side !== "买入") return "";
+    const rule = alerts?.find((al) => al.symbol === editTrade.symbol && al.type === "止盈二" && !al.acknowledgedAt);
+    return rule ? String((rule.targetPriceMillis ?? rule.targetPriceCents * 10) / 1000) : "";
+  }, [editTrade, alerts]);
 
   // 一键采用技术面建议：把支撑位填止损、1R/2R 填止盈，并清空 maxLoss（改用技术面止损位）
   function applyTechSuggestion() {
@@ -5191,7 +5217,7 @@ function TradeModal({ mode, stock, editTrade, positions, analysisQuote, livePric
               }} placeholder="自动估算" />
             </Field>
             {mode === "buy" && (
-              <details className="risk-settings" open={isEdit}>
+              <details className="risk-settings" open>
                 <summary>止损止盈设置 <em>（可选 · 填了自动生成止损/止盈，复盘时还能自动判断按没按计划）</em></summary>
                 {!isEdit && analysisQuote && (analysisQuote.support != null || analysisQuote.target1 != null || analysisQuote.target2 != null) && (
                   <div className="tech-suggestion">
@@ -5209,24 +5235,18 @@ function TradeModal({ mode, stock, editTrade, positions, analysisQuote, livePric
                     <p className="tech-suggestion__note">来自该股当前分析的支撑位与 1R/2R 目标，点「一键采用」填入下方；可再手动改。</p>
                   </div>
                 )}
-                {!isEdit && (
-                  <Field label="止损价（元，可选）" help="留空时按下方「最多接受亏损」反推；也可点上方「技术面建议」用支撑位自动填入，系统据此设止损并算止盈。">
-                    <Input ref={stopLossRef} name="stopLoss" type="number" min="0" step="any" placeholder="技术面支撑位或自定" />
-                  </Field>
-                )}
+                <Field label="止损价（元，可选）" help="留空时按下方「最多接受亏损」反推；也可点上方「技术面建议」用支撑位自动填入，系统据此设止损并算止盈。">
+                  <Input ref={stopLossRef} name="stopLoss" type="number" min="0" step="any" defaultValue={defaultStopLoss} placeholder="技术面支撑位或自定" />
+                </Field>
                 <Field label="最多接受亏损（元）" help={`这笔最多愿意亏多少？系统按「成本价 − 亏损 ÷ 股数」反推止损价，并按 ${TAKE_PROFIT_1_R}/${TAKE_PROFIT_2_R} 倍风险自动算止盈一、止盈二。`}>
                   <Input ref={maxLossRef} name="maxLoss" type="number" min="0" step="0.01" defaultValue={defaultMaxLoss} placeholder="例如 500" />
                 </Field>
-                {!isEdit && (
-                  <>
-                    <Field label="止盈价一（元，可选）" help={`留空则按 ${TAKE_PROFIT_1_R} 倍风险自动推算；填写后覆盖系统推算。`}>
-                      <Input ref={takeProfit1Ref} name="takeProfit1" type="number" min="0" step="any" placeholder={`留空则按 ${TAKE_PROFIT_1_R}R 推算`} />
-                    </Field>
-                    <Field label="止盈价二（元，可选）" help={`留空则按 ${TAKE_PROFIT_2_R} 倍风险自动推算；填写后覆盖系统推算。`}>
-                      <Input ref={takeProfit2Ref} name="takeProfit2" type="number" min="0" step="any" placeholder={`留空则按 ${TAKE_PROFIT_2_R}R 推算`} />
-                    </Field>
-                  </>
-                )}
+                <Field label="止盈价一（元，可选）" help={`留空则按 ${TAKE_PROFIT_1_R} 倍风险自动推算；填写后覆盖系统推算。`}>
+                  <Input ref={takeProfit1Ref} name="takeProfit1" type="number" min="0" step="any" defaultValue={defaultTakeProfit1} placeholder={`留空则按 ${TAKE_PROFIT_1_R}R 推算`} />
+                </Field>
+                <Field label="止盈价二（元，可选）" help={`留空则按 ${TAKE_PROFIT_2_R} 倍风险自动推算；填写后覆盖系统推算。`}>
+                  <Input ref={takeProfit2Ref} name="takeProfit2" type="number" min="0" step="any" defaultValue={defaultTakeProfit2} placeholder={`留空则按 ${TAKE_PROFIT_2_R}R 推算`} />
+                </Field>
                 <p className="risk-settings__hint">不填也能保存；填了「最多接受亏损」，复盘时系统才能判断你有没有按计划执行。</p>
               </details>
             )}
