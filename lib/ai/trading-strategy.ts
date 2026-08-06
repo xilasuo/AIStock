@@ -69,7 +69,7 @@ function summarizeContext(ctx: AssistantContext): string {
 
 function buildTraderSystemPrompt(prefs: TradingPreferences, context: AssistantContext): string {
   return [
-    "你是严厉且资深的操盘手，只看数据、不拍脑袋。风格：直接、强硬、反幻觉；句句落到买卖动作上——买/加仓/持有/减仓/止损/清仓，并给出明确价格与股数/金额，不许用“可以考虑”“或许”这类软话。能算就给数字，不能算就明说缺什么；违背纪律的倾向要直接点破。不承诺收益、不替用户下单，最终由用户确认执行。",
+    "你是严厉且资深的操盘手，只看数据、不拍脑袋。风格：直接、强硬、反幻觉；句句落到买卖动作上——开新仓/加仓/持有/减仓/止损/清仓，并给出明确价格与股数/金额，不许用“可以考虑”“或许”这类软话。能算就给数字，不能算就明说缺什么；违背纪律的倾向要直接点破。不承诺收益、不替用户下单，最终由用户确认执行。",
     "【回答风格硬约束】干净利索、不绕弯、不罗嗦：结论先行、动作直给；不铺垫寒暄客套、不重复免责声明、不堆砌形容词；能用短句绝不用长句。整体不超 400 字（第 8 条仓位计算展示除外），到点即止。",
     "【持仓股决策硬约束】只要用户持有该股，必须把四件事讲死讲明、不许含糊：①止盈——价格到哪个价位/满足什么条件就卖（给具体价或明确条件）；②止损——跌破哪个价位必须砍（即下方止损位，给具体价，不犹豫）；③加仓(买入)——满足什么条件才加、给触发价与上限；④减仓/卖出——什么情况减、什么情况清。能买/能加就明说“买/加”，不能就明说“不买/不加、继续持有或减”，绝不用“可以考虑”“视情况”糊弄；最终结论只能是买/加仓/持有/减仓/清仓中的一个明确动作，不许两头下注。",
     "1. 只根据 context 里的信息做判断，绝不凭记忆补数、不编造行情或财务数字（PE/ROE/支撑阻力等缺失就写“数据缺失”）。",
@@ -81,6 +81,7 @@ function buildTraderSystemPrompt(prefs: TradingPreferences, context: AssistantCo
     "7. 若数据明显不足（如 pe=数据缺失且缺支撑阻力），直接给“暂时不能判断，先补全X再问”，不要硬凑买卖建议。",
     "8. 仓位建议必须展示计算：风险每股=max(当前价-支撑线,当前价×3%)；单笔可亏=总资产×max_loss_percent%；建议股数=单笔可亏÷风险每股，且≤可用现金、单股≤总资产×max_concentration_percent%；成数=建议金额÷总资产。数字只来自 context，缺失如实说明。",
     "9. 下方的【我的交易纪律与风险偏好】是硬约束，必须优先生效，不得再用固定的 2%/30% 规则；当 enforce_stop_loss=是 时，任何买入动作都必须先给出止损位，跌破即执行。",
+    "10. 【开新仓硬约束（针对未持仓的新标的）】只要用户当前未持有该股，结论必须给出明确的「开新仓」判断——开新仓（买入建仓）/ 暂不开新仓（观望），且不得与「加仓」混淆（加仓只针对已持有标的）。是否开新仓须综合：①账户可用现金是否足以建仓（至少够 1 手并覆盖单笔风险预算）；②当前总仓位是否逼近纪律上限（超过 max_position_percent 或总仓位>80% 则空间不足）；③交易纪律是否放行（买入必须先设止损等）。三者任一不满足即「暂不开新仓」并点明原因；全部满足则给明确买点、建议仓位与止损位。",
     "10. 【技术面为主，基本面按实际可得性使用】基本面是否可得一律以下方 context 的“基本面”行实际内容为准，不得预设它一定缺失：凡已给出数值的字段（营收增长/利润增长/负债率/PE/PB/ROE）必须引用并参与判断，不许无视已有数据或笼统宣称“基本面缺失”；只有确实显示“数据缺失”的项才说明该项缺失。K线/成交量/MACD/RSI/KDJ/支撑阻力始终稳定可得，故在基本面确实不足时，以走势结构（均线方向、价格与支撑阻力位置）、量能（放量突破/缩量回调/量价背离）、动能指标（MACD/RSI/KDJ）为主要评判依据，并注明“基本面数据缺失，以下判断以技术面为主”。任何情况下不得编造财务数字。",
     "【反幻觉示例】用户问“茅台 PE 多少、能买吗”而 pe=数据缺失 → 正确回答：“数据缺失：本次没取到 PE，我不凭记忆补数。能不能买看你的仓位和计划，先把账户资金补全、设好止损再谈。”",
     "【我的交易纪律与风险偏好，必须优先遵守，替代任何固定百分比】",
@@ -108,7 +109,7 @@ export function buildStrategyFallback(context: AssistantContext, prefs: TradingP
         "下一步：先在设置中填写账户初始资金，再来评估买入条件。",
       ].join("\n");
     }
-    const totalPosition = context.portfolio.totalPositionPercent;
+    const totalPosition = context.portfolio.totalPositionPercent ?? 0;
     const totalAssets = context.portfolio.totalAssets;
     const riskPerShare = Math.max(quote.price - quote.support, quote.price * 0.03);
     const maxLoss = totalAssets * (prefs.maxLossPercent / 100);
@@ -117,14 +118,27 @@ export function buildStrategyFallback(context: AssistantContext, prefs: TradingP
     const maxByConcentration = Math.floor((totalAssets * (prefs.maxConcentrationPercent / 100)) / quote.price);
     shares = Math.max(0, Math.min(shares, maxByCash, maxByConcentration));
     const cheng = totalAssets > 0 ? (shares * quote.price) / totalAssets : 0;
-    const totalTone = totalPosition >= 80
-      ? "总仓位已偏高，先别再加风险暴露，优先处理已有仓位"
-      : "从仓位层面看仍有空间，但空间不等于买点，标的本身得自己过关";
+    const cashEnough = context.portfolio.cash == null ? true : context.portfolio.cash >= quote.price;
+    const capacityOk = totalPosition < 80;
+    const openNew = capacityOk && cashEnough && shares > 0;
+    if (!openNew) {
+      const reasons: string[] = [];
+      if (!capacityOk) reasons.push(`总仓位已${totalPosition.toFixed(2)}%逼近上限`);
+      if (!cashEnough) reasons.push("可用现金不足以建仓");
+      if (shares <= 0) reasons.push("按风险预算算不出正股数（支撑缺失或单笔风险过大）");
+      return [
+        "结论：开新仓判断——暂不开新仓（观望）。",
+        `依据：${reasons.join("；") || "当前不满足开新仓条件"}。`,
+        `账户现状：总仓位${totalPosition.toFixed(2)}%，现金${context.portfolio.cash === null ? "暂无" : `¥${context.portfolio.cash.toFixed(2)}`}；现价¥${quote.price.toFixed(3)}，风险观察线¥${quote.support.toFixed(3)}。`,
+        `风险与缺口：暂不开新仓是纪律优先、不逆势加暴露，不等于判断会跌；${context.missingInformation.slice(0, 2).join("、") || "最新公告仍需自行核验"}${osc ? `\n动能信号：${osc}` : ""}。`,
+        "下一步：等条件满足（仓位腾出/现金到位）再评估，最终由你确认。",
+      ].join("\n");
+    }
     return [
-      `结论：操盘手建仓视角——${totalTone}。`,
-      `依据：当前总仓位${totalPosition.toFixed(2)}%，现金${context.portfolio.cash === null ? "暂无" : `¥${context.portfolio.cash.toFixed(2)}`}；现价¥${quote.price.toFixed(3)}，风险观察线¥${quote.support.toFixed(3)}，单笔风险每股约¥${riskPerShare.toFixed(3)}。`,
+      `结论：开新仓判断——可以开新仓（买入建仓）。`,
+      `依据：总仓位${totalPosition.toFixed(2)}%仍有空间，现金${context.portfolio.cash === null ? "暂无" : `¥${context.portfolio.cash.toFixed(2)}`}；现价¥${quote.price.toFixed(3)}，风险观察线¥${quote.support.toFixed(3)}，单笔风险每股约¥${riskPerShare.toFixed(3)}。`,
       `建议仓位：约${cheng.toFixed(2)}成（约${shares}股），按价格到支撑线的距离控单笔亏损（单笔可亏=总资产${prefs.maxLossPercent}%、单股不超${prefs.maxConcentrationPercent}%）；${prefs.enforceStopLoss ? "买入前必须先设止损，" : ""}止损位设在¥${quote.support.toFixed(3)}下方。`,
-      `风险与缺口：仓位只限风险，不证明会涨；${context.missingInformation.slice(0, 2).join("、") || "最新公告仍需自行核验"}${osc ? `\n动能信号：${osc}` : ""}。`,
+      `风险与缺口：开新仓只限风险，不证明会涨；${context.missingInformation.slice(0, 2).join("、") || "最新公告仍需自行核验"}${osc ? `\n动能信号：${osc}` : ""}。`,
       "下一步：先定买入逻辑与失效条件，再决定下不下手，最终由你确认执行。",
     ].join("\n");
   }
@@ -179,7 +193,7 @@ export async function generateStrategy(
       {
         role: "user" as const,
         content:
-          "结合我的资产、风险偏好与交易纪律，给出该股当前交易策略：结论只能是买/加仓/持有/减仓/清仓中的一个明确动作，并把止盈、止损、加仓(买入)、减仓(卖出)四档触发条件讲死（给具体价位或明确条件），不模糊、不两头下注；给出建议仓位（股数/成数）与止损位，并说明依据。",
+          "结合我的资产、风险偏好与交易纪律，给出该股当前交易策略：结论只能是开新仓/加仓/持有/减仓/清仓中的一个明确动作（未持仓即开新仓、已持仓即加仓/持有/减仓/清仓），并把止盈、止损、加仓(买入)、减仓(卖出)四档触发条件讲死（给具体价位或明确条件），不模糊、不两头下注；给出建议仓位（股数/成数）与止损位，并说明依据。",
       },
     ];
     const response = await fetch(`${ai.apiBase}/chat/completions`, {

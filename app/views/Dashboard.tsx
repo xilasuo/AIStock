@@ -2558,7 +2558,9 @@ function StrategyCard({ analysis, position, portfolioInsights }: {
 // 当浮窗不在分析页时，用占位股票 + 真实账户数据拼一个能通过
 // isValidContext 校验的 context。后端与原有 /api/assistant 逻辑完全不改，
 // AI 在 system 约束下会如实说明「未关联具体股票」，不会编造个股数字。
-function buildPlaceholderContext(portfolioInsights: PortfolioInsights): AssistantContext {
+function buildPlaceholderContext(
+  portfolioInsights: PortfolioInsights,
+): AssistantContext {
   const holdingsSummary = portfolioInsights.positions.length > 0
     ? portfolioInsights.positions.map((p) =>
         `${p.name}(${p.symbol}) ${p.allocationPercent?.toFixed(1) ?? "?"}%、回报${p.returnPercent >= 0 ? "+" : ""}${p.returnPercent.toFixed(1)}%`

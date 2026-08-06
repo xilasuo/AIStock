@@ -86,6 +86,84 @@ function sanitizeOverrides(body: Record<string, unknown>): Record<string, unknow
   return out;
 }
 
+/**
+ * 各时段档位对应的默认预设（与 build_universe.PROFILE_PRESET 保持一致）。
+ * 前端只切 profile 不显式带 preset 时，用此映射决定候选池。
+ */
+const PROFILE_PRESET_UI: Record<string, string> = {
+  pre_market: "breakout",
+  intraday: "momentum_chase",
+  post_market: "ma_golden",
+};
+
+/** 把 Date 转成上海(UTC+8)日期字符串 YYYY-MM-DD，避免依赖服务器本地时区。 */
+function shDateStr(d: Date): string {
+  const sh = new Date(d.getTime() + 8 * 3600 * 1000);
+  const y = sh.getUTCFullYear();
+  const m = String(sh.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(sh.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}
+
+/** 候选池 prefetched 是否当天(上海日期)构建过——当天则复用，避免重复取数。 */
+function isPoolFresh(p: string): boolean {
+  try {
+    const raw = JSON.parse(readFileSync(p, "utf-8"));
+    const meta = raw._meta;
+    if (!meta || !meta.generated_at) return false;
+    return shDateStr(new Date(meta.generated_at)) === shDateStr(new Date());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 按所选预设重建候选池，返回对应的 prefetched_<preset>.json 路径。
+ *
+ * 这是修复「切换策略选出同一批票」的核心：旧实现永远复用写死的
+ * prefetched.json（且那是 low_pe 低估值池），导致任何预设都在同一批
+ * 银行/保险里打分。现在每个预设按其主导因子构建独立候选池，并按下
+ * 预设名缓存——首次构建需取数(~2分钟)，同日再次选用秒回。
+ *
+ * 若构建失败，回退到 legacy 的 prefetched.json（存在则用之）。
+ */
+function ensurePoolForPreset(
+  python: string,
+  taDir: string,
+  preset: string | undefined,
+  profile: string,
+): string {
+  const presetName = preset || PROFILE_PRESET_UI[profile] || "breakout";
+  const universePath = path.join(taDir, `market_universe_${presetName}.json`);
+  const prefetchedPath = path.join(taDir, `prefetched_${presetName}.json`);
+  const legacy = path.join(taDir, "prefetched.json");
+
+  if (isPoolFresh(prefetchedPath)) return prefetchedPath;
+
+  try {
+    // 1) 构建候选池（按预设主导因子推导筛选条件，直连腾讯自选股选股接口）
+    execFileSync(
+      python,
+      ["build_universe.py", "--preset", presetName, "--out", universePath, "--limit", "300"],
+      { cwd: taDir, timeout: 120000, encoding: "utf-8", env: { ...process.env } },
+    );
+    // 2) 批量本地直连取行情（复用连接器同底层接口，workers=16 加速）
+    execFileSync(
+      python,
+      ["dev/fetch_market_data.py", universePath, "--out", prefetchedPath, "--workers", "16"],
+      { cwd: taDir, timeout: 240000, encoding: "utf-8", env: { ...process.env } },
+    );
+    return prefetchedPath;
+  } catch (e) {
+    console.error(`[ensurePool] 候选池构建失败(preset=${presetName}):`, e);
+    if (existsSync(legacy)) {
+      console.warn("[ensurePool] 回退到 legacy prefetched.json");
+      return legacy;
+    }
+    throw e;
+  }
+}
+
 export async function POST(req: Request) {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
@@ -111,16 +189,20 @@ export async function POST(req: Request) {
   if (SUPPORTS_EXEC) {
     try {
       const PROJECT_ROOT = projectRoot();
-      const PREFETCHED = path.join(PROJECT_ROOT, "trading_agent", "prefetched.json");
-      const RUN_HUB = path.join(PROJECT_ROOT, "trading_agent", "run_hub.py");
-      const SCAN_PAYLOAD = path.join(PROJECT_ROOT, "trading_agent", "scan_payload.json");
+      const TA_DIR = path.join(PROJECT_ROOT, "trading_agent");
+      const RUN_HUB = path.join(TA_DIR, "run_hub.py");
+      const SCAN_PAYLOAD = path.join(TA_DIR, "scan_payload.json");
       const python = resolvePython();
+      // 按所选预设重建（或复用当日缓存的）候选池——修复「换策略选出同一批票」
+      const presetArg =
+        typeof overrides.preset === "string" ? overrides.preset : undefined;
+      const PREFETCHED = ensurePoolForPreset(python, TA_DIR, presetArg, profile);
       const stdout = execFileSync(
         python,
         [RUN_HUB, "--prefetched", PREFETCHED, "--profile", profile, "--overrides", overridesStr],
         {
-          cwd: path.join(PROJECT_ROOT, "trading_agent"),
-          timeout: 60_000, // 60s 超时（含回测+优化）
+          cwd: TA_DIR,
+          timeout: 300_000, // 5min：含候选池取数回退 / 回测+优化
           encoding: "utf-8",
           env: { ...process.env },
         },
@@ -133,6 +215,8 @@ export async function POST(req: Request) {
         scan: payload,
         appliedOverrides: overrides,
         appliedProfile: profile,
+        appliedPreset: presetArg || PROFILE_PRESET_UI[profile] || "breakout",
+        candidatePool: PREFETCHED,
         engineLog: stdout.slice(-200),
       });
     } catch (e: unknown) {

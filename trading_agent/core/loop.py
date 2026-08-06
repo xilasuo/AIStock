@@ -27,11 +27,14 @@ def _zero_metrics() -> dict:
     }
 
 
-def run(cfg: config.AppConfig, dp=None) -> dict:
+def run(cfg: config.AppConfig, dp=None, *, risk_state: dict | None = None, current_positions: int | None = None) -> dict:
     """运行完整闭环，产出结果字典。
 
     dp: DataProvider（可注入）。None 时回退默认数据源（腾讯/东财直连）。
     当 WorkBuddy 中枢取数后，应传入 StaticProvider 让引擎用中枢数据计算。
+    risk_state: 可选，实时账户风险快照 {"daily_pnl_pct": float, "drawdown_pct": float}，
+                供开仓闸门做日内止损/最大回撤熔断；缺省则跳过这两项。
+    current_positions: 可选，当前持仓只数，供开仓闸门做持仓容量校验；缺省则跳过。
     """
     dp = dp or provider.default_provider()
 
@@ -87,8 +90,8 @@ def run(cfg: config.AppConfig, dp=None) -> dict:
                 "end": cfg.end,
                 "universe_size": len(codes),
                 "top_n": target_top_n,
-                "selected_n": 0,
-                "notifier": cfg.notifier,
+            "selected_n": 0,
+            "notifier": cfg.notifier,
             },
             "market_state": regime,
             "screener": screener_meta,

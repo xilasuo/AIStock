@@ -370,9 +370,9 @@ export function StrategyScanView({
     setScanError("");
     setScanProfile(profile || "pre_market");
     try {
-      // 90 秒超时（略大于后端 60s 超时，给网络留余量）
+      // 5 分钟超时：首次为某预设构建候选池需取数(~2-3 分钟)，之后命中当日缓存秒回
       const ctrl = new AbortController();
-      const timer = window.setTimeout(() => ctrl.abort(), 90_000);
+      const timer = window.setTimeout(() => ctrl.abort(), 300_000);
       const res = await fetch("/api/strategy-scan/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

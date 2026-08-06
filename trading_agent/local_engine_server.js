@@ -66,6 +66,52 @@ function msgOf(e) {
   return e instanceof Error ? e.message : String(e);
 }
 
+// —— 按预设重建候选池（修复「切换策略选出同一批票」）——
+// 旧实现永远用写死的 prefetched.json（且是 low_pe 池），导致任何预设都在同一批
+// 银行/保险里打分。现按预设主导因子构建独立候选池，按预设名缓存、当日复用。
+const PROFILE_PRESET_UI = { pre_market: "breakout", intraday: "momentum_chase", post_market: "ma_golden" };
+
+function shDateStr(d) {
+  const sh = new Date(d.getTime() + 8 * 3600 * 1000);
+  const y = sh.getUTCFullYear();
+  const m = String(sh.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(sh.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}
+
+function isPoolFresh(p) {
+  try {
+    const raw = JSON.parse(fs.readFileSync(p, "utf-8"));
+    const meta = raw._meta;
+    if (!meta || !meta.generated_at) return false;
+    return shDateStr(new Date(meta.generated_at)) === shDateStr(new Date());
+  } catch {
+    return false;
+  }
+}
+
+function ensurePool(py, preset, profile) {
+  const presetName = preset || PROFILE_PRESET_UI[profile] || "breakout";
+  const universePath = path.join(BASE, `market_universe_${presetName}.json`);
+  const prefetchedPath = path.join(BASE, `prefetched_${presetName}.json`);
+  if (isPoolFresh(prefetchedPath)) return { prefetchedPath, presetName };
+  try {
+    // 1) 构建候选池（直连腾讯自选股选股接口）
+    execFileSync(py, ["build_universe.py", "--preset", presetName, "--out", universePath, "--limit", "300"], {
+      cwd: BASE, timeout: 120000, encoding: "utf-8", env: { ...process.env },
+    });
+    // 2) 批量本地直连取行情
+    execFileSync(py, ["dev/fetch_market_data.py", universePath, "--out", prefetchedPath, "--workers", "16"], {
+      cwd: BASE, timeout: 240000, encoding: "utf-8", env: { ...process.env },
+    });
+    return { prefetchedPath, presetName };
+  } catch (e) {
+    console.error("[ensurePool] 候选池构建失败(preset=" + presetName + "):", msgOf(e));
+    if (fs.existsSync(PRE)) { console.warn("[ensurePool] 回退 legacy prefetched.json"); return { prefetchedPath: PRE, presetName }; }
+    throw e;
+  }
+}
+
 function sendJson(res, code, obj) {
   const body = JSON.stringify(obj);
   res.writeHead(code, { "Content-Type": "application/json; charset=utf-8" });
@@ -131,13 +177,20 @@ const server = http.createServer((req, res) => {
       try {
         const py = resolvePython();
         const ovStr = JSON.stringify(overrides);
-        execFileSync(py, [RUN, "--prefetched", PRE, "--profile", profile, "--overrides", ovStr], {
+        // 按所选预设重建（或复用当日缓存的）候选池
+        const presetArg = (typeof overrides.preset === "string") ? overrides.preset : undefined;
+        const pool = ensurePool(py, presetArg, profile);
+        execFileSync(py, [RUN, "--prefetched", pool.prefetchedPath, "--profile", profile, "--overrides", ovStr], {
           cwd: BASE,
-          timeout: 60000,
+          timeout: 300000,
           encoding: "utf-8",
+          env: { ...process.env },
         });
         const payload = JSON.parse(fs.readFileSync(PAYLOAD, "utf-8"));
-        sendJson(res, 200, { ok: true, scan: payload, appliedOverrides: overrides, appliedProfile: profile });
+        sendJson(res, 200, {
+          ok: true, scan: payload, appliedOverrides: overrides,
+          appliedProfile: profile, appliedPreset: pool.presetName, candidatePool: pool.prefetchedPath,
+        });
       } catch (e) {
         sendJson(res, 500, { ok: false, error: "引擎执行失败: " + msgOf(e) });
       }
