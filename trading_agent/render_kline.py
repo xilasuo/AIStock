@@ -35,12 +35,35 @@ C_DIM = "#64748b"
 C_BLUE = "#3b82f6"    # 现价
 C_ORANGE = "#f59e0b"  # 生死线
 C_GRAY = "#9ca3af"    # 突破/回踩
+C_MA5 = "#e2e8f0"     # 白
+C_MA10 = "#facc15"    # 黄
+C_MA20 = "#c084fc"    # 紫
+C_MA60 = "#4ade80"    # 绿（A股软件惯例）
 
 FONT = "ui-monospace, Menlo, Consolas, monospace"
 
 
 def _mean(xs):
     return sum(xs) / len(xs) if xs else 0.0
+
+
+def _ma(closes: list[float], period: int) -> list[float | None]:
+    """滚动均线：返回每根K线对应的 MA 值，窗口未满时为 None。"""
+    out: list[float | None] = [None] * len(closes)
+    s = 0.0
+    for i, c in enumerate(closes):
+        s += c
+        if i >= period:
+            s -= closes[i - period]
+        if i >= period - 1:
+            out[i] = s / period
+    return out
+
+
+def _ma_polyline(cx: list[float], ma: list[float | None], Y) -> str:
+    """返回均线 polyline 的 points 字符串（无有效点返回空串）。"""
+    pts = [f"{cx[i]:.1f},{Y(v):.1f}" for i, v in enumerate(ma) if v is not None]
+    return " ".join(pts)
 
 
 def _recent_resistance(highs: list[float], price: float, n: int, look: int = 8) -> float | None:
@@ -63,7 +86,7 @@ def detect_markers(bars: list[dict], name: str = "") -> dict:
 
     返回 dict:
       price_now  现价
-      ma20/ma120 均线
+      ma5/ma10/ma20/ma60/ma120 均线
       top        {price, date, is_trap} 泡沫顶（近120根最高，久未创新高=套牢盘）
       breakout   突破确认位（双底颈线，或近60日平台高点）
       retest     {price, date} | None 突破后首次回踩点
@@ -76,7 +99,10 @@ def detect_markers(bars: list[dict], name: str = "") -> dict:
     lows = [b["low"] for b in bars]
     dates = [b["date"] for b in bars]
 
+    ma5 = _mean(closes[-5:]) if n >= 5 else _mean(closes)
+    ma10 = _mean(closes[-10:]) if n >= 10 else _mean(closes)
     ma20 = _mean(closes[-20:]) if n >= 20 else _mean(closes)
+    ma60 = _mean(closes[-60:]) if n >= 60 else _mean(closes)
     ma120 = _mean(closes[-120:]) if n >= 120 else _mean(closes)
     price_now = closes[-1]
 
@@ -161,7 +187,10 @@ def detect_markers(bars: list[dict], name: str = "") -> dict:
     return {
         "name": name,
         "price_now": price_now,
+        "ma5": ma5,
+        "ma10": ma10,
         "ma20": ma20,
+        "ma60": ma60,
         "ma120": ma120,
         "ma_pos": ma_pos,
         "top": {"price": top_price, "date": top_date, "is_trap": is_trap},
@@ -279,9 +308,43 @@ def render_svg(code: str, name: str, bars: list[dict], mk: dict, max_bars: int =
     for idx in (0, n // 3, 2 * n // 3, n - 1):
         tlabels.append(f'<text x="{cx[idx]:.1f}" y="462" text-anchor="middle" font-size="9" fill="{C_DIM}">{d_short(dates[idx])}</text>')
 
+    # ---- MA5/10/20/60 均线曲线（画在蜡烛之上） ----
+    mas = [
+        (5, C_MA5, "MA5"),
+        (10, C_MA10, "MA10"),
+        (20, C_MA20, "MA20"),
+        (60, C_MA60, "MA60"),
+    ]
+    ma_lines = []
+    legend_parts = []
+    for idx, (period, color, label) in enumerate(mas):
+        arr = _ma(closes, period)
+        points = _ma_polyline(cx, arr, Y)
+        if points:
+            ma_lines.append(
+                f'<polyline points="{points}" fill="none" stroke="{color}" stroke-width="1.1" opacity="0.9"/>'
+            )
+        col = idx % 2
+        row = idx // 2
+        last = arr[-1]
+        txt = "--" if last is None else f"{last:.2f}"
+        lx = 34 + col * 70
+        ly = 27 + row * 12
+        legend_parts.append(
+            f'<rect x="{lx}" y="{ly}" width="7" height="7" fill="{color}"/>'
+            f'<text x="{lx + 10}" y="{ly + 7}" fill="{color}">{label} {txt}</text>'
+        )
+    ma_legend = (
+        '<g font-size="8.5">'
+        '<rect x="28" y="22" width="178" height="26" rx="3" fill="rgba(10,14,20,0.62)" '
+        f'stroke="{C_GRID}" stroke-width="0.5"/>'
+        + "".join(legend_parts)
+        + "</g>"
+    )
+
     return f'''<svg viewBox="0 0 680 480" xmlns="http://www.w3.org/2000/svg" role="img" font-family="{FONT}">
 <title>{name} {code} 日K 技术面板</title>
-<desc>{name} {code} 日K线，标注泡沫顶、突破确认位、现价、回踩点、双底（生死线）。</desc>
+<desc>{name} {code} 日K线，MA5/10/20/60 均线，标注泡沫顶、突破确认位、现价、回踩点、双底（生死线）。</desc>
 <defs>
   <pattern id="g" width="20" height="20" patternUnits="userSpaceOnUse">
     <path d="M 20 0 L 0 0 0 20" fill="none" stroke="{C_GRID}" stroke-width="0.5"/>
@@ -297,6 +360,8 @@ def render_svg(code: str, name: str, bars: list[dict], mk: dict, max_bars: int =
 {"".join(scale)}
 {"".join(lines)}
 <g stroke-width="1">{"".join(candles)}</g>
+{"".join(ma_lines)}
+{ma_legend}
 {"".join(tags)}
 <line x1="{area_x0}" y1="380" x2="{area_x1}" y2="380" stroke="{C_GRID}" stroke-width="0.5"/>
 <rect x="{area_x0}" y="382" width="{area_w:.0f}" height="64" fill="{C_BG}"/>
@@ -358,7 +423,7 @@ if __name__ == "__main__":
 
     path, mk, _ = render_kline_panel(args.code, days=args.days, out_dir=args.out)
     print(f"SVG 已生成: {path}")
-    print(f"现价 {mk['price_now']:.2f} | MA20 {mk['ma20']:.2f} / MA120 {mk['ma120']:.2f}（{mk['ma_pos']}）")
+    print(f"现价 {mk['price_now']:.2f} | MA5 {mk['ma5']:.2f} / MA10 {mk['ma10']:.2f} / MA20 {mk['ma20']:.2f} / MA60 {mk['ma60']:.2f} / MA120 {mk['ma120']:.2f}（{mk['ma_pos']}）")
     print(f"泡沫顶 {mk['top']['price']:.2f} @ {mk['top']['date']}" + ("（上方套牢盘）" if mk["top"]["is_trap"] else ""))
     print(f"突破确认位 {mk['breakout']:.2f} | 双底生死线 {mk['support']:.2f} | 双底识别: {'是' if mk['double_bottom'] else '否'}")
     print(f"回踩点: {mk['retest']['price']:.2f} @ {mk['retest']['date']}" if mk["retest"] else "回踩点: 未识别")

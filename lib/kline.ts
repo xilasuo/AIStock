@@ -21,7 +21,10 @@ export type KBar = {
 export type Markers = {
   name: string;
   priceNow: number;
+  ma5: number;
+  ma10: number;
   ma20: number;
+  ma60: number;
   ma120: number;
   maPos: string;
   top: { price: number; date: string; isTrap: boolean };
@@ -141,7 +144,10 @@ export function detectMarkers(bars: KBar[], name = ""): Markers {
   const lows = bars.map((b) => b.low);
   const dates = bars.map((b) => b.date);
 
+  const ma5 = mean(closes.slice(-5)) || mean(closes);
+  const ma10 = mean(closes.slice(-10)) || mean(closes);
   const ma20 = mean(closes.slice(-20)) || mean(closes);
+  const ma60 = mean(closes.slice(-60)) || mean(closes);
   const ma120 = mean(closes.slice(-120)) || mean(closes);
   const priceNow = closes[n - 1];
 
@@ -227,7 +233,10 @@ export function detectMarkers(bars: KBar[], name = ""): Markers {
   return {
     name,
     priceNow,
+    ma5,
+    ma10,
     ma20,
+    ma60,
     ma120,
     maPos,
     top: { price: topPrice, date: topDate, isTrap },
@@ -250,7 +259,33 @@ const C_DIM = "#64748b";
 const C_BLUE = "#3b82f6";
 const C_ORANGE = "#f59e0b";
 const C_GRAY = "#9ca3af";
+const C_MA5 = "#e2e8f0"; // 白
+const C_MA10 = "#facc15"; // 黄
+const C_MA20 = "#c084fc"; // 紫
+const C_MA60 = "#4ade80"; // 绿（A股软件惯例）
 const FONT = "ui-monospace, Menlo, Consolas, monospace";
+
+/** 滚动均线：返回每根K线对应的 MA 值，窗口未满时为 null */
+function calcMA(closes: number[], period: number): (number | null)[] {
+  const out: (number | null)[] = new Array(closes.length).fill(null);
+  let sum = 0;
+  for (let i = 0; i < closes.length; i++) {
+    sum += closes[i];
+    if (i >= period) sum -= closes[i - period];
+    if (i >= period - 1) out[i] = sum / period;
+  }
+  return out;
+}
+
+function maPolyline(cx: number[], ma: (number | null)[], Y: (p: number) => number, color: string): string {
+  const pts: string[] = [];
+  for (let i = 0; i < ma.length; i++) {
+    if (ma[i] === null) continue;
+    pts.push(`${cx[i].toFixed(1)},${Y(ma[i]).toFixed(1)}`);
+  }
+  if (!pts.length) return "";
+  return `<polyline points="${pts.join(" ")}" fill="none" stroke="${color}" stroke-width="1.1" opacity="0.9"/>`;
+}
 
 export function renderKlineSvg(code: string, name: string, bars: KBar[], mk: Markers, maxBars = 110): string {
   const show = bars.slice(-maxBars);
@@ -362,10 +397,35 @@ export function renderKlineSvg(code: string, name: string, bars: KBar[], mk: Mar
     );
   }
 
+  // ---- MA5/10/20/60 均线曲线（画在蜡烛之上） ----
+  const mas = [
+    { period: 5, color: C_MA5, label: "MA5" },
+    { period: 10, color: C_MA10, label: "MA10" },
+    { period: 20, color: C_MA20, label: "MA20" },
+    { period: 60, color: C_MA60, label: "MA60" },
+  ].map((m) => ({ ...m, arr: calcMA(closes, m.period) }));
+  const maLines = mas.map((m) => maPolyline(cx, m.arr, Y, m.color)).join("");
+  const maLegend =
+    `<g font-size="8.5">` +
+    `<rect x="28" y="22" width="178" height="26" rx="3" fill="rgba(10,14,20,0.62)" stroke="${C_GRID}" stroke-width="0.5"/>` +
+    mas.map((m, idx) => {
+      const col = idx % 2;
+      const row = Math.floor(idx / 2);
+      const v = m.arr[n - 1];
+      const txt = v === null ? "--" : v.toFixed(2);
+      const lx = 34 + col * 70;
+      const ly = 27 + row * 12;
+      return (
+        `<rect x="${lx}" y="${ly}" width="7" height="7" fill="${m.color}"/>` +
+        `<text x="${lx + 10}" y="${ly + 7}" fill="${m.color}">${m.label} ${txt}</text>`
+      );
+    }).join("") +
+    `</g>`;
+
   return (
     `<svg viewBox="0 0 680 480" xmlns="http://www.w3.org/2000/svg" role="img" font-family="${FONT}">` +
     `<title>${name} ${code} 日K 技术面板</title>` +
-    `<desc>${name} ${code} 日K线，标注泡沫顶、突破确认位、现价、回踩点、双底（生死线）。</desc>` +
+    `<desc>${name} ${code} 日K线，MA5/10/20/60 均线，标注泡沫顶、突破确认位、现价、回踩点、双底（生死线）。</desc>` +
     `<defs><pattern id="g" width="20" height="20" patternUnits="userSpaceOnUse">` +
     `<path d="M 20 0 L 0 0 0 20" fill="none" stroke="${C_GRID}" stroke-width="0.5"/></pattern>` +
     `<pattern id="g2" width="20" height="14" patternUnits="userSpaceOnUse">` +
@@ -375,6 +435,8 @@ export function renderKlineSvg(code: string, name: string, bars: KBar[], mk: Mar
     `<rect x="${areaX0}" y="18" width="${areaW}" height="360" fill="url(#g)"/>` +
     grid.join("") + scale.join("") + lines.join("") +
     `<g stroke-width="1">${candles.join("")}</g>` +
+    maLines +
+    maLegend +
     tags.join("") +
     `<line x1="${areaX0}" y1="380" x2="${areaX1}" y2="380" stroke="${C_GRID}" stroke-width="0.5"/>` +
     `<rect x="${areaX0}" y="382" width="${areaW}" height="64" fill="${C_BG}"/>` +
