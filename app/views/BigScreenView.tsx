@@ -974,8 +974,7 @@ export function BigScreenView() {
               ← 主页
             </button>
             <div>
-              <div style={{ fontSize: 12, color: MUTED, letterSpacing: 2 }}>ACCOUNT OVERVIEW · 大屏展示</div>
-              <div style={{ fontSize: 24, fontWeight: 500, marginTop: 4 }}>我的仓位与盈亏</div>
+              <div style={{ fontSize: 24, fontWeight: 500 }}>我的仓位与盈亏</div>
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 14, fontFamily: "var(--font-mono)", fontSize: 13, color: MUTED }}>
