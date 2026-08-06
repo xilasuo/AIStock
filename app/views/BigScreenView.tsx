@@ -225,18 +225,24 @@ function recentDates(count: number): string[] {
   });
 }
 
-/** 取上海墙钟的 时/分/星期，统一用 Intl(timeZone=Asia/Shanghai)，不依赖容器时区。 */
-function shanghaiParts(date: Date): { h: number; m: number; day: number } {
+/** 取上海墙钟的 时/分/秒/星期，统一用 Intl(timeZone=Asia/Shanghai)，不依赖容器时区。 */
+function shanghaiParts(date: Date): { h: number; m: number; s: number; day: number } {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Asia/Shanghai",
     hour: "2-digit",
     minute: "2-digit",
+    second: "2-digit",
     weekday: "short",
     hour12: false,
   }).formatToParts(date);
-  const get = (t: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === t)?.value ?? "";
+  const get = (t: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === t)?.value ?? "0";
   const dayMap: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 0 };
-  return { h: parseInt(get("hour"), 10) || 0, m: parseInt(get("minute"), 10) || 0, day: dayMap[get("weekday")] ?? 0 };
+  return {
+    h: parseInt(get("hour"), 10) || 0,
+    m: parseInt(get("minute"), 10) || 0,
+    s: parseInt(get("second"), 10) || 0,
+    day: dayMap[get("weekday")] ?? 0,
+  };
 }
 
 const TRADING_OPEN_MS = 30_000;
@@ -248,6 +254,32 @@ function marketRefreshMs(date: Date): number {
   const t = h * 60 + m;
   const inSession = (t >= 9 * 60 + 30 && t <= 11 * 60 + 30) || (t >= 13 * 60 && t <= 15 * 60);
   return inSession ? TRADING_OPEN_MS : TRADING_CLOSED_MS;
+}
+
+/** 实时更新窗口：北京时间（UTC+8）工作日 09:00（含）至 16:00（不含），周末（周六/周日）排除。判断一律用 Asia/Shanghai，与服务器本地时区无关。 */
+const REALTIME_START_MIN = 9 * 60;
+const REALTIME_END_MIN = 16 * 60;
+function isRealtimeWindow(date: Date = new Date()): boolean {
+  const { h, m, day } = shanghaiParts(date);
+  if (day === 0 || day === 6) return false; // 周六/周日排除
+  const t = h * 60 + m;
+  return t >= REALTIME_START_MIN && t < REALTIME_END_MIN;
+}
+
+/** 距下一个实时窗口边界（工作日 09:00 或 16:00）的毫秒数，用于定时启停。精确到秒；周末直接跳过，落到下个工作日 09:00。 */
+function msUntilNextBoundary(date: Date = new Date()): number {
+  const { h, m, s } = shanghaiParts(date);
+  const curSec = (h * 60 + m) * 60 + s; // 相对今天 00:00 的秒数
+  for (let offset = 0; offset < 8; offset++) {
+    const d = new Date(date.getTime() + offset * 86_400_000);
+    const p = shanghaiParts(d);
+    if (p.day === 0 || p.day === 6) continue; // 跳过周六/周日
+    for (const b of [REALTIME_START_MIN * 60, REALTIME_END_MIN * 60]) {
+      const bSec = offset * 86_400 + b; // 转成相对今天 00:00 的绝对秒数
+      if (bSec > curSec) return (bSec - curSec) * 1000;
+    }
+  }
+  return 24 * 3600 * 1000; // 兜底
 }
 
 export function BigScreenView() {
@@ -263,7 +295,6 @@ export function BigScreenView() {
   const [error, setError] = useState("");
   const [refreshMs, setRefreshMs] = useState<number>(TRADING_OPEN_MS);
   const [lastLoadAt, setLastLoadAt] = useState<number | null>(null);
-  const dataTimerRef = useRef<number | null>(null);
   const [hover, setHover] = useState<{ data: DetailData; pos: { left: number; top: number }; side: "right" | "left" } | null>(null);
   const [curveIdx, setCurveIdx] = useState<number | null>(null);
   const [alerts, setAlerts] = useState<AlertRule[]>([]);
@@ -332,36 +363,100 @@ export function BigScreenView() {
     }
   }, []);
 
+  /**
+   * 实时数据加载编排（窗口门控）：
+   * - 进入页面无条件先加载一次（满足"第一次进入加载了数据"）。
+   * - 仅在北京时间 09:00–16:00 内启动周期轮询；窗口外加载一次后彻底停止，不再发任何请求。
+   * - 定时启停：在下一个边界（09:00 / 16:00）自动切换实时状态，页面长开也能正确启停。
+   * 判断一律基于 Asia/Shanghai，与服务器/容器本地时区无关。
+   */
   useEffect(() => {
     let cancelled = false;
-    const run = () => {
-      void loadData().finally(() => {
-        if (cancelled) return;
-        const interval = marketRefreshMs(new Date());
-        setRefreshMs(interval);
-        dataTimerRef.current = window.setTimeout(run, interval);
-      });
+    let dataTimer: number | null = null;
+    let slowTimer: number | null = null;
+    let boundaryTimer: number | null = null;
+
+    const clearDataTimer = () => {
+      if (dataTimer != null) {
+        window.clearTimeout(dataTimer);
+        dataTimer = null;
+      }
     };
-    const initial = window.setTimeout(run, 0);
+    const clearSlowTimer = () => {
+      if (slowTimer != null) {
+        window.clearTimeout(slowTimer);
+        slowTimer = null;
+      }
+    };
+
+    const startDataPolling = () => {
+      clearDataTimer();
+      const tick = () => {
+        if (cancelled) return;
+        void loadData().finally(() => {
+          if (cancelled) return;
+          if (!isRealtimeWindow()) {
+            clearDataTimer(); // 窗口外立即停止，禁止任何刷新
+            return;
+          }
+          dataTimer = window.setTimeout(tick, marketRefreshMs(new Date()));
+        });
+      };
+      tick();
+    };
+
+    const startSlowPolling = () => {
+      clearSlowTimer();
+      const tick = () => {
+        if (cancelled) return;
+        void loadSlowData().finally(() => {
+          if (cancelled) return;
+          if (!isRealtimeWindow()) {
+            clearSlowTimer();
+            return;
+          }
+          slowTimer = window.setTimeout(tick, 300_000);
+        });
+      };
+      tick();
+    };
+
+    // 首次进入：无论是否窗口内都加载一次
+    if (isRealtimeWindow()) {
+      startDataPolling();
+      startSlowPolling();
+    } else {
+      void loadData();
+      void loadSlowData();
+    }
+
+    // 定时启停：到达下一个边界自动按当前窗口状态开/关
+    const scheduleBoundary = () => {
+      boundaryTimer = window.setTimeout(() => {
+        if (cancelled) return;
+        if (isRealtimeWindow()) {
+          startDataPolling();
+          startSlowPolling();
+        } else {
+          clearDataTimer();
+          clearSlowTimer();
+        }
+        scheduleBoundary();
+      }, msUntilNextBoundary());
+    };
+    scheduleBoundary();
+
     const clockInitial = window.setTimeout(() => setNow(new Date()), 0);
     const clockTimer = window.setInterval(() => setNow(new Date()), 1_000);
     return () => {
       cancelled = true;
-      window.clearTimeout(initial);
-      if (dataTimerRef.current) window.clearTimeout(dataTimerRef.current);
+      clearDataTimer();
+      clearSlowTimer();
+      if (boundaryTimer != null) window.clearTimeout(boundaryTimer);
       window.clearTimeout(clockInitial);
       window.clearInterval(clockTimer);
     };
-  }, [loadData]);
-
-  useEffect(() => {
-    const initial = window.setTimeout(() => void loadSlowData(), 300);
-    const timer = window.setInterval(() => void loadSlowData(), 300_000);
-    return () => {
-      window.clearTimeout(initial);
-      window.clearInterval(timer);
-    };
-  }, [loadSlowData]);
+  }, [loadData, loadSlowData]);
 
   // 挂载时同步隐身偏好（与 Dashboard 共用 <html>.stealth），保证跨页一致
   useEffect(() => {
@@ -624,6 +719,9 @@ export function BigScreenView() {
     return "已收盘";
   }, [now]);
 
+  /** 是否处于实时更新窗口（北京时间 09:00–16:00）。驱动头部实时状态标识。 */
+  const live = useMemo(() => (now ? isRealtimeWindow(now) : false), [now]);
+
   const scanPicks = (scan?.selected ?? []).slice(0, 8);
   const marketStateKey = scan?.marketState?.state ?? "";
   const marketStateLabel = MARKET_STATE_LABEL[marketStateKey] ?? (marketStateKey || "—");
@@ -745,26 +843,35 @@ export function BigScreenView() {
             {scan?.marketState?.state && (
               <span style={{ color: marketStateColor }}>大盘状态 {marketStateLabel}</span>
             )}
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-              <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden>
-                <circle cx="11" cy="11" r={RING_R} fill="none" stroke="rgba(34,211,238,.16)" strokeWidth="2.5" />
-                <circle
-                  cx="11"
-                  cy="11"
-                  r={RING_R}
-                  fill="none"
-                  stroke={ACCENT}
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeDasharray={ringCircumference}
-                  strokeDashoffset={ringCircumference * (1 - ringProgress)}
-                  transform="rotate(-90 11 11)"
-                />
-                <text x="11" y="14.5" textAnchor="middle" fontSize="8" fill={MUTED} fontFamily="var(--font-mono)">
-                  {countdown}
-                </text>
-              </svg>
-              实时连接
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }} title={live ? "实时更新中（北京时间工作日 09:00–16:00）" : "非交易时段已锁定：仅在北京时间工作日 09:00–16:00 实时刷新（周末除外）"}>
+              {live ? (
+                <>
+                  <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden>
+                    <circle cx="11" cy="11" r={RING_R} fill="none" stroke="rgba(34,211,238,.16)" strokeWidth="2.5" />
+                    <circle
+                      cx="11"
+                      cy="11"
+                      r={RING_R}
+                      fill="none"
+                      stroke={ACCENT}
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeDasharray={ringCircumference}
+                      strokeDashoffset={ringCircumference * (1 - ringProgress)}
+                      transform="rotate(-90 11 11)"
+                    />
+                    <text x="11" y="14.5" textAnchor="middle" fontSize="8" fill={MUTED} fontFamily="var(--font-mono)">
+                      {countdown}
+                    </text>
+                  </svg>
+                  实时连接
+                </>
+              ) : (
+                <>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: MUTED, display: "inline-block" }} />
+                  已锁定 · 非实时时段
+                </>
+              )}
             </span>
             <button
               type="button"
@@ -790,7 +897,7 @@ export function BigScreenView() {
 
         {error && (
           <div style={{ background: "rgba(255,107,107,.12)", border: "0.5px solid rgba(255,107,107,.4)", color: "#ffb4b4", borderRadius: 10, padding: "8px 14px", fontSize: 12, marginBottom: 10 }}>
-            部分数据读取失败：{error}（稍后自动重试）
+            部分数据读取失败：{error}（实时时段将自动重试）
           </div>
         )}
 
