@@ -15,15 +15,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import { useRouter } from "next/navigation";
+import { Star, Sparkles } from "lucide-react";
 import { calculatePortfolioInsights } from "../../lib/domain/portfolio-insights";
 import type { CapitalFlow, Trade } from "../../lib/domain/domain";
 import { formatDateTimeShanghai, shanghaiDate } from "../../lib/utils/time";
 import { TickNum } from "../components/TickNum";
 import { InteractiveKline } from "../components/InteractiveKline";
+import { StockSearch } from "../components/ui";
+import { StrategyModal } from "../components/StrategyModal";
+import { searchLocalStocks } from "../../lib/domain/stocks";
 
 type Quote = { price: number; changePercent: number; fetchedAt: string };
 type MarketIndex = { code: string; name: string; price: number; changePercent: number; change: number };
-type WatchItem = { symbol: string; name: string };
+type WatchItem = { id: number; symbol: string; name: string; note?: string | null };
 type ScanPick = {
   code: string;
   name: string;
@@ -405,6 +409,16 @@ export function BigScreenView() {
   const [stealth, setStealth] = useState(false);
   const prefsRef = useRef<Record<string, unknown> | null>(null);
 
+  // 大屏中央主图：交互式 K 线选中股票（前端拉取本地渲染，支持缩放/平移/周期切换）
+  const [klinePick, setKlinePick] = useState<{ code: string; name: string } | null>(null);
+  const openKline = (code: string, name: string) => {
+    setKlinePick((prev) => (prev?.code === code ? prev : { code, name }));
+  };
+  const closeKline = () => {
+    setKlinePick(null);
+  };
+  const isActiveKlineCode = (code: string) => klinePick?.code === code;
+
   const loadData = useCallback(async () => {
     setLastLoadAt(Date.now());
     setRefreshMs(marketRefreshMs(new Date()));
@@ -440,6 +454,28 @@ export function BigScreenView() {
       setError(loadError instanceof Error ? loadError.message : "数据读取失败");
     }
   }, []);
+
+  const watched = useMemo(
+    () => watchlist.some((w) => w.symbol === klinePick?.code),
+    [watchlist, klinePick?.code],
+  );
+  const toggleWatchlist = useCallback(async () => {
+    if (!klinePick) return;
+    try {
+      const existing = watchlist.find((w) => w.symbol === klinePick.code);
+      if (existing) {
+        await jsonRequest("/api/watchlist", { method: "DELETE", body: JSON.stringify({ id: existing.id }) });
+      } else {
+        await jsonRequest("/api/watchlist", {
+          method: "POST",
+          body: JSON.stringify({ symbol: klinePick.code, name: klinePick.name }),
+        });
+      }
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "关注操作失败");
+    }
+  }, [klinePick, watchlist, loadData]);
 
   /** 慢数据：策略选股榜 + 板块热力图。单项失败静默跳过，不影响主看板。 */
   const loadSlowData = useCallback(async () => {
@@ -823,14 +859,26 @@ export function BigScreenView() {
    * 把大屏中央的"资产走势"主图换成该股的交互式 K 线（前端拉取数据本地渲染，
    * 支持滚轮缩放 / 拖拽平移 / 日周月周期切换）。重选其它股票时切换 code。
    */
-  const [klinePick, setKlinePick] = useState<{ code: string; name: string } | null>(null);
-  const openKline = (code: string, name: string) => {
-    setKlinePick((prev) => (prev?.code === code ? prev : { code, name }));
+  const [strategyPick, setStrategyPick] = useState<{ code: string; name: string } | null>(null);
+
+  /**
+   * 大屏股票搜索：支持代码 / 名称 / 拼音首字母，选中后直接打开该股交互式 K 线。
+   */
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchSuggestions = useMemo(() => {
+    const q = searchQuery.trim();
+    if (!q) return [];
+    const items = searchLocalStocks(q, 10).map((s) => ({ symbol: s.code, name: s.name }));
+    return items.length ? [{ label: "全市场", items }] : [];
+  }, [searchQuery]);
+  const handleSearchSubmit = (q: string) => {
+    const pick = searchLocalStocks(q, 1)[0];
+    if (pick) openKline(pick.code, pick.name);
   };
-  const closeKline = () => {
-    setKlinePick(null);
+  const handleSearchSelect = (symbol: string) => {
+    const pick = searchLocalStocks(symbol, 1)[0] ?? { code: symbol, name: symbol };
+    openKline(pick.code, pick.name);
   };
-  const isActiveKlineCode = (code: string) => klinePick?.code === code;
 
   /**
    * AI 智能解读（规则版，零 LLM 成本，永远可用）：用与大屏同源的持仓/盈亏/风险/大盘/选股数据，
@@ -960,8 +1008,9 @@ export function BigScreenView() {
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
-          {riskAlerts.length === 0 ? (
+        <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            {riskAlerts.length === 0 ? (
             <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(45,212,191,.10)", border: "0.5px solid rgba(45,212,191,.35)", color: "#9ff0e2", borderRadius: 10, padding: "7px 14px", fontSize: 12.5 }}>
               <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#2dd4bf", display: "inline-block" }} />
               风险可控 · 无显著预警
@@ -991,6 +1040,19 @@ export function BigScreenView() {
               );
             })
           )}
+          </div>
+          <div style={{ width: 320, minWidth: 200, flex: "0 1 auto" }}>
+            <StockSearch
+              compact
+              placeholder="输入代码 / 名称 / 拼音首字母搜索股票 K 线"
+              value={searchQuery}
+              onChange={setSearchQuery}
+              onSubmit={handleSearchSubmit}
+              onSelect={handleSearchSelect}
+              loading={false}
+              suggestions={searchSuggestions}
+            />
+          </div>
         </div>
 
         <main style={{ display: "grid", gridTemplateColumns: "minmax(230px, 290px) minmax(0, 1fr) minmax(270px, 330px) minmax(250px, 310px)", gap: 14, flex: 1, minHeight: 0 }}>
@@ -1087,24 +1149,70 @@ export function BigScreenView() {
                     </span>
                   )}
                   {klinePick && (
-                    <button
-                      type="button"
-                      onClick={closeKline}
-                      className="interactive bs-panel"
-                      style={{
-                        background: "rgba(0,229,255,.10)",
-                        border: "0.5px solid rgba(0,229,255,.4)",
-                        color: ACCENT,
-                        borderRadius: 999,
-                        padding: "3px 12px",
-                        fontSize: 11.5,
-                        fontFamily: "var(--font-sans)",
-                        cursor: "pointer",
-                      }}
-                      title="返回大屏主图"
-                    >
-                      ← 返回资产走势
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={toggleWatchlist}
+                        className="interactive bs-panel"
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 5,
+                          background: watched ? "rgba(255,193,7,.12)" : "transparent",
+                          border: `0.5px solid ${watched ? "rgba(255,193,7,.6)" : BORDER}`,
+                          color: watched ? "#ffc107" : MUTED,
+                          borderRadius: 999,
+                          padding: "3px 12px",
+                          fontSize: 11.5,
+                          fontFamily: "var(--font-sans)",
+                          cursor: "pointer",
+                        }}
+                        title={watched ? "取消关注" : "加入关注"}
+                      >
+                        <Star size={13} fill={watched ? "currentColor" : "none"} />
+                        {watched ? "已关注" : "关注"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStrategyPick(klinePick)}
+                        className="interactive bs-panel"
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 5,
+                          background: "rgba(0,229,255,.10)",
+                          border: "0.5px solid rgba(0,229,255,.4)",
+                          color: ACCENT,
+                          borderRadius: 999,
+                          padding: "3px 12px",
+                          fontSize: 11.5,
+                          fontFamily: "var(--font-sans)",
+                          cursor: "pointer",
+                        }}
+                        title="结合我的持仓生成策略"
+                      >
+                        <Sparkles size={13} />
+                        生成策略
+                      </button>
+                      <button
+                        type="button"
+                        onClick={closeKline}
+                        className="interactive bs-panel"
+                        style={{
+                          background: "rgba(0,229,255,.10)",
+                          border: "0.5px solid rgba(0,229,255,.4)",
+                          color: ACCENT,
+                          borderRadius: 999,
+                          padding: "3px 12px",
+                          fontSize: 11.5,
+                          fontFamily: "var(--font-sans)",
+                          cursor: "pointer",
+                        }}
+                        title="返回大屏主图"
+                      >
+                        ← 返回资产走势
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -1521,6 +1629,16 @@ export function BigScreenView() {
             </div>
           </aside>
         </>
+      )}
+
+      {strategyPick && (
+        <StrategyModal
+          code={strategyPick.code}
+          name={strategyPick.name}
+          trades={trades}
+          portfolioInsights={insights}
+          onClose={() => setStrategyPick(null)}
+        />
       )}
     </div>
   );

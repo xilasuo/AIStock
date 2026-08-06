@@ -16,6 +16,7 @@ import { Sparkline } from "../components/charts";
 import { AnalyticsView } from "./AnalyticsView";
 import { ImportPanel } from "./ImportPanel";
 import { MarkdownMessage } from "../components/MarkdownMessage";
+import { StrategyBlocks } from "../components/StrategyBlocks";
 import { StrategyScanView, type StrategyScanResponse } from "./StrategyScanView";
 import { WritebackView } from "./WritebackView";
 import { UsersAdmin } from "../components/UsersAdmin";
@@ -51,10 +52,6 @@ import {
   ShieldAlert,
   RefreshCw,
   LogOut,
-  Target,
-  ClipboardCheck,
-  Scale,
-  ArrowRightCircle,
   Star,
   Wallet,
   Users,
@@ -1035,6 +1032,12 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     ? null
     : closedCycles.find((cycle) => cycle.endTradeId === reviewCycleEndTradeId) ?? null;
 
+  // 顶部全局搜索框联想数据：关注列表 + 最近分析 + 全市场本地搜索。
+  const topbarSuggestions = useMemo(
+    () => buildSearchSuggestions(query, watchlist, recentAnalyses),
+    [query, watchlist, recentAnalyses],
+  );
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -1084,6 +1087,24 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
             <span className="privacy-pill"><ShieldCheck size={14} />私有个人空间</span>
           </div>
           <div className="top-actions">
+            <div className="topbar-search">
+              <StockSearch
+                compact
+                placeholder="代码 / 名称 / 拼音"
+                value={query}
+                onChange={setQuery}
+                onSubmit={(q) => {
+                  navigate("analysis");
+                  void analyzeStock(undefined, q);
+                }}
+                onSelect={(symbol) => {
+                  navigate("analysis");
+                  void analyzeStock(undefined, symbol);
+                }}
+                loading={analyzing}
+                suggestions={topbarSuggestions}
+              />
+            </div>
             <button className="account-button" onClick={() => setConfirming("logout")} title={`当前账号：${user.email}`}>
               <span className="avatar">{(user.displayName || "?").slice(0, 1).toUpperCase()}</span>
               <b>{user.displayName}</b>
@@ -1453,54 +1474,10 @@ function StockAnalysisPanel({
 
   // 搜索联想：随输入过滤（关注列表 + 最近分析），不足时用本地全量 A 股表兜底。
   // 输入为空时返回空数组，下拉自然收起——不再出现「输入内容却弹出整份关注列表」。
-  const searchSuggestions = useMemo((): StockSuggestionGroup[] => {
-    const q = query.trim();
-    if (!q) return [];
-    const normQuery = q.toLowerCase().replace(/[\s\u3000]+/g, "");
-    const hit = (item: { symbol: string; name: string }) =>
-      item.symbol.includes(q) ||
-      item.name.toLowerCase().replace(/[\s\u3000]+/g, "").includes(normQuery);
-
-    const groups: StockSuggestionGroup[] = [];
-
-    // 关注列表（匹配命中）
-    const watchItems: StockSuggestion[] = [];
-    const watchSeen = new Set<string>();
-    for (const item of watchlist) {
-      if (watchSeen.has(item.symbol)) continue;
-      watchSeen.add(item.symbol);
-      if (hit(item)) watchItems.push({ symbol: item.symbol, name: item.name });
-    }
-    if (watchItems.length > 0) {
-      groups.push({ label: "关注列表", items: watchItems.slice(0, 5) });
-    }
-
-    // 最近分析（排除已在关注中的，匹配命中）
-    const recentItems: StockSuggestion[] = [];
-    for (const item of recentAnalyses) {
-      if (watchSeen.has(item.stock.code)) continue;
-      if (hit({ symbol: item.stock.code, name: item.stock.name })) {
-        recentItems.push({ symbol: item.stock.code, name: item.stock.name });
-      }
-    }
-    if (recentItems.length > 0) {
-      groups.push({ label: "最近分析", items: recentItems.slice(0, 5) });
-    }
-
-    // 全市场兜底（本地全量 A 股，排除已在关注/最近中的）
-    const seen = new Set<string>([
-      ...watchSeen,
-      ...recentItems.map((item) => item.symbol),
-    ]);
-    const localItems = searchLocalStocks(q, 8)
-      .filter((item) => !seen.has(item.code))
-      .map((item) => ({ symbol: item.code, name: item.name }));
-    if (localItems.length > 0) {
-      groups.push({ label: "全市场", items: localItems });
-    }
-
-    return groups;
-  }, [watchlist, recentAnalyses, query]);
+  const searchSuggestions = useMemo(
+    () => buildSearchSuggestions(query, watchlist, recentAnalyses),
+    [query, watchlist, recentAnalyses],
+  );
 
   return (
     <div className="page-content inner-page">
@@ -2093,6 +2070,61 @@ function SectorHeatmap() {
   );
 }
 
+// 顶部 / 分析页共用的股票搜索联想构造：支持代码、名称、拼音首字母，
+// 结果按「关注列表 → 最近分析 → 全市场」分组。
+function buildSearchSuggestions(
+  query: string,
+  watchlist: WatchItem[],
+  recentAnalyses: Analysis[],
+): StockSuggestionGroup[] {
+  const q = query.trim();
+  if (!q) return [];
+  const normQuery = q.toLowerCase().replace(/[\s\u3000]+/g, "");
+  const hit = (item: { symbol: string; name: string }) =>
+    item.symbol.includes(q) ||
+    item.name.toLowerCase().replace(/[\s\u3000]+/g, "").includes(normQuery);
+
+  const groups: StockSuggestionGroup[] = [];
+
+  // 关注列表（匹配命中）
+  const watchItems: StockSuggestion[] = [];
+  const watchSeen = new Set<string>();
+  for (const item of watchlist) {
+    if (watchSeen.has(item.symbol)) continue;
+    watchSeen.add(item.symbol);
+    if (hit(item)) watchItems.push({ symbol: item.symbol, name: item.name });
+  }
+  if (watchItems.length > 0) {
+    groups.push({ label: "关注列表", items: watchItems.slice(0, 5) });
+  }
+
+  // 最近分析（排除已在关注中的，匹配命中）
+  const recentItems: StockSuggestion[] = [];
+  for (const item of recentAnalyses) {
+    if (watchSeen.has(item.stock.code)) continue;
+    if (hit({ symbol: item.stock.code, name: item.stock.name })) {
+      recentItems.push({ symbol: item.stock.code, name: item.stock.name });
+    }
+  }
+  if (recentItems.length > 0) {
+    groups.push({ label: "最近分析", items: recentItems.slice(0, 5) });
+  }
+
+  // 全市场兜底（本地全量 A 股，排除已在关注/最近中的）
+  const seen = new Set<string>([
+    ...watchSeen,
+    ...recentItems.map((item) => item.symbol),
+  ]);
+  const localItems = searchLocalStocks(q, 8)
+    .filter((item) => !seen.has(item.code))
+    .map((item) => ({ symbol: item.code, name: item.name }));
+  if (localItems.length > 0) {
+    groups.push({ label: "全市场", items: localItems });
+  }
+
+  return groups;
+}
+
 function AnalysisView({ analysis, position, portfolioInsights, watched, canSell, analyzing, onWatch, onBuy, onSell, onReanalyze }: {
   analysis: Analysis;
   position: Position | null;
@@ -2421,71 +2453,6 @@ function buildAnalysisContext(
       totalProfitPercent: portfolioInsights.totalProfitPercent,
     },
   };
-}
-
-const STRATEGY_BLOCK_META: Record<string, { icon: React.ReactNode; cls: string; label: string }> = {
-  结论: { icon: <Target size={15} />, cls: "strategy-block--verdict", label: "结论" },
-  依据: { icon: <ClipboardCheck size={15} />, cls: "strategy-block--basis", label: "依据" },
-  建议仓位: { icon: <Scale size={15} />, cls: "strategy-block--position", label: "建议仓位" },
-  仓位与止损: { icon: <Scale size={15} />, cls: "strategy-block--position", label: "仓位与止损" },
-  风险与缺口: { icon: <ShieldAlert size={15} />, cls: "strategy-block--risk", label: "风险与缺口" },
-  下一步: { icon: <ArrowRightCircle size={15} />, cls: "strategy-block--next", label: "下一步" },
-};
-
-function StrategyBlocks({ content }: { content: string }) {
-  const knownLabels = Object.keys(STRATEGY_BLOCK_META);
-  const blocks: { label?: string; body: string }[] = [];
-
-  for (const rawLine of content.split("\n")) {
-    const trimmed = rawLine.trim();
-    if (!trimmed) {
-      // 保留空行以维持段落/表格间距
-      if (blocks.length > 0) {
-        blocks[blocks.length - 1].body += "\n";
-      }
-      continue;
-    }
-    const matchedLabel = knownLabels.find(
-      (label) => trimmed.startsWith(`${label}：`) || trimmed.startsWith(`${label}:`)
-    );
-    if (matchedLabel) {
-      const sepIndex = trimmed.indexOf("：") !== -1 ? trimmed.indexOf("：") : trimmed.indexOf(":");
-      const body = trimmed.slice(sepIndex + 1).trim();
-      blocks.push({ label: matchedLabel, body });
-    } else if (blocks.length === 0) {
-      blocks.push({ body: rawLine });
-    } else {
-      blocks[blocks.length - 1].body += "\n" + rawLine;
-    }
-  }
-
-  return (
-    <div className="strategy-blocks">
-      {blocks.map((block, index) => {
-        const meta = block.label ? STRATEGY_BLOCK_META[block.label] : undefined;
-        if (!meta) {
-          return (
-            <div key={index} className="strategy-block strategy-block--plain">
-              <div className="strategy-block__body strategy-table-wrap">
-                <MarkdownMessage content={block.body.trim()} />
-              </div>
-            </div>
-          );
-        }
-        return (
-          <div key={index} className={`strategy-block ${meta.cls}`}>
-            <div className="strategy-block__head">
-              <span className="strategy-block__icon">{meta.icon}</span>
-              <span className="strategy-block__label">{meta.label}</span>
-            </div>
-            <div className="strategy-block__body strategy-table-wrap">
-              <MarkdownMessage content={block.body.trim()} />
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
 }
 
 function StrategyCard({ analysis, position, portfolioInsights }: {
