@@ -818,6 +818,25 @@ export function BigScreenView() {
   const todayColor = (todayPnl?.gainCents ?? 0) >= 0 ? UP : DOWN;
 
   /**
+   * 选中查看某只股票 K 线：被 持仓明细 / 策略选股榜 / 最近交易 点击触发。
+   * 把大屏中央的"资产走势"主图换成该股的深色标注 K 线（/api/kline/<code>.svg 服务端渲染）。
+   * 重选或同代码刷新时递增 reloadKey，强制 <img> 重新请求（绕过浏览器缓存）。
+   */
+  const [klinePick, setKlinePick] = useState<{ code: string; name: string } | null>(null);
+  const [klineReloadKey, setKlineReloadKey] = useState(0);
+  const [klineError, setKlineError] = useState<string | null>(null);
+  const openKline = (code: string, name: string) => {
+    setKlineError(null);
+    setKlineReloadKey((n) => n + 1);
+    setKlinePick((prev) => (prev?.code === code ? prev : { code, name }));
+  };
+  const closeKline = () => {
+    setKlinePick(null);
+    setKlineError(null);
+  };
+  const isActiveKlineCode = (code: string) => klinePick?.code === code;
+
+  /**
    * AI 智能解读（规则版，零 LLM 成本，永远可用）：用与大屏同源的持仓/盈亏/风险/大盘/选股数据，
    * 生成大白话播报。这是 AI 助手在大屏上的角色——被动解读层，而非聊天框。
    */
@@ -1058,16 +1077,81 @@ export function BigScreenView() {
           </section>
 
           <section className="fade-up" style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0, animationDelay: "90ms" }}>
-            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "16px 18px", display: "flex", flexDirection: "column", flex: 5, minHeight: 0 }}>
+            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "16px 18px", display: "flex", flexDirection: "column", flex: 5, minHeight: 0, position: "relative" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <span style={{ fontSize: 12, color: MUTED }}>资产走势 · 近 60 个节点（最新价估算）</span>
-                {chart && (
-                  <span style={{ fontSize: 13, color: CHART, fontFamily: "var(--font-mono)" }}>
-                    {pct(((chart.latest - chart.first) / chart.first) * 100)}
-                  </span>
-                )}
+                <span style={{ fontSize: 12, color: MUTED }}>
+                  {klinePick
+                    ? `${klinePick.name}（${klinePick.code}）· 日K 技术面板`
+                    : "资产走势 · 近 60 个节点（最新价估算）"}
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  {!klinePick && chart && (
+                    <span style={{ fontSize: 13, color: CHART, fontFamily: "var(--font-mono)" }}>
+                      {pct(((chart.latest - chart.first) / chart.first) * 100)}
+                    </span>
+                  )}
+                  {klinePick && (
+                    <button
+                      type="button"
+                      onClick={closeKline}
+                      className="interactive bs-panel"
+                      style={{
+                        background: "rgba(0,229,255,.10)",
+                        border: "0.5px solid rgba(0,229,255,.4)",
+                        color: ACCENT,
+                        borderRadius: 999,
+                        padding: "3px 12px",
+                        fontSize: 11.5,
+                        fontFamily: "var(--font-sans)",
+                        cursor: "pointer",
+                      }}
+                      title="返回大屏主图"
+                    >
+                      ← 返回资产走势
+                    </button>
+                  )}
+                </div>
               </div>
-              {chart ? (
+              {klinePick ? (
+                <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                  {klineError ? (
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, color: MUTED, fontSize: 13 }}>
+                      <div>无法获取 {klinePick.name}（{klinePick.code}）的 K 线数据</div>
+                      <div style={{ fontSize: 11, color: "rgba(255,107,107,.7)" }}>{klineError}</div>
+                      <button
+                        type="button"
+                        onClick={() => { setKlineError(null); setKlineReloadKey((n) => n + 1); }}
+                        className="interactive bs-panel"
+                        style={{
+                          background: "rgba(255,255,255,.04)",
+                          border: "0.5px solid var(--border)",
+                          color: TEXT,
+                          borderRadius: 999,
+                          padding: "4px 14px",
+                          fontSize: 12,
+                          fontFamily: "var(--font-sans)",
+                          cursor: "pointer",
+                        }}
+                      >
+                        重试
+                      </button>
+                    </div>
+                  ) : (
+                    // K线是服务端即时渲染的 SVG（image/svg+xml），并非静态图资产：
+                    // 不走 next/image 优化管线（next/image 对 SVG 路径不友好且会强制走远程 URL 优化）。
+                    // ?t=${klineReloadKey} 仅用于绕过浏览器内存缓存（同 code 重选也得刷新），不影响服务端 60s in-memory cache。
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      key={`${klinePick.code}-${klineReloadKey}`}
+                      src={`/api/kline/${klinePick.code}.svg?t=${klineReloadKey}`}
+                      alt={`${klinePick.name} 日K 技术面板`}
+                      onLoad={() => setKlineError(null)}
+                      onError={() => setKlineError("服务端 K 线接口返回异常，可能是数据源暂时不可用。")}
+                      style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", display: "block" }}
+                    />
+                  )}
+                </div>
+              ) : chart ? (
                 <svg
                   viewBox={`0 0 ${CHART_W} ${CHART_H}`}
                   width="100%"
@@ -1128,6 +1212,7 @@ export function BigScreenView() {
               {recentTrades.length === 0 && <div style={{ fontSize: 12, color: MUTED }}>暂无交易记录</div>}
               {recentTrades.map((trade) => {
                 const quote = quotes[trade.symbol];
+                const active = isActiveKlineCode(trade.symbol);
                 return (
                   <div
                   key={trade.id}
@@ -1145,11 +1230,25 @@ export function BigScreenView() {
                         { k: "交易日期", v: trade.tradeDate },
                         { k: "现价", v: q ? q.price.toFixed(2) : "—" },
                         { k: "当日涨跌", v: q ? pct(q.changePercent) : "—", c: q ? (q.changePercent >= 0 ? "up" : "down") : undefined },
+                        { k: "大屏交互", v: active ? "K线展示中" : "点击查看日K", c: active ? "accent" : undefined },
                       ],
+                      note: active ? "中央主图正在显示该股 K 线。再次点击其它股票可切换。" : "点击该行，中央主图会切换为该股的日 K 线（服务端实时拉取）。",
                     });
                   }}
                   onMouseLeave={() => setHover(null)}
-                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5, padding: "8px 0", borderBottom: "0.5px solid rgba(22,78,99,.55)" }}
+                  onClick={() => openKline(trade.symbol, trade.name)}
+                  title={`点击查看 ${trade.name}（${trade.symbol}）日K`}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    fontSize: 12.5,
+                    padding: "8px 0 8px 8px",
+                    marginLeft: "-8px",
+                    borderBottom: "0.5px solid rgba(22,78,99,.55)",
+                    borderLeft: active ? "2px solid var(--accent)" : "2px solid transparent",
+                    background: active ? "rgba(0,229,255,.06)" : undefined,
+                  }}
                 >
                     <span style={{ fontFamily: "var(--font-mono)", color: MUTED, width: 62, flexShrink: 0 }}>{trade.tradeDate.slice(5)}</span>
                     <span style={{ width: 84, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{trade.name}</span>
@@ -1210,6 +1309,7 @@ export function BigScreenView() {
               <div style={{ display: "flex", flexDirection: "column" }}>
                 {positionsByToday.map((pos) => {
                   const quote = quotes[pos.symbol];
+                  const active = isActiveKlineCode(pos.symbol);
                   return (
                     <div
                       key={pos.symbol}
@@ -1226,12 +1326,27 @@ export function BigScreenView() {
                             { k: "持仓市值", v: money(pos.marketValueCents) },
                             { k: "持仓占比", v: pos.allocationPercent != null ? `${pos.allocationPercent.toFixed(1)}%` : "—" },
                             { k: "累计盈亏", v: pct(pos.returnPercent), c: pos.returnPercent >= 0 ? "up" : "down" },
+                            { k: "大屏交互", v: active ? "K线展示中" : "点击查看日K", c: active ? "accent" : undefined },
                           ],
-                          note: "在「策略选股榜」中点击同名条目可看选股理由。",
+                          note: active
+                            ? "中央主图正在显示该股 K 线。再次点击其它股票可切换。"
+                            : "点击该行，中央主图会切换为该股的日 K 线（服务端正拉取，含 5 条关键价位标注）。",
                         })
                       }
                       onMouseLeave={() => setHover(null)}
-                      style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5, padding: "6px 0", borderBottom: `0.5px solid rgba(22,78,99,.55)` }}
+                      onClick={() => openKline(pos.symbol, pos.name)}
+                      title={`点击查看 ${pos.name}（${pos.symbol}）日K`}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        fontSize: 12.5,
+                        padding: "6px 0 6px 8px",
+                        marginLeft: "-8px",
+                        borderBottom: "0.5px solid rgba(22,78,99,.55)",
+                        borderLeft: active ? "2px solid var(--accent)" : "2px solid transparent",
+                        background: active ? "rgba(0,229,255,.06)" : undefined,
+                      }}
                     >
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "34%" }}>{pos.name}</span>
                       <span style={{ fontFamily: "var(--font-mono)", color: BRIGHT, fontSize: 12 }}>
@@ -1263,7 +1378,9 @@ export function BigScreenView() {
                   暂无扫描结果。<br />在本地运行选股中枢后自动同步。
                 </div>
               )}
-              {scanPicks.map((pick, index) => (
+              {scanPicks.map((pick, index) => {
+                const active = isActiveKlineCode(pick.code);
+                return (
                 <div
                   key={pick.code}
                   className="row-hover interactive"
@@ -1274,12 +1391,27 @@ export function BigScreenView() {
                       rows: [
                         { k: "综合评分", v: Number.isFinite(pick.score) ? pick.score.toFixed(2) : "—", c: "accent" },
                         { k: "所属板块", v: pick.sector ?? "—" },
+                        { k: "大屏交互", v: active ? "K线展示中" : "点击查看日K", c: active ? "accent" : undefined },
                       ],
-                      note: pick.rationale ?? "该标的暂无文字理由。",
+                      note: active
+                        ? "中央主图正在显示该股 K 线。"
+                        : (pick.rationale ?? `${pick.name}暂无文字理由。点击行可以让大屏中央切换为该股日 K 线。`),
                     })
                   }
                   onMouseLeave={() => setHover(null)}
-                  style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, padding: "6px 0", borderBottom: "0.5px solid rgba(22,78,99,.55)" }}
+                  onClick={() => openKline(pick.code, pick.name)}
+                  title={`点击查看 ${pick.name}（${pick.code}）日K`}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    fontSize: 12.5,
+                    padding: "6px 0 6px 8px",
+                    marginLeft: "-8px",
+                    borderBottom: "0.5px solid rgba(22,78,99,.55)",
+                    borderLeft: active ? "2px solid var(--accent)" : "2px solid transparent",
+                    background: active ? "rgba(0,229,255,.06)" : undefined,
+                  }}
                 >
                   <span style={{ width: 18, height: 18, flexShrink: 0, borderRadius: 5, background: index < 3 ? "rgba(34,211,238,.18)" : "rgba(111,147,168,.12)", color: index < 3 ? ACCENT : MUTED, fontSize: 10, fontFamily: "var(--font-mono)", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
                     {index + 1}
@@ -1292,7 +1424,8 @@ export function BigScreenView() {
                     {Number.isFinite(pick.score) ? pick.score.toFixed(2) : "—"}
                   </span>
                 </div>
-              ))}
+                );
+              })}
             </div>
             <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 16px", flex: 2, minHeight: 0, overflow: "hidden" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>

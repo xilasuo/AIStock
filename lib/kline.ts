@@ -100,6 +100,21 @@ export async function fetchKline(code: string, limit = 220): Promise<KBar[]> {
   }));
 }
 
+export async function fetchName(code: string): Promise<string> {
+  try {
+    const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${emSecid(code)}${code}&fields=f57,f58`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": UA, Referer: "https://quote.eastmoney.com/" },
+      signal: AbortSignal.timeout(6000),
+    });
+    const j = (await res.json()) as { data?: { f58?: string } };
+    if (j.data?.f58) return j.data.f58;
+  } catch {
+    /* 取不到名称则回退 code */
+  }
+  return code;
+}
+
 /* ----------------------------- 标注识别 ----------------------------- */
 
 function mean(xs: number[]): number {

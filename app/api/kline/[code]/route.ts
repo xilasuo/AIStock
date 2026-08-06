@@ -6,9 +6,9 @@
  * 云端自给自足：服务端直连东财/新浪取日K，本仓库 TS 版标注算法渲染，
  * 不依赖本地 trading_agent 服务。浏览器缓存 30 分钟。
  */
-import { fetchKline, detectMarkers, renderKlineSvg, type Markers } from "../../../../lib/kline";
+import { fetchKline, fetchName, detectMarkers, renderKlineSvg, type Markers } from "../../../../lib/kline";
 
-const CACHE_TTL = 1800;
+const CACHE_TTL = 60;
 const memCache = new Map<string, { ts: number; svg: string; mk: Markers }>();
 
 async function build(code: string): Promise<{ svg: string; mk: Markers }> {
@@ -21,7 +21,7 @@ async function build(code: string): Promise<{ svg: string; mk: Markers }> {
     throw new Error(`K线数据不足或取数失败: ${code}`);
   }
   const mk = detectMarkers(bars);
-  mk.name = mk.name || code;
+  mk.name = (await fetchName(code)) || code;
   const svg = renderKlineSvg(code, mk.name, bars, mk, 110);
 
   memCache.set(code, { ts: now, svg, mk });
@@ -44,13 +44,15 @@ function sendSvg(svg: string): Response {
 
 export async function GET(req: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
-  const clean = (code || "").trim().replace(/\.svg$/i, "");
+  const raw = (code || "").trim();
+  const isJson = raw.endsWith(".json");
+  const clean = raw.replace(/\.(svg|json)$/i, "");
   if (!clean || !/^[0-9]{6}$/.test(clean)) {
     return Response.json({ ok: false, error: "invalid code, use /api/kline/<6位代码>" }, { status: 400 });
   }
   try {
     const { svg, mk } = await build(clean);
-    if (code.endsWith(".json")) {
+    if (isJson) {
       return Response.json({ ok: true, code: clean, markers: mk }, {
         headers: { "Cache-Control": `public, max-age=${CACHE_TTL}` },
       });
