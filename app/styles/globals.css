@@ -954,6 +954,14 @@ svg { display: block; }
 
 .portfolio-overview {
   padding: 24px;
+  position: relative;
+}
+.portfolio-overview::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(640px 220px at 8% -12%, rgba(0, 229, 255, .07), transparent 70%);
+  pointer-events: none;
 }
 
 .portfolio-overview-head {
@@ -5813,6 +5821,20 @@ svg { display: block; }
 .stat:hover {
   border-color: var(--line-strong);
   box-shadow: var(--shadow-raised);
+}
+.stat--hero {
+  background: linear-gradient(158deg, var(--surface-strong), var(--surface));
+  border-color: var(--line-strong);
+}
+.stat--hero .stat__label {
+  color: var(--text-soft);
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+.stat--hero .stat__value {
+  font-size: var(--fs-3xl);
+  letter-spacing: -0.02em;
+  text-shadow: 0 0 16px rgba(0, 229, 255, .32);
 }
 
 @media (max-width: 1100px) {

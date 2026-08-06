@@ -1729,7 +1729,7 @@ function PortfolioOverview({ insights, onConfigure }: { insights: PortfolioInsig
     <section className="panel portfolio-overview">
       <SectionHeader eyebrow="账户全景" title="我的仓位与盈亏" actions={!insights.configured && <Button variant="primary" onClick={onConfigure}>设置账户初始资金</Button>} />
       <div className="portfolio-metrics fade-up">
-        <Stat label="总资产" value={insights.totalAssetsCents === null ? "待设置" : <TickNum value={insights.totalAssetsCents} format={money} />} hint="现金 + 当前持仓市值" />
+        <Stat className="stat--hero" label="总资产" value={insights.totalAssetsCents === null ? "待设置" : <TickNum value={insights.totalAssetsCents} format={money} />} hint="现金 + 当前持仓市值" />
         <Stat label="总仓位" value={insights.totalPositionPercent === null ? "待设置" : <TickNum value={insights.totalPositionPercent} format={(n) => `${n.toFixed(1)}%`} />} hint="持仓市值 ÷ 总资产" />
         <Stat label="持仓市值" value={<TickNum value={insights.marketValueCents} format={money} />} hint={insights.completePrices ? "按当前参考价" : "部分行情仍在更新"} />
         <Stat label="可用现金" value={insights.cashCents === null ? "待设置" : <TickNum value={insights.cashCents} format={money} />} hint="按初始资金和交易流水估算" />
