@@ -3700,9 +3700,10 @@ svg { display: block; }
 
 .decision-bar {
   align-items: center;
-  background: var(--surface-inverse);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line));
   border-radius: var(--radius-card);
-  color: var(--bg);
+  color: var(--text);
   display: flex;
   justify-content: space-between;
   margin-top: 20px;
@@ -3711,7 +3712,7 @@ svg { display: block; }
 
 .decision-bar h3 { font-size: var(--fs-lg); margin: 3px 0 0; }
 .decision-bar > div:last-child { display: flex; gap: 8px; }
-.decision-bar .eyebrow { color: color-mix(in srgb, var(--bg) 70%, transparent); }
+/* 让"现在由你决定"这种小标在全站基础 eyebrow (accent-ink) 上看，遵循与 .verdict 同款的强调块视觉 */
 
 .watch-cards {
   display: grid;
