@@ -281,6 +281,11 @@ const nextId = () => {
   return `${Date.now().toString(36)}-${(assistantMessageCounter).toString(36)}`;
 };
 
+// 行情刷新 TTL：超过该时长即视为过期，进入轮询时会重新拉取（提到模块级，避免被当作 useCallback 依赖）。
+const QUOTE_TTL_MS = 5 * 60 * 1000;
+// 轻量行情轮询间隔：页面停留时每分钟刷新价格（走 /api/quote，不拉 K 线/财务）。
+const LIGHT_QUOTE_TTL_MS = 60 * 1000;
+
 // 视口断点：≤ breakpoint 视为移动端。用于区分「PC 浮窗」与「移动端全屏对话页」。
 // 客户端组件内初始化即用 matchMedia 取值，避免首帧闪烁；并在断点变化时实时更新。
 function useIsMobile(breakpoint = 768) {
@@ -444,10 +449,6 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   const notified = useRef(new Set<number>());
   const pendingQuotes = useRef(new Set<string>());
   const pendingLightQuotes = useRef(new Set<string>());
-  /** 行情刷新 TTL：超过该时长即视为过期，进入轮询时会重新拉取 */
-  const QUOTE_TTL_MS = 5 * 60 * 1000;
-  /** 轻量行情轮询间隔：页面停留时每分钟刷新价格（走 /api/quote，不拉 K 线/财务） */
-  const LIGHT_QUOTE_TTL_MS = 60 * 1000;
   /** 选股榜单点击"分析"时暂存的行数据，fetchAnalysis 消费后清空 */
   const pendingScreenerContext = useRef<import("./StrategyScanView").ScanSelected | null>(null);
 
@@ -1966,8 +1967,7 @@ function MarketIndices() {
     return () => { active = false; };
   }, []);
 
-  const formatPrice = (value: number) =>
-    value.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const formatPrice = (value: number) => CURRENCY_2.format(value);
 
   return (
     <section className="panel market-indices-card" aria-label="大盘指数">
