@@ -573,13 +573,15 @@ def screen(cfg: config.AppConfig, codes: list[str], dp=None, top_n_override: int
             if w <= 0:
                 continue
             v = norm_map[k][i]
-            contrib[k] = round(v, 4)
+            contrib[k] = round(v, 3)
             score += (w / total_w) * v
-        r["score"] = round(score, 6)
+        r["score"] = score  # 全精度用于排序，输出时统一 3 位
         r["factor_scores"] = contrib
         r["rationale"] = _build_rationale(r)
 
     rows.sort(key=lambda r: r["score"], reverse=True)
+    for r in rows:
+        r["score"] = round(r["score"], 3)
 
     # —— 实际生效权重 meta（预设失真透明化）——
     # 某些因子因数据缺失被运行时剔除，其权重会按比例分摊到其余因子。
@@ -590,9 +592,9 @@ def screen(cfg: config.AppConfig, codes: list[str], dp=None, top_n_override: int
         "trend": sc.w_trend, "value": sc.w_value, "liquidity": sc.w_liquidity,
         "size": sc.w_size, "quality": sc.w_quality, "fund_flow": sc.w_fund_flow,
     }
-    _applied = {k: round(w / total_w, 4) if w > 0 else 0.0 for k, w in weights.items()}
+    _applied = {k: round(w / total_w, 3) if w > 0 else 0.0 for k, w in weights.items()}
     meta = {
-        "configured": {k: round(v, 4) for k, v in _configured.items()},
+        "configured": {k: round(v, 3) for k, v in _configured.items()},
         "applied": _applied,
         "skipped": sorted(k for k, w in weights.items() if w <= 0),
     }

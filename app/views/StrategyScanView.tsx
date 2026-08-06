@@ -123,7 +123,7 @@ const PROFILE_LABEL: Record<string, string> = {
 
 function pct(x: number | undefined | null): string {
   if (x == null || Number.isNaN(x)) return "—";
-  return `${x >= 0 ? "+" : ""}${(x * 100).toFixed(2)}%`;
+  return `${x >= 0 ? "+" : ""}${(x * 100).toFixed(3)}%`;
 }
 
 /** 选出时间展示：日线信号时点只有日期；整批扫描时刻带时分，统一截到分钟，避免秒级噪音 */
@@ -177,7 +177,7 @@ function StrategyCurveChart({ points }: { points: Array<{ date: string; value: n
     const series = chart.addSeries(LineSeries, {
       color: SCAN_LINE(),
       lineWidth: 2,
-      priceFormat: { type: "custom", minMove: 0.0001, formatter: (p: number) => p.toFixed(4) },
+      priceFormat: { type: "custom", minMove: 0.0001, formatter: (p: number) => p.toFixed(3) },
     });
     const data = points
       .map((p) => ({
@@ -465,10 +465,10 @@ export function StrategyScanView({
             ms.state === "bull" ? "牛市 · 满仓" : ms.state === "bear" ? "熊市 · 空仓" : ms.state === "neutral" ? "中性 · 半仓" : "未知 · 中性";
           const leadingBits = [
             ms.shortMom != null ? `短期动量 ${pct(ms.shortMom)}` : null,
-            ms.volRatio != null ? `波动比 ${ms.volRatio.toFixed(2)}` : null,
+            ms.volRatio != null ? `波动比 ${ms.volRatio.toFixed(3)}` : null,
           ].filter(Boolean).join(" ｜ ");
           return (
-            <Banner tone={tone} title={`市场状态：${label}（仓位系数 ${(ms.positionFactor ?? 0).toFixed(2)}）`}>
+            <Banner tone={tone} title={`市场状态：${label}（仓位系数 ${(ms.positionFactor ?? 0).toFixed(3)}）`}>
               {ms.detail}
               {leadingBits && <div className="scan-muted-line">{leadingBits}</div>}
             </Banner>
@@ -491,7 +491,7 @@ export function StrategyScanView({
           hint={(fm.totalReturn ?? 0) >= 0 ? "盈利" : "亏损"}
         />
         <Stat label="年化收益" value={pct(fm.annualReturn)} />
-        <Stat label="夏普比率" value={(fm.sharpe ?? 0).toFixed(2)} hint="风险调整收益" />
+        <Stat label="夏普比率" value={(fm.sharpe ?? 0).toFixed(3)} hint="风险调整收益" />
         <Stat label="最大回撤" value={pct(fm.maxDrawdown)} hint="越低越好" />
         <Stat label="交易胜率" value={pct(fm.winRate)} hint="已平仓交易盈利占比" />
         <Stat label="交易次数" value={String(fm.trades ?? 0)} />
@@ -502,7 +502,7 @@ export function StrategyScanView({
           消除幸存者偏差：每期仅用「截至当期」的数据重新选股，按等权 + 单票风险预算建仓。
           这是策略在历史上的真实可期表现 —— 总收益{" "}
           <b>{pct(scan.walkForward.metrics.totalReturn)}</b>，夏普{" "}
-          <b>{(scan.walkForward.metrics.sharpe ?? 0).toFixed(2)}</b>，最大回撤{" "}
+          <b>{(scan.walkForward.metrics.sharpe ?? 0).toFixed(3)}</b>，最大回撤{" "}
           <b>{pct(scan.walkForward.metrics.maxDrawdown)}</b>，交易胜率{" "}
           <b>{pct(scan.walkForward.metrics.winRate)}</b>，交易{" "}
           <b>{scan.walkForward.metrics.trades ?? 0}</b> 次。
@@ -513,7 +513,7 @@ export function StrategyScanView({
       {opt && (
         <Banner
           tone="success"
-          title={`参数优化有效：夏普 ${opt.sharpeImprovement >= 0 ? "+" : ""}${opt.sharpeImprovement.toFixed(2)}`}
+          title={`参数优化有效：夏普 ${opt.sharpeImprovement >= 0 ? "+" : ""}${opt.sharpeImprovement.toFixed(3)}`}
         >
           优化后最佳参数 MA{opt.bestSignal.fastMa}/MA{opt.bestSignal.slowMa}，基准 MA
           {scan.backtest.baseSignal?.fastMa ?? "?"}/MA{scan.backtest.baseSignal?.slowMa ?? "?"}。
@@ -522,7 +522,7 @@ export function StrategyScanView({
               {" "}样本外验证（防过拟合）：前 {Math.round((opt.split?.trainRatio ?? 0.7) * 100)}% 训练选参、
               后 {Math.round((1 - (opt.split?.trainRatio ?? 0.7)) * 100)}% 验证，样本外总收益{" "}
               <b>{pct(opt.outOfSample.totalReturn)}</b>，夏普{" "}
-              <b>{(opt.outOfSample.sharpe ?? 0).toFixed(2)}</b>，最大回撤{" "}
+              <b>{(opt.outOfSample.sharpe ?? 0).toFixed(3)}</b>，最大回撤{" "}
               <b>{pct(opt.outOfSample.maxDrawdown)}</b>。
             </>
           )}
@@ -632,19 +632,19 @@ export function StrategyScanView({
                 <td className="scan-col--num">
                   <Tag tone={s.momentum >= 0 ? "up" : "down"}>{pct(s.momentum)}</Tag>
                 </td>
-                <td className="scan-col--num scan-col--optional">{s.rsi != null ? s.rsi.toFixed(1) : "-"}</td>
+                <td className="scan-col--num scan-col--optional">{s.rsi != null ? s.rsi.toFixed(3) : "-"}</td>
                 <td className="scan-col--num scan-col--optional">
                   {s.factors ? `${(s.factors.momentum != null ? s.factors.momentum : 0) * 100 | 0}` : "-"}
                 </td>
                 <td className="scan-col--num scan-col--optional">
                   {s.factors ? `${(s.factors.trend != null ? s.factors.trend : 0) * 100 | 0}` : "-"}
                 </td>
-                <td className="scan-col--num">{(s.peTtm ?? 0).toFixed(2)}</td>
-                <td className="scan-col--num scan-col--optional">{(s.pb ?? 0).toFixed(2)}</td>
-                <td className="scan-col--num">{(s.turnover ?? 0).toFixed(2)}</td>
+                <td className="scan-col--num">{(s.peTtm ?? 0).toFixed(3)}</td>
+                <td className="scan-col--num scan-col--optional">{(s.pb ?? 0).toFixed(3)}</td>
+                <td className="scan-col--num">{(s.turnover ?? 0).toFixed(3)}</td>
                 <td className="scan-col--num scan-col--optional">
                   {s.fundFlowPct != null ? (
-                    <Tag tone={s.fundFlowPct >= 0 ? "up" : "down"}>{s.fundFlowPct.toFixed(2)}</Tag>
+                    <Tag tone={s.fundFlowPct >= 0 ? "up" : "down"}>{s.fundFlowPct.toFixed(3)}</Tag>
                   ) : "-"}
                 </td>
                 <td className="scan-col--num scan-col--optional">{s.signals}</td>
@@ -727,7 +727,7 @@ export function StrategyScanView({
                 <span style={{ fontWeight: 600 }}>{s.name}</span>
                 <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{s.code}</span>
                 <span style={{ marginLeft: "auto", color: "var(--accent-ink)", fontSize: 12 }}>
-                  得分 {(s.score ?? 0).toFixed(2)}
+                  得分 {(s.score ?? 0).toFixed(3)}
                 </span>
               </div>
               <div style={{ marginTop: 4, fontSize: 13, color: "var(--text-soft)" }}>

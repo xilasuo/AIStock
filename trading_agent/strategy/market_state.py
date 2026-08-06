@@ -143,10 +143,10 @@ def detect_regime(cfg, kline: list[dict]) -> dict:
     return {
         "state": state,
         "position_factor": float(pf if state == "neutral" else m.position.get(state, 1.0)),
-        "score": round(score, 4),
+        "score": round(score, 3),
         "detail": detail,
-        "ma_gap": round(ma_gap, 4),
-        "momentum": round(mom, 4),
-        "short_mom": round(short_mom, 4),
-        "vol_ratio": round(vol_ratio, 4),
+        "ma_gap": round(ma_gap, 3),
+        "momentum": round(mom, 3),
+        "short_mom": round(short_mom, 3),
+        "vol_ratio": round(vol_ratio, 3),
     }

@@ -55,12 +55,16 @@ function sinaPrefix(code: string): string {
   return "sz";
 }
 
-export async function fetchKline(code: string, limit = 220): Promise<KBar[]> {
+/** K线周期：day=日K week=周K month=月K（东财 klt 编码）。 */
+export type KPeriod = "day" | "week" | "month";
+const KLT: Record<KPeriod, number> = { day: 101, week: 102, month: 103 };
+
+export async function fetchKline(code: string, limit = 220, period: KPeriod = "day"): Promise<KBar[]> {
   try {
     const url =
       `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${emSecid(code)}${code}` +
       `&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56` +
-      `&klt=101&fqt=1&end=20500101&lmt=${limit}`;
+      `&klt=${KLT[period]}&fqt=1&end=20500101&lmt=${limit}`;
     const res = await fetch(url, {
       headers: { "User-Agent": UA, Referer: "https://quote.eastmoney.com/" },
       signal: AbortSignal.timeout(8000),
@@ -196,8 +200,8 @@ export function detectMarkers(bars: KBar[], name = ""): Markers {
     breakout = doubleBottom.neck;
   } else {
     support = Math.min(...lows.slice(-Math.min(n, 30)));
-    breakout = recentResistance(highs, priceNow, n);
-    if (breakout === null) breakout = Math.max(...closes.slice(-Math.min(n, 60)));
+    const res = recentResistance(highs, priceNow, n);
+    breakout = res === null ? Math.max(...closes.slice(-Math.min(n, 60))) : res;
   }
 
   // 回踩点
@@ -280,8 +284,9 @@ function calcMA(closes: number[], period: number): (number | null)[] {
 function maPolyline(cx: number[], ma: (number | null)[], Y: (p: number) => number, color: string): string {
   const pts: string[] = [];
   for (let i = 0; i < ma.length; i++) {
-    if (ma[i] === null) continue;
-    pts.push(`${cx[i].toFixed(1)},${Y(ma[i]).toFixed(1)}`);
+    const v = ma[i];
+    if (v === null) continue;
+    pts.push(`${cx[i].toFixed(1)},${Y(v).toFixed(1)}`);
   }
   if (!pts.length) return "";
   return `<polyline points="${pts.join(" ")}" fill="none" stroke="${color}" stroke-width="1.1" opacity="0.9"/>`;
@@ -322,7 +327,7 @@ export function renderKlineSvg(code: string, name: string, bars: KBar[], mk: Mar
     `<rect x="24" y="2" width="8" height="8" fill="${C_UP}"/><text x="36" y="9">涨</text>` +
     `<rect x="52" y="2" width="8" height="8" fill="${C_DOWN}"/><text x="64" y="9">跌</text>` +
     `<text x="84" y="9" fill="${C_TEXT}">${name} ${code} · 日K ${dShort(dates[0])}~${dShort(dates[n - 1])}</text>` +
-    `<text x="360" y="9" fill="${C_ORANGE}">${mk.support.toFixed(2)} 双底（生死线）</text>` +
+    `<text x="360" y="9" fill="${C_ORANGE}">${mk.support.toFixed(3)} 双底（生死线）</text>` +
     `<text x="636" y="9" text-anchor="end" fill="${C_DIM}">截至 ${dShort(dates[n - 1])} 收盘</text></g>`;
 
   const grid: string[] = [];
@@ -333,7 +338,7 @@ export function renderKlineSvg(code: string, name: string, bars: KBar[], mk: Mar
     grid.push(
       `<line x1="${areaX0}" y1="${y.toFixed(1)}" x2="${areaX1}" y2="${y.toFixed(1)}" stroke="${C_GRID}" stroke-dasharray="2,3" stroke-width="0.5"/>`,
     );
-    scale.push(`<text x="20" y="${(y + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="${C_DIM}">${v.toFixed(2)}</text>`);
+    scale.push(`<text x="20" y="${(y + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="${C_DIM}">${v.toFixed(3)}</text>`);
   }
 
   const lines: string[] = [];
@@ -343,33 +348,33 @@ export function renderKlineSvg(code: string, name: string, bars: KBar[], mk: Mar
     `<line x1="${areaX0}" y1="${Y(t.price).toFixed(1)}" x2="${areaX1}" y2="${Y(t.price).toFixed(1)}" stroke="${C_UP}" stroke-width="0.6" stroke-dasharray="6,4" opacity="0.55"/>`,
   );
   tags.push(
-    `<text x="632" y="${(Y(t.price) - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="${C_TEXT}">${t.price.toFixed(2)} 泡沫顶 · ${dShort(t.date)}${t.isTrap ? "（上方套牢盘）" : ""}</text>`,
+    `<text x="632" y="${(Y(t.price) - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="${C_TEXT}">${t.price.toFixed(3)} 泡沫顶 · ${dShort(t.date)}${t.isTrap ? "（上方套牢盘）" : ""}</text>`,
   );
   lines.push(
     `<line x1="${areaX0}" y1="${Y(mk.breakout).toFixed(1)}" x2="${areaX1}" y2="${Y(mk.breakout).toFixed(1)}" stroke="${C_GRAY}" stroke-width="0.5" stroke-dasharray="3,3" opacity="0.55"/>`,
   );
   tags.push(
-    `<text x="632" y="${(Y(mk.breakout) - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="${C_SUB}">${mk.breakout.toFixed(2)} 突破确认位</text>`,
+    `<text x="632" y="${(Y(mk.breakout) - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="${C_SUB}">${mk.breakout.toFixed(3)} 突破确认位</text>`,
   );
   lines.push(
     `<line x1="${areaX0}" y1="${Y(mk.priceNow).toFixed(1)}" x2="${areaX1}" y2="${Y(mk.priceNow).toFixed(1)}" stroke="${C_BLUE}" stroke-width="1.2"/>`,
   );
   tags.push(
-    `<text x="632" y="${(Y(mk.priceNow) + 12).toFixed(1)}" text-anchor="end" font-size="9" fill="${C_BLUE}" font-weight="500">${mk.priceNow.toFixed(2)} 现价（${mk.maPos}）</text>`,
+    `<text x="632" y="${(Y(mk.priceNow) + 12).toFixed(1)}" text-anchor="end" font-size="9" fill="${C_BLUE}" font-weight="500">${mk.priceNow.toFixed(3)} 现价（${mk.maPos}）</text>`,
   );
   if (mk.retest) {
     lines.push(
       `<line x1="${areaX0}" y1="${Y(mk.retest.price).toFixed(1)}" x2="${areaX1}" y2="${Y(mk.retest.price).toFixed(1)}" stroke="${C_GRAY}" stroke-width="0.5" stroke-dasharray="3,3" opacity="0.55"/>`,
     );
     tags.push(
-      `<text x="632" y="${(Y(mk.retest.price) - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="${C_SUB}">${mk.retest.price.toFixed(2)} 回踩点</text>`,
+      `<text x="632" y="${(Y(mk.retest.price) - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="${C_SUB}">${mk.retest.price.toFixed(3)} 回踩点</text>`,
     );
   }
   lines.push(
     `<line x1="${areaX0}" y1="${Y(mk.support).toFixed(1)}" x2="${areaX1}" y2="${Y(mk.support).toFixed(1)}" stroke="${C_ORANGE}" stroke-width="0.9" stroke-dasharray="4,3"/>`,
   );
   tags.push(
-    `<text x="632" y="${(Y(mk.support) + 12).toFixed(1)}" text-anchor="end" font-size="9" fill="${C_ORANGE}" font-weight="500">${mk.support.toFixed(2)} 双底（生死线）</text>`,
+    `<text x="632" y="${(Y(mk.support) + 12).toFixed(1)}" text-anchor="end" font-size="9" fill="${C_ORANGE}" font-weight="500">${mk.support.toFixed(3)} 双底（生死线）</text>`,
   );
 
   const candles: string[] = [];
@@ -412,7 +417,7 @@ export function renderKlineSvg(code: string, name: string, bars: KBar[], mk: Mar
       const col = idx % 2;
       const row = Math.floor(idx / 2);
       const v = m.arr[n - 1];
-      const txt = v === null ? "--" : v.toFixed(2);
+      const txt = v === null ? "--" : v.toFixed(3);
       const lx = 34 + col * 70;
       const ly = 27 + row * 12;
       return (

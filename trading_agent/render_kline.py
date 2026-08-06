@@ -246,7 +246,7 @@ def render_svg(code: str, name: str, bars: list[dict], mk: dict, max_bars: int =
         f'<rect x="52" y="2" width="8" height="8" fill="{C_DOWN}"/>'
         f'<text x="64" y="9">跌</text>'
         f'<text x="84" y="9" fill="{C_TEXT}">{name} {code} · 日K {d_short(dates[0])}~{d_short(dates[-1])}</text>'
-        f'<text x="360" y="9" fill="{C_ORANGE}">{mk["support"]:.2f} 双底（生死线）</text>'
+        f'<text x="360" y="9" fill="{C_ORANGE}">{mk["support"]:.3f} 双底（生死线）</text>'
         f'<text x="636" y="9" text-anchor="end" fill="{C_DIM}">截至 {d_short(dates[-1])} 收盘</text>'
         f'</g>'
     )
@@ -258,29 +258,29 @@ def render_svg(code: str, name: str, bars: list[dict], mk: dict, max_bars: int =
         v = hi - k * (hi - lo) / 4
         y = Y(v)
         grid.append(f'<line x1="{area_x0}" y1="{y:.1f}" x2="{area_x1}" y2="{y:.1f}" stroke="{C_GRID}" stroke-dasharray="2,3" stroke-width="0.5"/>')
-        scale.append(f'<text x="20" y="{y + 3:.1f}" text-anchor="end" font-size="9" fill="{C_DIM}">{v:.2f}</text>')
+        scale.append(f'<text x="20" y="{y + 3:.1f}" text-anchor="end" font-size="9" fill="{C_DIM}">{v:.3f}</text>')
 
     # ---- 水平关键位 ----
     lines = []
     tags = []
     t = mk["top"]
     lines.append(f'<line x1="{area_x0}" y1="{Y(t["price"]):.1f}" x2="{area_x1}" y2="{Y(t["price"]):.1f}" stroke="{C_UP}" stroke-width="0.6" stroke-dasharray="6,4" opacity="0.55"/>')
-    tags.append(f'<text x="632" y="{Y(t["price"]) - 4:.1f}" text-anchor="end" font-size="9" fill="{C_TEXT}">{t["price"]:.2f} 泡沫顶 · {d_short(t["date"])}{"（上方套牢盘）" if t["is_trap"] else ""}</text>')
+    tags.append(f'<text x="632" y="{Y(t["price"]) - 4:.1f}" text-anchor="end" font-size="9" fill="{C_TEXT}">{t["price"]:.3f} 泡沫顶 · {d_short(t["date"])}{"（上方套牢盘）" if t["is_trap"] else ""}</text>')
 
     lines.append(f'<line x1="{area_x0}" y1="{Y(mk["breakout"]):.1f}" x2="{area_x1}" y2="{Y(mk["breakout"]):.1f}" stroke="{C_GRAY}" stroke-width="0.5" stroke-dasharray="3,3" opacity="0.55"/>')
-    tags.append(f'<text x="632" y="{Y(mk["breakout"]) - 4:.1f}" text-anchor="end" font-size="9" fill="{C_SUB}">{mk["breakout"]:.2f} 突破确认位</text>')
+    tags.append(f'<text x="632" y="{Y(mk["breakout"]) - 4:.1f}" text-anchor="end" font-size="9" fill="{C_SUB}">{mk["breakout"]:.3f} 突破确认位</text>')
 
     lines.append(f'<line x1="{area_x0}" y1="{Y(mk["price_now"]):.1f}" x2="{area_x1}" y2="{Y(mk["price_now"]):.1f}" stroke="{C_BLUE}" stroke-width="1.2"/>')
-    tags.append(f'<text x="632" y="{Y(mk["price_now"]) + 12:.1f}" text-anchor="end" font-size="9" fill="{C_BLUE}" font-weight="500">{mk["price_now"]:.2f} 现价（{mk["ma_pos"]}）</text>')
+    tags.append(f'<text x="632" y="{Y(mk["price_now"]) + 12:.1f}" text-anchor="end" font-size="9" fill="{C_BLUE}" font-weight="500">{mk["price_now"]:.3f} 现价（{mk["ma_pos"]}）</text>')
 
     if mk["retest"]:
         rp = mk["retest"]["price"]
         lines.append(f'<line x1="{area_x0}" y1="{Y(rp):.1f}" x2="{area_x1}" y2="{Y(rp):.1f}" stroke="{C_GRAY}" stroke-width="0.5" stroke-dasharray="3,3" opacity="0.55"/>')
-        tags.append(f'<text x="632" y="{Y(rp) - 4:.1f}" text-anchor="end" font-size="9" fill="{C_SUB}">{rp:.2f} 回踩点</text>')
+        tags.append(f'<text x="632" y="{Y(rp) - 4:.1f}" text-anchor="end" font-size="9" fill="{C_SUB}">{rp:.3f} 回踩点</text>')
 
     sp = mk["support"]
     lines.append(f'<line x1="{area_x0}" y1="{Y(sp):.1f}" x2="{area_x1}" y2="{Y(sp):.1f}" stroke="{C_ORANGE}" stroke-width="0.9" stroke-dasharray="4,3"/>')
-    tags.append(f'<text x="632" y="{Y(sp) + 12:.1f}" text-anchor="end" font-size="9" fill="{C_ORANGE}" font-weight="500">{sp:.2f} 双底（生死线）</text>')
+    tags.append(f'<text x="632" y="{Y(sp) + 12:.1f}" text-anchor="end" font-size="9" fill="{C_ORANGE}" font-weight="500">{sp:.3f} 双底（生死线）</text>')
 
     # ---- 蜡烛 ----
     candles = []
@@ -327,7 +327,7 @@ def render_svg(code: str, name: str, bars: list[dict], mk: dict, max_bars: int =
         col = idx % 2
         row = idx // 2
         last = arr[-1]
-        txt = "--" if last is None else f"{last:.2f}"
+        txt = "--" if last is None else f"{last:.3f}"
         lx = 34 + col * 70
         ly = 27 + row * 12
         legend_parts.append(
@@ -423,7 +423,7 @@ if __name__ == "__main__":
 
     path, mk, _ = render_kline_panel(args.code, days=args.days, out_dir=args.out)
     print(f"SVG 已生成: {path}")
-    print(f"现价 {mk['price_now']:.2f} | MA5 {mk['ma5']:.2f} / MA10 {mk['ma10']:.2f} / MA20 {mk['ma20']:.2f} / MA60 {mk['ma60']:.2f} / MA120 {mk['ma120']:.2f}（{mk['ma_pos']}）")
-    print(f"泡沫顶 {mk['top']['price']:.2f} @ {mk['top']['date']}" + ("（上方套牢盘）" if mk["top"]["is_trap"] else ""))
-    print(f"突破确认位 {mk['breakout']:.2f} | 双底生死线 {mk['support']:.2f} | 双底识别: {'是' if mk['double_bottom'] else '否'}")
-    print(f"回踩点: {mk['retest']['price']:.2f} @ {mk['retest']['date']}" if mk["retest"] else "回踩点: 未识别")
+    print(f"现价 {mk['price_now']:.3f} | MA5 {mk['ma5']:.3f} / MA10 {mk['ma10']:.3f} / MA20 {mk['ma20']:.3f} / MA60 {mk['ma60']:.3f} / MA120 {mk['ma120']:.3f}（{mk['ma_pos']}）")
+    print(f"泡沫顶 {mk['top']['price']:.3f} @ {mk['top']['date']}" + ("（上方套牢盘）" if mk["top"]["is_trap"] else ""))
+    print(f"突破确认位 {mk['breakout']:.3f} | 双底生死线 {mk['support']:.3f} | 双底识别: {'是' if mk['double_bottom'] else '否'}")
+    print(f"回踩点: {mk['retest']['price']:.3f} @ {mk['retest']['date']}" if mk["retest"] else "回踩点: 未识别")

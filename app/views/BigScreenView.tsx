@@ -19,6 +19,7 @@ import { calculatePortfolioInsights } from "../../lib/domain/portfolio-insights"
 import type { CapitalFlow, Trade } from "../../lib/domain/domain";
 import { formatDateTimeShanghai, shanghaiDate } from "../../lib/utils/time";
 import { TickNum } from "../components/TickNum";
+import { InteractiveKline } from "../components/InteractiveKline";
 
 type Quote = { price: number; changePercent: number; fetchedAt: string };
 type MarketIndex = { code: string; name: string; price: number; changePercent: number; change: number };
@@ -819,20 +820,15 @@ export function BigScreenView() {
 
   /**
    * 选中查看某只股票 K 线：被 持仓明细 / 策略选股榜 / 最近交易 点击触发。
-   * 把大屏中央的"资产走势"主图换成该股的深色标注 K 线（/api/kline/<code>.svg 服务端渲染）。
-   * 重选或同代码刷新时递增 reloadKey，强制 <img> 重新请求（绕过浏览器缓存）。
+   * 把大屏中央的"资产走势"主图换成该股的交互式 K 线（前端拉取数据本地渲染，
+   * 支持滚轮缩放 / 拖拽平移 / 日周月周期切换）。重选其它股票时切换 code。
    */
   const [klinePick, setKlinePick] = useState<{ code: string; name: string } | null>(null);
-  const [klineReloadKey, setKlineReloadKey] = useState(0);
-  const [klineError, setKlineError] = useState<string | null>(null);
   const openKline = (code: string, name: string) => {
-    setKlineError(null);
-    setKlineReloadKey((n) => n + 1);
     setKlinePick((prev) => (prev?.code === code ? prev : { code, name }));
   };
   const closeKline = () => {
     setKlinePick(null);
-    setKlineError(null);
   };
   const isActiveKlineCode = (code: string) => klinePick?.code === code;
 
@@ -1113,43 +1109,9 @@ export function BigScreenView() {
                 </div>
               </div>
               {klinePick ? (
-                <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                  {klineError ? (
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, color: MUTED, fontSize: 13 }}>
-                      <div>无法获取 {klinePick.name}（{klinePick.code}）的 K 线数据</div>
-                      <div style={{ fontSize: 11, color: "rgba(255,107,107,.7)" }}>{klineError}</div>
-                      <button
-                        type="button"
-                        onClick={() => { setKlineError(null); setKlineReloadKey((n) => n + 1); }}
-                        className="interactive bs-panel"
-                        style={{
-                          background: "rgba(255,255,255,.04)",
-                          border: "0.5px solid var(--border)",
-                          color: TEXT,
-                          borderRadius: 999,
-                          padding: "4px 14px",
-                          fontSize: 12,
-                          fontFamily: "var(--font-sans)",
-                          cursor: "pointer",
-                        }}
-                      >
-                        重试
-                      </button>
-                    </div>
-                  ) : (
-                    // K线是服务端即时渲染的 SVG（image/svg+xml），并非静态图资产：
-                    // 不走 next/image 优化管线（next/image 对 SVG 路径不友好且会强制走远程 URL 优化）。
-                    // ?t=${klineReloadKey} 仅用于绕过浏览器内存缓存（同 code 重选也得刷新），不影响服务端 60s in-memory cache。
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      key={`${klinePick.code}-${klineReloadKey}`}
-                      src={`/api/kline/${klinePick.code}.svg?t=${klineReloadKey}`}
-                      alt={`${klinePick.name} 日K 技术面板`}
-                      onLoad={() => setKlineError(null)}
-                      onError={() => setKlineError("服务端 K 线接口返回异常，可能是数据源暂时不可用。")}
-                      style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", display: "block" }}
-                    />
-                  )}
+                <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", width: "100%" }}>
+                  {/* 交互式 K 线：滚轮缩放 + 拖拽平移 + 日/周/月周期切换 + 仅最近 N 根 */}
+                  <InteractiveKline code={klinePick.code} name={klinePick.name} />
                 </div>
               ) : chart ? (
                 <svg

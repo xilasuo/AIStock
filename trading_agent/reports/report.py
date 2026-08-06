@@ -20,6 +20,11 @@ def _pct(x: float) -> str:
     return f"{x * 100:+.2f}%" if x is not None else "-"
 
 
+def _f3(x) -> float:
+    """数值统一保留 3 位小数（None 透传 None）。"""
+    return round(float(x), 3) if x is not None else None
+
+
 def _sparkline(equity: list[float], width: int = 40) -> str:
     if not equity:
         return ""
@@ -89,11 +94,11 @@ def write_report(result: dict, cfg: config.AppConfig) -> str:
     lines.append("|------|------|------|------|-----------|-----|----------|----|----------|----------|--------|")
     for r in selected:
         ffp = r.get("fund_flow_pct")
-        ffp_str = f"{ffp:.2f}" if ffp is not None else "-"
+        ffp_str = f"{ffp:.3f}" if ffp is not None else "-"
         lines.append(
             f"| {r['code']} | {r['name']} | {r.get('sector', '其他')} | {r['score']:.3f} | "
-            f"{_pct(r['momentum'])} | {r.get('rsi', 0):.1f} | {r['pe_ttm']:.2f} | {r['pb']:.2f} | "
-            f"{r['turnover']:.2f} | {ffp_str} | {r.get('n_signals', 0)} |"
+            f"{_pct(r['momentum'])} | {r.get('rsi', 0):.3f} | {r['pe_ttm']:.3f} | {r['pb']:.3f} | "
+            f"{r['turnover']:.3f} | {ffp_str} | {r.get('n_signals', 0)} |"
         )
     lines.append("")
 
@@ -103,7 +108,7 @@ def write_report(result: dict, cfg: config.AppConfig) -> str:
     bm = base["metrics"]
     lines.append(
         f"- 总收益：{_pct(bm['total_return'])} ｜ 年化：{_pct(bm['annual_return'])} ｜ "
-        f"夏普：{bm['sharpe']:.2f} ｜ 最大回撤：{_pct(bm['max_drawdown'])} ｜ "
+        f"夏普：{bm['sharpe']:.3f} ｜ 最大回撤：{_pct(bm['max_drawdown'])} ｜ "
         f"交易胜率：{_pct(bm['win_rate'])} ｜ 交易次数：{bm.get('trades', 0)}"
     )
     lines.append("")
@@ -114,11 +119,11 @@ def write_report(result: dict, cfg: config.AppConfig) -> str:
         lines.append(f"**优化后最佳参数**：快线 MA{bs['fast_ma']} / 慢线 MA{bs['slow_ma']}")
         lines.append(
             f"- 总收益：{_pct(fm['total_return'])} ｜ 年化：{_pct(fm['annual_return'])} ｜ "
-            f"夏普：{fm['sharpe']:.2f} ｜ 最大回撤：{_pct(fm['max_drawdown'])} ｜ "
+            f"夏普：{fm['sharpe']:.3f} ｜ 最大回撤：{_pct(fm['max_drawdown'])} ｜ "
             f"交易胜率：{_pct(fm['win_rate'])} ｜ 交易次数：{fm.get('trades', 0)}"
         )
         imp = fm["sharpe"] - bm["sharpe"]
-        lines.append(f"- 夏普提升：{imp:+.2f}（优化{ '有效' if imp > 0 else '未超越基准'}）")
+        lines.append(f"- 夏普提升：{imp:+.3f}（优化{ '有效' if imp > 0 else '未超越基准'}）")
         # 样本外绩效（诚实呈现，防过拟合）
         oos = opt.get("out_of_sample") or {}
         oos_m = oos.get("metrics") or {}
@@ -128,7 +133,7 @@ def write_report(result: dict, cfg: config.AppConfig) -> str:
             lines.append("**样本外验证（时间序列切分，防过拟合）**")
             lines.append(
                 f"- 总收益：{_pct(oos_m['total_return'])} ｜ 年化：{_pct(oos_m['annual_return'])} ｜ "
-                f"夏普：{oos_m['sharpe']:.2f} ｜ 最大回撤：{_pct(oos_m['max_drawdown'])} ｜ "
+                f"夏普：{oos_m['sharpe']:.3f} ｜ 最大回撤：{_pct(oos_m['max_drawdown'])} ｜ "
                 f"交易胜率：{_pct(oos_m.get('win_rate', 0.0))} ｜ 交易次数：{oos_m.get('trades', 0)}"
             )
             tr = split.get("train_ratio", 0.7)
@@ -170,7 +175,7 @@ def write_report(result: dict, cfg: config.AppConfig) -> str:
     lines.append("")
     eq = final["equity"]
     if eq:
-        lines.append(f"- 净值起点：{eq[0]:.4f} → 终点：{eq[-1]:.4f}（起始归一化 1.0）")
+        lines.append(f"- 净值起点：{eq[0]:.3f} → 终点：{eq[-1]:.3f}（起始归一化 1.0）")
         lines.append(f"- 交易日数：{len(eq)} ｜ 信号总数：{final.get('n_signals_total', 0)}")
     lines.append("")
     lines.append("## 五、说明")
@@ -207,13 +212,13 @@ def _market_state_view(ms: dict) -> dict:
     """把市场状态字典整理为前端友好的 camelCase 字段。"""
     return {
         "state": ms.get("state", "unknown"),
-        "positionFactor": float(ms.get("position_factor", 1.0)),
-        "score": float(ms.get("score", 0.0)),
+        "positionFactor": _f3(ms.get("position_factor", 1.0)),
+        "score": _f3(ms.get("score", 0.0)),
         "detail": ms.get("detail", ""),
-        "maGap": float(ms.get("ma_gap", 0.0)),
-        "momentum": float(ms.get("momentum", 0.0)),
-        "shortMom": float(ms.get("short_mom", 0.0)),
-        "volRatio": float(ms.get("vol_ratio", 1.0)),
+        "maGap": _f3(ms.get("ma_gap", 0.0)),
+        "momentum": _f3(ms.get("momentum", 0.0)),
+        "shortMom": _f3(ms.get("short_mom", 0.0)),
+        "volRatio": _f3(ms.get("vol_ratio", 1.0)),
     }
 
 
@@ -233,11 +238,11 @@ def write_scan_json(result: dict, cfg: config.AppConfig) -> str:
             "code": r["code"],
             "name": r["name"],
             "sector": r.get("sector", "其他"),
-            "score": round(float(r["score"]), 4),
-            "momentum": float(r["momentum"]),
-            "peTtm": float(r["pe_ttm"]),
-            "pb": float(r["pb"]),
-            "turnover": float(r["turnover"]),
+            "score": round(float(r["score"]), 3),
+            "momentum": round(float(r["momentum"]), 3),
+            "peTtm": round(float(r["pe_ttm"]), 3),
+            "pb": round(float(r["pb"]), 3),
+            "turnover": round(float(r["turnover"]), 3),
             "signals": int(r.get("n_signals", 0)),
             # —— 选出时间：个股信号时点（K 线最新 bar 日期）+ 整批扫描时刻 ——
             # signalTime: 该股被选出的信号依据行情日（盘后=当日，盘前/盘中=最新交易日）；
@@ -245,29 +250,29 @@ def write_scan_json(result: dict, cfg: config.AppConfig) -> str:
             "signalTime": r.get("signal_time") or "",
             "selectedAt": meta["generated_at"],
             # —— 新增因子维度（丰富选股策略）——
-            "rsi": round(float(r.get("rsi", 0.0)), 2),
-            "riskAdjMomentum": round(float(r.get("risk_adj_momentum", 0.0)), 4),
-            "macd": round(float(r.get("macd", 0.0)), 4),
-            "trend": round(float(r.get("trend", 0.0)), 4),
-            "factors": {k: float(v) for k, v in (r.get("factor_scores") or {}).items()},
+            "rsi": round(float(r.get("rsi", 0.0)), 3),
+            "riskAdjMomentum": round(float(r.get("risk_adj_momentum", 0.0)), 3),
+            "macd": round(float(r.get("macd", 0.0)), 3),
+            "trend": round(float(r.get("trend", 0.0)), 3),
+            "factors": {k: _f3(v) for k, v in (r.get("factor_scores") or {}).items()},
             # —— 入选理由（解释性）：screener 生成的一句话入选逻辑 ——
             "rationale": r.get("rationale") or "",
             # —— 质量因子（接数据源后才有；ROE / 股息率）——
-            "roe": (float(r["roe"]) if r.get("roe") is not None else None),
-            "dividendYield": (float(r["dividend_yield"]) if r.get("dividend_yield") is not None else None),
+            "roe": _f3(r.get("roe")),
+            "dividendYield": _f3(r.get("dividend_yield")),
             # —— 资金流因子（主力净流入占流通市值千分比；数据源未提供则 None）——
-            "fundFlowPct": (float(r["fund_flow_pct"]) if r.get("fund_flow_pct") is not None else None),
+            "fundFlowPct": _f3(r.get("fund_flow_pct")),
         }
         for r in result["selected"]
     ]
 
     def metrics_view(m: dict) -> dict:
         return {
-            "totalReturn": float(m.get("total_return", 0.0)),
-            "annualReturn": float(m.get("annual_return", 0.0)),
-            "sharpe": float(m.get("sharpe", 0.0)),
-            "maxDrawdown": float(m.get("max_drawdown", 0.0)),
-            "winRate": float(m.get("win_rate", 0.0)),
+            "totalReturn": _f3(m.get("total_return", 0.0)),
+            "annualReturn": _f3(m.get("annual_return", 0.0)),
+            "sharpe": _f3(m.get("sharpe", 0.0)),
+            "maxDrawdown": _f3(m.get("max_drawdown", 0.0)),
+            "winRate": _f3(m.get("win_rate", 0.0)),
             "trades": int(m.get("trades", 0)),
         }
 
@@ -283,8 +288,8 @@ def write_scan_json(result: dict, cfg: config.AppConfig) -> str:
         "selectedCount": int(meta["selected_n"]),
         "marketState": _market_state_view(result.get("market_state") or {}),
         "screenerMeta": {
-            "configured": {k: float(v) for k, v in (result.get("screener") or {}).get("configured", {}).items()},
-            "applied": {k: float(v) for k, v in (result.get("screener") or {}).get("applied", {}).items()},
+            "configured": {k: _f3(v) for k, v in (result.get("screener") or {}).get("configured", {}).items()},
+            "applied": {k: _f3(v) for k, v in (result.get("screener") or {}).get("applied", {}).items()},
             "skipped": list((result.get("screener") or {}).get("skipped", [])),
         },
         "selected": selected,

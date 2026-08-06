@@ -109,11 +109,11 @@ def optimize(code_klines: dict, codes: list[str], cfg: config.AppConfig) -> dict
         metric_val = bt["metrics"].get(ocfg.metric, 0.0)
         results.append({
             "fast_ma": f, "slow_ma": s,
-            "metric": round(metric_val, 4),
+            "metric": round(metric_val, 3),
             "sharpe": round(bt["metrics"]["sharpe"], 3),
-            "total_return": round(bt["metrics"]["total_return"], 4),
-            "max_drawdown": round(bt["metrics"]["max_drawdown"], 4),
-            "win_rate": round(bt["metrics"].get("win_rate", 0.0), 4),
+            "total_return": round(bt["metrics"]["total_return"], 3),
+            "max_drawdown": round(bt["metrics"]["max_drawdown"], 3),
+            "win_rate": round(bt["metrics"].get("win_rate", 0.0), 3),
             "trades": bt["metrics"].get("trades", 0),
         })
         if best is None or metric_val > best[1]:
