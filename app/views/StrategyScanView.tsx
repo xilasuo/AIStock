@@ -245,6 +245,9 @@ export function StrategyScanView({
   const [scanError, setScanError] = useState("");
   // 榜单次要因子列（RSI/风险动量/趋势/PB/资金流/信号数）默认收起，避免 16 列横向溢出
   const [showExtraFactors, setShowExtraFactors] = useState(false);
+  // K线技术面板弹窗（云端直连东财/新浪日K渲染，不依赖本地服务）
+  const [kline, setKline] = useState<{ code: string; name: string } | null>(null);
+  const [klineErr, setKlineErr] = useState("");
 
   const load = useCallback(() => {
     let alive = true;
@@ -689,6 +692,14 @@ export function StrategyScanView({
                           分析
                         </button>
                       )}
+                      <button
+                        type="button"
+                        className="scan-action-btn scan-action-btn--analyze"
+                        onClick={() => setKline({ code: s.code, name: s.name })}
+                        title="查看K线技术面板（云端直连数据生成）"
+                      >
+                        K线
+                      </button>
                     </span>
                   </td>
                 )}
@@ -762,6 +773,47 @@ export function StrategyScanView({
       )}
 
       <Hint>{scan.disclaimer}</Hint>
+
+      {kline && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setKline(null);
+          }}
+        >
+          <section
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${kline.name} ${kline.code} K线技术面板`}
+          >
+            <header>
+              <h2>
+                {kline.name} {kline.code} · K线技术面板
+              </h2>
+              <button type="button" onClick={() => setKline(null)} aria-label="关闭">
+                ×
+              </button>
+            </header>
+            <div style={{ padding: "16px 20px 20px" }}>
+              <img
+                src={`/api/kline/${kline.code}.svg`}
+                alt={`${kline.name} K线技术面板`}
+                style={{ width: "100%", height: "auto", display: "block", borderRadius: 8 }}
+                onError={() => setKlineErr("K线生成失败：云端取数不可用（东财/新浪均失败）")}
+                onLoad={() => setKlineErr("")}
+              />
+              {klineErr && (
+                <p style={{ color: "var(--danger-ink)", fontSize: 13, marginTop: 8 }}>{klineErr}</p>
+              )}
+              <p style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 10 }}>
+                红=涨 绿=跌 ｜ 标注：泡沫顶 / 突破确认位 / 现价 / 回踩点 / 双底（生死线）｜ 云端直连东财·新浪日K生成
+              </p>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
