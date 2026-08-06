@@ -866,7 +866,12 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
                         color: latest.close >= deductPrice ? "var(--up)" : "var(--down)",
                       }}
                     >
-                      {latest.close >= deductPrice ? "现价 > 扣抵 · 扣抵向上(支撑)" : "现价 < 扣抵 · 扣抵向下(压力)"}
+                      {latest.close >= deductPrice
+                        ? "现价>扣抵 · 明日MA20拐头↑(助涨)"
+                        : "现价<扣抵 · 明日MA20拐头↓(承压)"}
+                    </div>
+                    <div style={{ fontSize: 9.5, padding: "1px 4px 0", color: "var(--muted)" }}>
+                      拐头条件：明日收盘 &gt; 扣抵价则MA20上行
                     </div>
                   </div>
                 )}
