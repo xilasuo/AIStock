@@ -35,7 +35,7 @@ export async function GET() {
       .select()
       .from(strategyWriteback)
       .where(userId != null ? or(eq(strategyWriteback.userId, userId), isNull(strategyWriteback.userId)) : isNull(strategyWriteback.userId))
-      .orderBy(desc(strategyWriteback.createdAt))
+      .orderBy(sql`(CASE WHEN user_id IS NULL THEN 0 ELSE 1 END) ASC, created_at DESC`)
       .limit(1);
     if (!rows.length) {
       return Response.json(

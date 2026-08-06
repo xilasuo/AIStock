@@ -990,15 +990,15 @@ def main():
 
     # 可选：把扫描结果推送到云端「策略扫描」页
     if args.scan_url and args.scan_token:
-        # 复用云端配置拉取时建立的登录会话，使结果按登录用户隔离（user_id=本人）。
-        push_scan(args.scan_url, args.scan_token, payload, cookie=cloud_cookie)
+        # 推全局桶（user_id=NULL）：不携带登录会话，使所有账号登录后都能看到最新选股。
+        push_scan(args.scan_url, args.scan_token, payload, cookie=None)
     else:
         print("（未配置扫描推送地址/令牌，跳过云端扫描推送；本地 scan_payload.json 已就绪）")
 
     # 可选：把候选回写信号推送到云端「回写结果」页
     if args.push_url and args.push_token:
-        # 复用云端配置拉取时建立的登录会话，使回写结果按登录用户隔离（user_id=本人）。
-        push_writeback(args.push_url, args.push_token, build_writeback_payload(signals), cookie=cloud_cookie)
+        # 推全局桶（user_id=NULL）：不携带登录会话，使所有账号登录后都能看到最新回写。
+        push_writeback(args.push_url, args.push_token, build_writeback_payload(signals), cookie=None)
     else:
         print("（未配置回写推送地址/令牌，跳过云端回写推送；本地 signals_out.json 已就绪）")
 

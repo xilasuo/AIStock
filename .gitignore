@@ -94,6 +94,7 @@ trading_agent/hub_report_*.md
 
 # ---- trading_agent: 本地联调临时数据 ----
 trading_agent/.tmp_cloud/
+trading_agent/.tmp_filter.json
 
 # ---- trading_agent: 扫描与信号输出（本地运行产物） ----
 trading_agent/prefetched.json

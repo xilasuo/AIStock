@@ -44,7 +44,7 @@ export async function GET() {
       .select()
       .from(strategyScan)
       .where(sql`user_id = ${user.id} OR user_id IS NULL`)
-      .orderBy(sql`(CASE WHEN user_id IS NULL THEN 1 ELSE 0 END) ASC, created_at DESC`)
+      .orderBy(sql`(CASE WHEN user_id IS NULL THEN 0 ELSE 1 END) ASC, created_at DESC`)
       .limit(1);
     if (!rows.length) {
       // 本地兜底：云端 D1 无数据时，回退读取本机引擎产物 scan_payload.json，
