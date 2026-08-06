@@ -205,6 +205,9 @@ export async function ensureSchema() {
     // 隐身模式开关（办公室低存在感配色）
     await addColumnIfMissing("trading_preferences", "stealth_mode", "stealth_mode INTEGER NOT NULL DEFAULT 0");
 
+    // 操作模式（个人风格）：超短/短线/波段/长线，注入前端 LLM 与引擎 --mode
+    await addColumnIfMissing("trading_preferences", "trade_mode", "trade_mode TEXT NOT NULL DEFAULT 'short'");
+
     // 交易费用设置：券商佣金费率（万 X）+ 单笔最低佣金（分，0=免5），用于买卖时自动估算手续费
     await addColumnIfMissing("trading_preferences", "commission_rate_ten_thousandths", "commission_rate_ten_thousandths REAL NOT NULL DEFAULT 2.5");
     await addColumnIfMissing("trading_preferences", "min_commission_cents", "min_commission_cents INTEGER NOT NULL DEFAULT 500");

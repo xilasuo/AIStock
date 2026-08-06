@@ -1,0 +1,63 @@
+/**
+ * GET /api/kline/<code>             -> 深色标注 K线 SVG（image/svg+xml）
+ * GET /api/kline/<code>.json        -> 标注数据 JSON（现价/泡沫顶/突破位/回踩点/生死线）
+ * GET /api/kline/<code>.svg         -> 同 <code>（兼容）
+ *
+ * 云端自给自足：服务端直连东财/新浪取日K，本仓库 TS 版标注算法渲染，
+ * 不依赖本地 trading_agent 服务。浏览器缓存 30 分钟。
+ */
+import { fetchKline, detectMarkers, renderKlineSvg, type Markers } from "../../../../lib/kline";
+
+const CACHE_TTL = 1800;
+const memCache = new Map<string, { ts: number; svg: string; mk: Markers }>();
+
+async function build(code: string): Promise<{ svg: string; mk: Markers }> {
+  const now = Date.now();
+  const hit = memCache.get(code);
+  if (hit && now - hit.ts < CACHE_TTL * 1000) return { svg: hit.svg, mk: hit.mk };
+
+  const bars = await fetchKline(code, 220);
+  if (!bars || bars.length < 30) {
+    throw new Error(`K线数据不足或取数失败: ${code}`);
+  }
+  const mk = detectMarkers(bars);
+  mk.name = mk.name || code;
+  const svg = renderKlineSvg(code, mk.name, bars, mk, 110);
+
+  memCache.set(code, { ts: now, svg, mk });
+  if (memCache.size > 200) {
+    const oldest = [...memCache.entries()].sort((a, b) => a[1].ts - b[1].ts)[0]?.[0];
+    if (oldest) memCache.delete(oldest);
+  }
+  return { svg, mk };
+}
+
+function sendSvg(svg: string): Response {
+  return new Response(svg, {
+    status: 200,
+    headers: {
+      "Content-Type": "image/svg+xml; charset=utf-8",
+      "Cache-Control": `public, max-age=${CACHE_TTL}`,
+    },
+  });
+}
+
+export async function GET(req: Request, { params }: { params: Promise<{ code: string }> }) {
+  const { code } = await params;
+  const clean = (code || "").trim().replace(/\.svg$/i, "");
+  if (!clean || !/^[0-9]{6}$/.test(clean)) {
+    return Response.json({ ok: false, error: "invalid code, use /api/kline/<6位代码>" }, { status: 400 });
+  }
+  try {
+    const { svg, mk } = await build(clean);
+    if (code.endsWith(".json")) {
+      return Response.json({ ok: true, code: clean, markers: mk }, {
+        headers: { "Cache-Control": `public, max-age=${CACHE_TTL}` },
+      });
+    }
+    return sendSvg(svg);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return Response.json({ ok: false, error: `kline render failed: ${msg}` }, { status: 502 });
+  }
+}

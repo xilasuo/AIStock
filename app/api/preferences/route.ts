@@ -41,6 +41,7 @@ export async function PUT(request: NextRequest) {
       .onConflictDoUpdate({
         target: tradingPreferences.userId,
         set: {
+          tradeMode: next.tradeMode,
           riskProfile: next.riskProfile,
           maxLossPercent: next.maxLossPercent,
           maxConcentrationPercent: next.maxConcentrationPercent,

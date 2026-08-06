@@ -1,12 +1,15 @@
 import type { getDb } from "../../db";
 import { eq } from "drizzle-orm";
 import { tradingPreferences } from "../../db/schema";
+import { DEFAULT_TRADE_MODE, resolveTradeMode, type TradeMode } from "./trade-mode";
 
 export type AppDb = ReturnType<typeof getDb>;
 
 export type RiskProfile = "保守" | "平衡" | "激进";
 
 export type TradingPreferences = {
+  /** 操作模式（个人风格）：超短/短线/波段/长线，注入前端 LLM 与本地引擎 --mode */
+  tradeMode: TradeMode;
   riskProfile: RiskProfile;
   maxLossPercent: number;
   maxConcentrationPercent: number;
@@ -26,7 +29,7 @@ export const DEFAULT_FEE_SETTINGS = {
   minCommissionCents: 500,
 } as const;
 
-export const RISK_PRESETS: Record<RiskProfile, Omit<TradingPreferences, "disciplineNote" | "commissionRateTenThousandths" | "minCommissionCents">> = {
+export const RISK_PRESETS: Record<RiskProfile, Omit<TradingPreferences, "tradeMode" | "disciplineNote" | "commissionRateTenThousandths" | "minCommissionCents">> = {
   保守: { riskProfile: "保守", maxLossPercent: 1, maxConcentrationPercent: 15, maxPositionPercent: 50, enforceStopLoss: true, stealthMode: false },
   平衡: { riskProfile: "平衡", maxLossPercent: 2, maxConcentrationPercent: 30, maxPositionPercent: 70, enforceStopLoss: true, stealthMode: false },
   激进: { riskProfile: "激进", maxLossPercent: 4, maxConcentrationPercent: 50, maxPositionPercent: 90, enforceStopLoss: false, stealthMode: false },
@@ -34,6 +37,7 @@ export const RISK_PRESETS: Record<RiskProfile, Omit<TradingPreferences, "discipl
 
 export const DEFAULT_PREFERENCES: TradingPreferences = {
   ...RISK_PRESETS["平衡"],
+  tradeMode: DEFAULT_TRADE_MODE,
   disciplineNote: "",
   stealthMode: false,
   ...DEFAULT_FEE_SETTINGS,
@@ -53,12 +57,27 @@ function clampNonNegative(value: unknown, fallback: number): number {
   return Math.min(100_000, num);
 }
 
-export function normalizePreferences(row: Partial<TradingPreferences> | undefined | null): TradingPreferences {
+/** normalizePreferences 入参：兼容 DB 行（各字段原始类型）与前端 Partial 提交 */
+export type PreferencesInput = {
+  tradeMode?: unknown;
+  riskProfile?: unknown;
+  maxLossPercent?: unknown;
+  maxConcentrationPercent?: unknown;
+  maxPositionPercent?: unknown;
+  enforceStopLoss?: unknown;
+  disciplineNote?: unknown;
+  stealthMode?: unknown;
+  commissionRateTenThousandths?: unknown;
+  minCommissionCents?: unknown;
+};
+
+export function normalizePreferences(row: PreferencesInput | undefined | null): TradingPreferences {
   if (!row) return DEFAULT_PREFERENCES;
   const riskProfile: RiskProfile =
     row.riskProfile === "保守" || row.riskProfile === "激进" ? row.riskProfile : "平衡";
   const preset = RISK_PRESETS[riskProfile];
   return {
+    tradeMode: resolveTradeMode(row.tradeMode),
     riskProfile,
     maxLossPercent: clampPercent(row.maxLossPercent, preset.maxLossPercent),
     maxConcentrationPercent: clampPercent(row.maxConcentrationPercent, preset.maxConcentrationPercent),

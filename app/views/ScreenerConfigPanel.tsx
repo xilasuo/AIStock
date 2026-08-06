@@ -4,6 +4,9 @@ import { useState, useEffect, useCallback, useRef } from "react";
 
 /* ----------------------------- 类型 ----------------------------- */
 export type ScreenerOverrides = {
+  // 操作模式角色卡（与 trading_agent/trade_mode.py 的 MODE_CHOICES 保持一致）：
+  // ultra_short(超短1-3天) / short(短线3-10天) / swing(波段1-3月) / long(长线6月+)
+  trade_mode?: "ultra_short" | "short" | "swing" | "long";
   // 策略预设（配方名：breakout / ma_golden / macd_cross）
   preset?: string;
   // 板块
@@ -63,6 +66,14 @@ export const RISK_TIER_LABEL: Record<RiskTier, string> = {
   平衡: "平衡",
   激进: "激进",
 };
+
+/** 操作模式选项（与 trading_agent/trade_mode.py MODE_PROFILES 对齐） */
+export const TRADE_MODES: { key: "ultra_short" | "short" | "swing" | "long"; label: string; hint: string }[] = [
+  { key: "ultra_short", label: "超短", hint: "1-3天 · 量价/分时/情绪，给买卖价位与止损剧本" },
+  { key: "short", label: "短线", hint: "3-10天 · 均线形态/板块轮动，等趋势确认" },
+  { key: "swing", label: "波段", hint: "1-3月 · 中期趋势+估值修复" },
+  { key: "long", label: "长线", hint: "6月+ · 只认基本面与估值安全边际" },
+];
 
 /** 时段档位（与 run_hub --profile 对应）：盘前/盘中/盘后各自独立选股条件 */
 export const SCAN_PROFILES: { key: string; label: string; preset: string; hint: string }[] = [
@@ -268,6 +279,7 @@ export const STRATEGY_PRESETS: {
 
 /** 默认值（与 config.py ScreenerConfig 默认值对齐） */
 const DEFAULTS: Required<ScreenerOverrides> = {
+  trade_mode: "short",
   preset: "",
   boards: ["main", "cyb", "kc", "bj"],
   st_filter: "exclude_st",
@@ -334,6 +346,7 @@ function toNested(ov: ScreenerOverrides): Record<string, unknown> {
     screener,
     ...(Object.keys(market).length ? { market } : {}),
     ...(Object.keys(signal).length ? { signal } : {}),
+    ...(ov.trade_mode ? { trade_mode: ov.trade_mode } : {}),
     ...(ov.preset ? { preset: ov.preset } : {}),
     optim: { enabled: true },
   };
@@ -359,6 +372,7 @@ function fromNested(cfg: Record<string, unknown>): Partial<ScreenerOverrides> {
     if (k in sig) (out as Record<string, unknown>)[k] = sig[k];
   });
   if ("preset" in cfg && typeof cfg["preset"] === "string") (out as Record<string, unknown>).preset = cfg["preset"];
+  if ("trade_mode" in cfg && typeof cfg["trade_mode"] === "string") (out as Record<string, unknown>).trade_mode = cfg["trade_mode"];
   return out;
 }
 
@@ -716,6 +730,35 @@ export function ScreenerConfigPanel({
                 {tier.label}
               </span>
               <span className="screener-muted" style={{ marginLeft: 6 }}>{sel.desc}</span>
+            </span>
+          );
+        })()}
+      </div>
+
+      {/* 操作模式：告诉 AI「决策者是谁」，报告/推送按此裁剪输出 */}
+      <div className="screener-preset-row">
+        <div className="screener-preset-field">
+          <span className="screener-field-label">操作模式</span>
+          <select
+            className="screener-select"
+            value={ov.trade_mode || "short"}
+            onChange={(e) =>
+              setOv((prev) => ({
+                ...prev,
+                trade_mode: e.target.value as ScreenerOverrides["trade_mode"],
+              }))
+            }
+          >
+            {TRADE_MODES.map((m) => (
+              <option key={m.key} value={m.key}>{m.label} · {m.hint}</option>
+            ))}
+          </select>
+        </div>
+        {(() => {
+          const sel = TRADE_MODES.find((m) => m.key === (ov.trade_mode || "short"))!;
+          return (
+            <span className="screener-preset-desc">
+              <span className="screener-muted">{sel.hint}</span>
             </span>
           );
         })()}

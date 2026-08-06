@@ -342,7 +342,12 @@ _FLAT_MAP = {
 
 
 def flatten_config(data: dict) -> dict:
-    """把嵌套 YAML 摊平成 run_hub.apply_config 兼容的扁平键集合。"""
+    """把嵌套 YAML 摊平成 run_hub.apply_config 兼容的扁平键集合。
+
+    顶层键 trade_mode 原样透传：它不属于 screener/market/signal/optim 任何一节，
+    但 run_hub 需要感知（操作模式角色卡，前端「选股配置」页可设置）。
+    注意：preset 顶层键刻意不透传，保持与历史行为一致（避免改变既有选股逻辑）。
+    """
     out: dict = {}
     for section, mapping in _FLAT_MAP.items():
         sec = data.get(section) or {}
@@ -354,6 +359,9 @@ def flatten_config(data: dict) -> dict:
             for src, dst in mapping.items():
                 if src in sec:
                     out[dst] = sec[src]
+    # 顶层键透传（trade_mode=操作模式；preset 不透传，沿用历史行为）
+    if data.get("trade_mode") not in (None, ""):
+        out["trade_mode"] = data["trade_mode"]
     return out
 
 

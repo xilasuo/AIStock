@@ -5,15 +5,18 @@ trading_agent，下发「运行选股 / 取状态 / 健康检查」，trading_ag
 core.loop.run 产出并可选触发回写/推送。
 
 端点：
-  GET  /health        健康检查
-  POST /run           运行闭环（body 可选覆盖参数：top_n, beg, end, fast_ma...）
-  GET  /status        最近一次运行摘要
-  POST /feedback      接收用户反馈（user -> 优化策略 闭环）
+  GET  /health               健康检查
+  POST /run                  运行闭环（body 可选覆盖参数：top_n, beg, end, fast_ma...）
+  GET  /status               最近一次运行摘要
+  POST /feedback             接收用户反馈（user -> 优化策略 闭环）
+  GET  /kline/<code>.svg     K线技术面板（深色标注 SVG，前端 <img> 直用）
+  GET  /kline/<code>.json    K线标注数据（现价/泡沫顶/突破位/回踩点/生死线）
 """
 from __future__ import annotations
 
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
@@ -23,6 +26,20 @@ from reports.report import write_scan_json
 
 
 _LAST = {"result": None, "lock": threading.Lock()}
+_KLINE_CACHE = {}            # code -> (ts, svg, markers)
+_KLINE_CACHE_TTL = 1800      # 秒
+
+
+def _kline_panel(code: str) -> tuple[str, dict]:
+    """生成（带 TTL 缓存）K线面板。返回 (svg_text, markers)。"""
+    now = time.time()
+    hit = _KLINE_CACHE.get(code)
+    if hit and now - hit[0] < _KLINE_CACHE_TTL:
+        return hit[1], hit[2]
+    from render_kline import render_kline_panel
+    _, markers, svg = render_kline_panel(code)
+    _KLINE_CACHE[code] = (now, svg, markers)
+    return svg, markers
 
 
 def run_once(cfg: config.AppConfig) -> dict:
@@ -110,6 +127,38 @@ class Handler(BaseHTTPRequestHandler):
                         "universeSize": res.get("universeSize"),
                     },
                 })
+        elif path.startswith("/kline/"):
+            rest = path[len("/kline/"):]
+            if rest.endswith(".svg"):
+                code = rest[:-4].strip()
+                if not code or not code.isalnum():
+                    self._send(400, {"ok": False, "error": "bad code, use /kline/<code>.svg"})
+                    return
+                try:
+                    svg, _ = _kline_panel(code)
+                except Exception as e:  # noqa: BLE001
+                    self._send(500, {"ok": False, "error": str(e)})
+                    return
+                data = svg.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "image/svg+xml; charset=utf-8")
+                self.send_header("Cache-Control", f"public, max-age={_KLINE_CACHE_TTL}")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+            elif rest.endswith(".json"):
+                code = rest[:-5].strip()
+                if not code or not code.isalnum():
+                    self._send(400, {"ok": False, "error": "bad code, use /kline/<code>.json"})
+                    return
+                try:
+                    _, markers = _kline_panel(code)
+                except Exception as e:  # noqa: BLE001
+                    self._send(500, {"ok": False, "error": str(e)})
+                    return
+                self._send(200, {"ok": True, "code": code, "markers": markers})
+            else:
+                self._send(404, {"ok": False, "error": "use /kline/<code>.svg 或 /kline/<code>.json"})
         else:
             self._send(404, {"ok": False, "error": "not found"})
 

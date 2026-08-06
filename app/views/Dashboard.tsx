@@ -91,6 +91,12 @@ import {
   type RiskProfile,
   type TradingPreferences,
 } from "../../lib/utils/preferences";
+import {
+  DEFAULT_TRADE_MODE,
+  TRADE_MODES,
+  resolveTradeMode,
+  type TradeModeInfo,
+} from "../../lib/utils/trade-mode";
 import type { AssistantContext } from "../../lib/ai/assistant";
 import { splitAssistantSections, conclusionTone } from "../../lib/ai/assistant";
 import { formatDateTimeShanghai, shanghaiIso } from "../../lib/utils/time";
@@ -5487,6 +5493,7 @@ function ReviewModal({ cycle, onClose, onSaved }: {
 
 function PreferencesSettings({ preferences, onSave }: { preferences: TradingPreferences | null; onSave: (next: TradingPreferences) => Promise<void> }) {
   const initial = preferences ?? DEFAULT_PREFERENCES;
+  const [tradeMode, setTradeMode] = useState<TradeModeInfo["key"]>(resolveTradeMode(initial.tradeMode));
   const [riskProfile, setRiskProfile] = useState<RiskProfile>(initial.riskProfile);
   const [maxLossPercent, setMaxLossPercent] = useState(String(initial.maxLossPercent));
   const [maxConcentrationPercent, setMaxConcentrationPercent] = useState(String(initial.maxConcentrationPercent));
@@ -5511,6 +5518,7 @@ function PreferencesSettings({ preferences, onSave }: { preferences: TradingPref
     setSaving(true);
     try {
       await onSave({
+        tradeMode,
         riskProfile,
         maxLossPercent: Number(maxLossPercent) || 0,
         maxConcentrationPercent: Number(maxConcentrationPercent) || 0,
@@ -5529,6 +5537,23 @@ function PreferencesSettings({ preferences, onSave }: { preferences: TradingPref
   return (
     <div className="settings-card__panel">
       <SectionHeader title="风险偏好与交易纪律" subtitle="以下内容会作为硬约束，用于买卖决策与仓位建议。" />
+      <div className="form-group">
+        <label>操作模式（个人风格）</label>
+        <div className="segmented">
+          {TRADE_MODES.map((m) => (
+            <button
+              key={m.key}
+              type="button"
+              className={`seg${tradeMode === m.key ? " active" : ""}`}
+              title={m.hint}
+              onClick={() => setTradeMode(m.key)}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+        <Hint>决定 AI 回答你的时间框架：超短只回答 1-3 天能否参与并给买卖价位，长线只看基本面与估值安全边际。个股解读、AI 操盘手与选股报告都会按此风格输出。</Hint>
+      </div>
       <div className="form-group">
         <label>风险偏好档位</label>
         <div className="segmented">

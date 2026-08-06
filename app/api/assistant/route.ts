@@ -3,6 +3,7 @@ import { buildFallbackAnswer, isValidContext, type AssistantContext } from "../.
 import { getCurrentUser, requireApiUser } from "../../../lib/auth/auth";
 import { ensureSchema, getDb } from "../../../db";
 import { DEFAULT_PREFERENCES, fetchPreferences, type TradingPreferences } from "../../../lib/utils/preferences";
+import { tradeModePrompt } from "../../../lib/utils/trade-mode";
 
 type ChatMessage = {
   role: "user" | "assistant" | "system";
@@ -227,6 +228,7 @@ export async function POST(request: Request) {
               `max_position_percent=${prefs.maxPositionPercent}`,
               `enforce_stop_loss=${prefs.enforceStopLoss ? "是（任何买入必须先设止损）" : "否（由用户自行决定）"}`,
               `discipline_note=${prefs.disciplineNote || "（未填写）"}`,
+              tradeModePrompt(prefs.tradeMode, "act"),
               `context=\n${summarizeContext(payload.context as AssistantContext)}`,
             ].join("\n"),
           },

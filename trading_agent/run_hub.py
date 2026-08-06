@@ -61,6 +61,7 @@ from data.provider import StaticProvider, default_provider
 from hub import run as hub_run, _build_signals
 from strategy import presets
 from timeutil import sh_now, sh_now_aware
+import trade_mode
 
 
 def _norm_bar(b: dict) -> dict:
@@ -219,6 +220,7 @@ def _write_scan_summary(payload: dict, profile: str, out_dir: str):
             "universeSize": payload.get("universeSize"),
             "selectedCount": payload.get("selectedCount"),
             "profile": profile,
+            "mode": payload.get("mode"),
             "marketState": payload.get("marketState"),
             # 回测基准指标（来自 payload.backtest.baseMetrics），使中枢报告步骤
             # 无需整读 49KB scan_payload.json 即可拿到收益/夏普等关键数字。
@@ -259,6 +261,7 @@ def _write_strategy_snapshot(cfg, receipt: dict, profile: str, out_dir: str):
         sha = (receipt.get("config_sha256") or "")[:8]
         snap = {
             "profile": profile,
+            "mode": getattr(cfg, "mode", None),
             "source": receipt.get("source"),
             "config_sha256_8": sha,
             "fetched_at": receipt.get("fetched_at"),
@@ -485,8 +488,11 @@ def render_wechat_digest(payload: dict, signals: list[dict]) -> tuple[str, str]:
     sel = payload.get("selected", [])
     bm = payload.get("backtest", {}).get("baseMetrics", {})
     date = sh_now().strftime("%Y-%m-%d")
+    mode = trade_mode.resolve_mode(payload.get("mode"))
     title = f"盘前选股 {date} · 入选 {payload.get('selectedCount', len(sel))} 只"
     lines: list[str] = []
+    lines.append(trade_mode.render_mode_summary_line(mode))
+    lines.append("")
     if sel:
         lines.append("**入选标的**")
         for r in sel:
@@ -566,8 +572,11 @@ def render_wecom_markdown(payload: dict, signals: list[dict], receipt: dict | No
     bm = payload.get("backtest", {}).get("baseMetrics", {})
     ms = payload.get("marketState", {}) or {}
     date = sh_now().strftime("%Y-%m-%d")
+    mode = trade_mode.resolve_mode(payload.get("mode"))
     lines: list[str] = []
     lines.append(f"# 盘前选股 {date}")
+    lines.append("")
+    lines.append(trade_mode.render_mode_summary_line(mode))
     lines.append("")
     state = ms.get("state", "unknown")
     detail = ms.get("detail", "")
@@ -671,8 +680,11 @@ def render_wecom_text(payload: dict, signals: list[dict], receipt: dict | None) 
     bm = payload.get("backtest", {}).get("baseMetrics", {})
     ms = payload.get("marketState", {}) or {}
     date = sh_now().strftime("%Y-%m-%d")
+    mode = trade_mode.resolve_mode(payload.get("mode"))
     lines: list[str] = []
     lines.append(f"【盘前选股 {date}】")
+    lines.append(trade_mode.render_mode_summary_line(mode))
+    lines.append("")
     state = ms.get("state", "unknown")
     lines.append(f"牛熊判定：{state}（仓位系数 {ms.get('positionFactor', 1.0)}）")
     detail = ms.get("detail", "")
@@ -825,6 +837,11 @@ def main():
                     choices=["pre_market", "intraday", "post_market"],
                     help="时段档位：pre_market(盘前) / intraday(盘中) / post_market(盘后)。"
                          "拉取云端配置时只应用该档的条件，避免三时段共用一份全局配置互相干扰。")
+    ap.add_argument("--mode", default=None,
+                    choices=list(trade_mode.MODE_CHOICES),
+                    help="操作模式角色卡：ultra_short(超短1-3天) / short(短线3-10天) / "
+                         "swing(波段1-3月) / long(长线6月+)。不传则依次回退 prefetched.config.mode "
+                         "> 环境变量 TRADE_MODE > 默认 short。报告/推送按模式裁剪输出。")
     ap.add_argument("--scan-url", default=os.environ.get("CLOUD_SCAN_URL") or "")
     ap.add_argument("--scan-token", default=os.environ.get("CLOUD_SCAN_TOKEN") or "")
     ap.add_argument("--push-url", default=os.environ.get("CLOUD_WRITEBACK_URL") or "")
@@ -907,6 +924,25 @@ def main():
         else:
             print(f"[云端配置] 来源={cloud_receipt['source']} | {cloud_receipt.get('note','')}")
 
+    # 操作模式：CLI --mode > 云端该档 trade_mode（前端「选股配置」可设）> prefetched.config.mode
+    #            > 环境变量 TRADE_MODE > 默认 short
+    prefetched_mode = None
+    if isinstance(prefetched_cfg, dict):
+        prefetched_mode = prefetched_cfg.get("mode")
+    cloud_mode = cloud_ov.get("trade_mode") if isinstance(cloud_ov, dict) else None
+    if args.mode:
+        mode = trade_mode.resolve_mode(args.mode)
+        print(f"已套用操作模式: {mode} ({trade_mode.MODE_LABELS.get(mode)}) [--mode]")
+    elif cloud_mode:
+        mode = trade_mode.resolve_mode(cloud_mode)
+        print(f"已套用操作模式: {mode} ({trade_mode.MODE_LABELS.get(mode)}) [云端 trade_mode，前端选股配置页可改]")
+    elif prefetched_mode:
+        mode = trade_mode.resolve_mode(prefetched_mode)
+        print(f"已套用操作模式: {mode} ({trade_mode.MODE_LABELS.get(mode)}) [prefetched.config.mode]")
+    else:
+        mode = trade_mode.resolve_mode(None)
+        print(f"已套用操作模式: {mode} ({trade_mode.MODE_LABELS.get(mode)}) [默认/TRADE_MODE]")
+
     # 解析策略预设：云端 profile 配置 + CLI 显式覆盖共同决定基线；
     # preset 作为「配方基线」，显式字段（云端 profile / CLI）覆盖预设。
     # 优先级（低->高）：云端 profile 配置 < CLI 显式覆盖；preset 基线被显式字段覆盖。
@@ -920,6 +956,7 @@ def main():
 
     cfg = config.AppConfig()
     cfg.universe = codes
+    cfg.mode = mode  # 操作模式角色卡（供快照/报告引用）
     # 持久默认：strategy_config.yaml（优先级低于 prefetched/云端/CLI）
     yaml_ov = config.load_strategy_config()
     if yaml_ov:
@@ -965,6 +1002,7 @@ def main():
     # 记录本次扫描所属时段档位（盘前/盘中/盘后），便于前端结果区标注来源，
     # 也随 scan_payload.json 推送云端后在「文件桥接」展示时保留档位信息。
     payload["profile"] = profile
+    payload["mode"] = mode
 
     out_dir = args.out_dir
     os.makedirs(out_dir, exist_ok=True)

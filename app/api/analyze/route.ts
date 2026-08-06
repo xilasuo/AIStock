@@ -4,6 +4,7 @@ import { analyzeStockData, automaticExplanation } from "../../../lib/domain/stoc
 import { getAiConfig } from "../../../lib/ai/ai-config";
 import { getCurrentUser, requireApiUser } from "../../../lib/auth/auth";
 import { DEFAULT_PREFERENCES, fetchPreferences } from "../../../lib/utils/preferences";
+import { tradeModePrompt } from "../../../lib/utils/trade-mode";
 import { isValidContext, type AssistantContext } from "../../../lib/ai/assistant";
 import { generateStrategy } from "../../../lib/ai/trading-strategy";
 import { shanghaiIso } from "../../../lib/utils/time";
@@ -177,6 +178,7 @@ async function getDeepSeekExplanation(
               `enforce_stop_loss=${prefs.enforceStopLoss ? "是" : "否"}`,
               `discipline_note=${prefs.disciplineNote || "（未填写）"}`,
               "解读时可结合上述风险偏好做个性化表述（例如当前波动是否明显大于其单笔可亏阈值、该股是否可能触及单股集中度上限），但只做提示、不给买卖建议，且不得编造任何数字。",
+              tradeModePrompt(prefs.tradeMode, "read"),
               ...(screenerContext ? [
                 "",
                 "【选股榜单上下文（多因子打分结果）】",

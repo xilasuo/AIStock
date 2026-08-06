@@ -151,6 +151,8 @@ export const capitalFlows = sqliteTable("capital_flows", {
 export const tradingPreferences = sqliteTable("trading_preferences", {
   id: integer("id").primaryKey(),
   userId: integer("user_id").notNull().default(0),
+  /** 操作模式（个人风格）：ultra_short/short/swing/long，注入前端 LLM 与引擎 --mode */
+  tradeMode: text("trade_mode").notNull().default("short"),
   riskProfile: text("risk_profile", { enum: ["保守", "平衡", "激进"] }).notNull().default("平衡"),
   maxLossPercent: real("max_loss_percent").notNull().default(2),
   maxConcentrationPercent: real("max_concentration_percent").notNull().default(30),
