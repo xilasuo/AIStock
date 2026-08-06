@@ -122,6 +122,10 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
   const lineSpecsRef = useRef<PriceLineEntry[]>([]);
   // 往前推第 20 日蜡烛的标记插件实例
   const day20MarkersRef = useRef<ReturnType<typeof createSeriesMarkers<UTCTimestamp>> | null>(null);
+  // 20MA 扣抵价水平线（lightweight-charts priceLine 实例）
+  const deductLineRef = useRef<IPriceLine | null>(null);
+  // 20MA 扣抵价（bar[bars.length-20] 的收盘），用于图例显示与状态判断
+  const [deductPrice, setDeductPrice] = useState<number | null>(null);
   // 与 lineSpecsRef 镜像的 state：仅在 render 中消费图例数据时使用，避免在渲染期读取 ref。
   const [lineSpecs, setLineSpecs] = useState<PriceLineEntry[]>([]);
   const [period, setPeriod] = useState<KPeriod>("day");
@@ -316,6 +320,7 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
       window.removeEventListener("resize", onResize);
       priceLinesRef.current = [];
       day20MarkersRef.current = null;
+      deductLineRef.current = null;
       chart.remove();
       chartRef.current = null;
       candleRef.current = null;
@@ -405,6 +410,33 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
       }
     } catch {
       /* 标记插件异常时降级，不阻断图表 */
+    }
+
+    // 20MA 扣抵价：20 日均线「明天」要扣掉的那个收盘价 = 最新一根往前数第 20 根（索引 bars.length-20）。
+    // 当未来收盘价 > 扣抵价时 20MA 继续上行（扣抵向上=支撑），否则拐头（扣抵向下=压力）。
+    // 仅当数据 >=21 根时绘制；扣抵价本身即 bar 的收盘，与 K 线时间轴天然对齐。
+    try {
+      if (deductLineRef.current) {
+        candle.removePriceLine(deductLineRef.current);
+        deductLineRef.current = null;
+      }
+      const didx = bars.length - 20;
+      if (didx >= 0) {
+        const deduct = bars[didx].close;
+        deductLineRef.current = candle.createPriceLine({
+          price: deduct,
+          color: "rgba(232,121,249,.55)",
+          lineWidth: 1 as LineWidth,
+          lineStyle: 2, // 虚线
+          axisLabelVisible: false,
+          title: "20MA扣抵",
+        });
+        setDeductPrice(deduct);
+      } else {
+        setDeductPrice(null);
+      }
+    } catch {
+      /* 扣抵线异常时降级，不阻断图表 */
     }
   }, [bars, range]);
 
@@ -763,6 +795,48 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
                     </div>
                   );
                 })}
+
+                {/* 20MA 扣抵区块：与 marker 参考线分隔，单独展示扣抵价与多空状态 */}
+                {deductPrice != null && latest && (
+                  <div style={{ marginTop: 4, paddingTop: 6, borderTop: "0.5px solid rgba(148,163,184,.15)" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "2px 4px",
+                        borderRadius: 4,
+                      }}
+                      title="20MA 扣抵价 = 20 根前那根收盘；现价在其上为扣抵向上(支撑)，在其下为扣抵向下(压力)"
+                    >
+                      <span
+                        style={{
+                          width: 10,
+                          height: 0,
+                          borderTop: "2px dashed rgba(232,121,249,.85)",
+                          borderRadius: 1,
+                          flexShrink: 0,
+                          display: "inline-block",
+                        }}
+                      />
+                      <span style={{ fontSize: 11, color: "var(--text)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        20MA扣抵
+                      </span>
+                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text)", fontWeight: 500 }}>
+                        {deductPrice.toFixed(2)}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        padding: "1px 4px 0",
+                        color: latest.close >= deductPrice ? "var(--up)" : "var(--down)",
+                      }}
+                    >
+                      {latest.close >= deductPrice ? "现价 > 扣抵 · 扣抵向上(支撑)" : "现价 < 扣抵 · 扣抵向下(压力)"}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </>
