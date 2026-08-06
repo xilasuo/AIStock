@@ -335,6 +335,8 @@ def apply_config(cfg: config.AppConfig, ov: dict):
         sc.rsi_window = int(ov["rsi_window"])
     if "rsi_direction" in ov:
         sc.rsi_direction = str(ov["rsi_direction"])
+    if "strategy_filter" in ov:
+        sc.strategy_filter = str(ov["strategy_filter"])
     if "macd_fast" in ov:
         sc.macd_fast = int(ov["macd_fast"])
     if "macd_slow" in ov:

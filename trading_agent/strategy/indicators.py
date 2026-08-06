@@ -124,3 +124,85 @@ def macd(closes: list[float], fast: int = 12, slow: int = 26, signal: int = 9):
     sig = ema(macd_line, signal)
     hist = macd_line[-1] - sig[-1]
     return macd_line[-1], sig[-1], hist
+
+
+# ——— 均线 / 布林 / 量 / 涨停 / MACD 状态（供策略硬过滤使用） ———
+
+
+def ma(values: list[float], n: int) -> float | None:
+    """简单移动平均最新值；数据不足返回 None。"""
+    if len(values) < n:
+        return None
+    return sum(values[-n:]) / n
+
+
+def bollinger_band(
+    closes: list[float], n: int = 20, k: float = 2.0
+) -> tuple[float | None, float | None, float | None]:
+    """返回 (mid, upper, lower) 布林带最新值；数据不足返回 (None, None, None)。"""
+    if len(closes) < n:
+        return None, None, None
+    window = closes[-n:]
+    mean = sum(window) / n
+    var = sum((x - mean) ** 2 for x in window) / n
+    std = math.sqrt(var)
+    return mean, mean + k * std, mean - k * std
+
+
+def volume_ratio(volumes: list[float], lookback: int = 20) -> float:
+    """最新量 / 近 N 日均量；数据不足返回 1.0。"""
+    if len(volumes) < lookback + 1:
+        return 1.0
+    latest = volumes[-1]
+    avg = sum(volumes[-(lookback + 1): -1]) / lookback
+    if avg <= 0:
+        return 1.0
+    return latest / avg
+
+
+def detect_limit_up(
+    closes: list[float], board: str = "main", lookback: int = 5
+) -> int:
+    """检测近 lookback 天内最近一次涨停距今天数（1=昨天）；未检测到返回 -1。
+
+    不同板块阈值：主板 ≈9.9%，科创/创业 ≈19.9%，北交 ≈29.9%。
+    """
+    limits = {"main": 0.099, "cyb": 0.199, "kc": 0.199, "bj": 0.299}
+    threshold = limits.get(board, 0.099) * 0.92  # 留 8% 容差（实际封板可能未满 10%）
+    for offset in range(1, min(lookback + 1, len(closes))):
+        prev = closes[-(offset + 1)]
+        curr = closes[-offset]
+        if prev > 0 and (curr / prev - 1.0) >= threshold:
+            return offset
+    return -1
+
+
+def macd_cross_status(
+    closes: list[float], fast: int = 12, slow: int = 26, signal: int = 9
+) -> str:
+    """返回最新 MACD 状态：'golden'(金叉) | 'dead'(死叉) | 'red_expand'(红柱放大) | 'none'。
+
+    需要 slow+signal+2 根日线，不足返回 'none'。
+    """
+    if len(closes) < slow + signal + 2:
+        return "none"
+    ef = ema(closes, fast)
+    es = ema(closes, slow)
+    dif_line = [ef[i] - es[i] for i in range(len(closes))]
+    sig = ema(dif_line, signal)
+    dif_now = dif_line[-1]
+    dea_now = sig[-1]
+    dif_prev = dif_line[-2]
+    dea_prev = sig[-2]
+    # 金叉：上一根 DIF ≤ DEA，当前 DIF > DEA
+    if dif_prev <= dea_prev and dif_now > dea_now:
+        return "golden"
+    # 死叉：上一根 DIF ≥ DEA，当前 DIF < DEA
+    if dif_prev >= dea_prev and dif_now < dea_now:
+        return "dead"
+    # 红柱放大：MACD 柱为正值且较上一根在扩大
+    hist_now = dif_now - dea_now
+    hist_prev = dif_prev - dea_prev
+    if hist_now > 0 and hist_now > hist_prev:
+        return "red_expand"
+    return "none"

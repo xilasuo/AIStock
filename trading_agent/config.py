@@ -80,6 +80,9 @@ class ScreenerConfig:
     w_size: float = 0.04                # 规模（总市值对数，越大越稳）
     w_quality: float = 0.06             # 质量（默认 0.06；仅当行情快照提供 ROE/股息率时实际启用，否则权重自动归 0）
     w_fund_flow: float = 0.08           # 资金流（主力净流入占流通市值比；仅当行情快照提供时实际启用，否则权重自动归 0）
+    # 策略专属硬过滤（需 K 线数据，非权重型；由 presets 设置）
+    # 可选值："ma_momentum" | "oversold" | "dszn" | "limit_up" | "volume_breakout" | ""
+    strategy_filter: str = ""
     # —— 因子计算参数 ——
     rsi_window: int = 14                # RSI 周期
     rsi_direction: str = "normal"       # RSI 因子方向："normal"(偏好强势 50~70) | "reversal"(超跌反转，偏好 30~50)
@@ -317,7 +320,7 @@ _FLAT_MAP = {
         "w_liquidity", "w_rsi", "w_macd", "w_trend", "w_size", "w_quality",
         "w_fund_flow",
         "rsi_window", "macd_fast", "macd_slow", "macd_signal", "vol_window",
-        "rsi_direction",
+        "rsi_direction", "strategy_filter",
         "min_turnover_pct", "max_pe_ttm", "max_pb", "boards", "st_filter",
         "mcap_min", "mcap_max",
     ],

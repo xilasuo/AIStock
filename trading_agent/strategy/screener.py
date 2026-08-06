@@ -94,6 +94,164 @@ def passes_hard_filters(cfg: config.AppConfig, quote: dict, code: str) -> bool:
     return True
 
 
+# ——— 策略专属硬过滤（需 K 线/日线数据，由 strategy_filter 触发） ———
+
+
+def strategy_hard_filter(
+    sf: str,
+    code: str,
+    closes: list[float],
+    volumes: list[float],
+    board: str,
+    quote: dict,
+) -> bool:
+    """按策略名执行 K 线级硬过滤；任一条件不满足返回 False 剔除该票。
+
+    Args:
+        sf: 策略名（ma_momentum | oversold | dszn | limit_up | volume_breakout）
+        code: 股票代码
+        closes: 日线收盘价序列（已从 kline 中提取，旧→新）
+        volumes: 日线成交量序列（已从 kline 中提取，旧→新）
+        board: 板块（main/cyb/kc/bj）
+        quote: 行情快照
+    """
+    if sf == "ma_momentum":
+        return _filter_ma_momentum(closes)
+    elif sf == "oversold":
+        return _filter_oversold(closes)
+    elif sf == "dszn":
+        return _filter_dszn(closes, volumes)
+    elif sf == "limit_up":
+        return _filter_limit_up(closes, volumes, board)
+    elif sf == "volume_breakout":
+        return _filter_volume_breakout(closes, volumes)
+    else:
+        # 未知或无策略过滤 → 放行
+        return True
+
+
+def _filter_ma_momentum(closes: list[float]) -> bool:
+    """均线多头排列：MA5>MA10>MA20>MA60，MACD 金叉或红柱放大，价站上 MA20。"""
+    need = 60
+    if len(closes) < need:
+        return False
+    ma5 = indicators.ma(closes, 5)
+    ma10 = indicators.ma(closes, 10)
+    ma20 = indicators.ma(closes, 20)
+    ma60 = indicators.ma(closes, 60)
+    if any(m is None for m in (ma5, ma10, ma20, ma60)):
+        return False
+    if not (ma5 > ma10 > ma20 > ma60):  # type: ignore[operator]
+        return False
+    # MACD 金叉或红柱放大
+    macd_status = indicators.macd_cross_status(closes)
+    if macd_status not in ("golden", "red_expand"):
+        return False
+    # 价在 MA20 上方
+    if closes[-1] <= ma20:  # type: ignore[operator]
+        return False
+    return True
+
+
+def _filter_oversold(closes: list[float]) -> bool:
+    """超跌反弹：RSI(14)<30，股价触及布林带下轨。"""
+    need = 20
+    if len(closes) < need:
+        return False
+    rsi_val = indicators.rsi(closes, 14)
+    if rsi_val >= 30:
+        return False
+    _, _, lower = indicators.bollinger_band(closes, 20, 2.0)
+    if lower is None:
+        return False
+    # 触及下轨：最新收盘价在 lower 上方 3% 以内（允许小幅脱离下轨）
+    if closes[-1] > lower * 1.03:
+        return False
+    return True
+
+
+def _filter_dszn(closes: list[float], volumes: list[float]) -> bool:
+    """DSZN 量价模型 C/D/E 阶段：MA20 向上，缩量回踩或放量突破形态。"""
+    need = 60
+    if len(closes) < need or len(volumes) < need:
+        return False
+    ma20_latest = indicators.ma(closes, 20)
+    ma20_5ago = sum(closes[-(20 + 5):-5]) / 20 if len(closes) >= 25 else None
+    if ma20_latest is None or ma20_5ago is None:
+        return False
+    # MA20 方向向上
+    if ma20_latest <= ma20_5ago:
+        return False
+    # 量能形态：找到 60 天内最高成交量日（作为试盘/突破高量参照点）
+    vol_window = volumes[-60:]
+    if not vol_window:
+        return False
+    max_vol = max(vol_window)
+    if max_vol <= 0:
+        return False
+    latest_vol = volumes[-1]
+    # C/D 阶段：当前量 ≤ 60% 试盘量 → 缩量回踩/横盘蓄力
+    if latest_vol <= max_vol * 0.60 and latest_vol > 0:
+        return True
+    # E 阶段：当前量 ≥ 1.5× 近 20 日均量 → 放量突破
+    vol_ratio = indicators.volume_ratio(volumes, 20)
+    if vol_ratio >= 1.5:
+        return True
+    return False
+
+
+def _filter_limit_up(closes: list[float], volumes: list[float], board: str) -> bool:
+    """涨停中继：近 2~5 天有涨停板，整理缩量 < 涨停量 50%，均线完全多头。"""
+    need = 250
+    if len(closes) < need:
+        return False
+    # 检测涨停（近 5 天）
+    lu_day = indicators.detect_limit_up(closes, board, 5)
+    if lu_day < 2 or lu_day > 5:
+        return False
+    # 涨停日成交量
+    lu_vol_idx = -(lu_day + 1)  # 涨停日的 kline 索引（负数）
+    if abs(lu_vol_idx) > len(volumes):
+        return False
+    lu_volume = volumes[lu_vol_idx]
+    if lu_volume <= 0:
+        return False
+    latest_volume = volumes[-1]
+    # 当前量 < 涨停日 50%（缩量整理）
+    if latest_volume >= lu_volume * 0.50:
+        return False
+    # 均线完全多头：MA5>MA10>MA20>MA60>MA250
+    ma5 = indicators.ma(closes, 5)
+    ma10 = indicators.ma(closes, 10)
+    ma20 = indicators.ma(closes, 20)
+    ma60 = indicators.ma(closes, 60)
+    ma250 = indicators.ma(closes, 250)
+    if any(m is None for m in (ma5, ma10, ma20, ma60, ma250)):
+        return False
+    if not (ma5 > ma10 > ma20 > ma60 > ma250):  # type: ignore[operator]
+        return False
+    return True
+
+
+def _filter_volume_breakout(closes: list[float], volumes: list[float]) -> bool:
+    """倍量突破：量 ≥ 2× 近 20 日均量，价突破 20 日最高价，MACD 金叉或红柱放大。"""
+    need = 20
+    if len(closes) < need or len(volumes) < need + 1:
+        return False
+    # 成交量 ≥ 2 倍近 20 日均量
+    if indicators.volume_ratio(volumes, 20) < 2.0:
+        return False
+    # 价格突破近 20 日最高价
+    high_20 = max(closes[-21:-1]) if len(closes) >= 21 else max(closes[:-1])
+    if closes[-1] < high_20:
+        return False
+    # MACD 金叉或红柱放大
+    macd_status = indicators.macd_cross_status(closes)
+    if macd_status not in ("golden", "red_expand"):
+        return False
+    return True
+
+
 def _robust_normalize(vals: list[float]) -> list[float]:
     """稳健 z-score（截断 ±3σ）后 min-max 到 [0,1]。
 
@@ -262,6 +420,13 @@ def screen(cfg: config.AppConfig, codes: list[str], dp=None, top_n_override: int
         closes = [float(b["close"]) for b in kline if b.get("close") is not None]
         if len(closes) < sc.momentum_window + 2:
             continue
+
+        # —— 策略专属硬过滤（需 K 线数据，由 presets 设置 strategy_filter 触发）——
+        if sc.strategy_filter:
+            volumes = [float(b.get("volume", b.get("vol", 0)) or 0) for b in kline]
+            _board = _guess_board(code, name)
+            if not strategy_hard_filter(sc.strategy_filter, code, closes, volumes, _board, quote):
+                continue
 
         # —— 原始因子计算 ——
         mom = closes[-1] / closes[-(sc.momentum_window + 1)] - 1.0

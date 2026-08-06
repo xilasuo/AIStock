@@ -220,6 +220,84 @@ STRATEGY_PRESETS: dict[str, dict] = {
             "rsi_direction": "reversal",  # ⚠️ 超跌类必须反转：偏好 RSI 30~50 低位，修复追高 bug
         },
     },
+    # —— 2026-08-06 新增：5 套 K 线硬过滤策略（均线/量价/涨停/倍量） ——
+    "ma_momentum": {
+        "label": "均线多头排列",
+        "risk": "平衡",
+        "desc": "MA5>MA10>MA20>MA60 完美多头排列 + MACD 金叉红柱放大 + 价站 MA20。用于主升浪中段持仓与加仓判定。",
+        "universe_filter": "active",
+        "overrides": {
+            "w_trend": 0.35, "w_macd": 0.26, "w_momentum": 0.18,
+            "w_liquidity": 0.08, "w_rsi": 0.06, "w_value": 0.04,
+            "w_size": 0.00, "w_quality": 0.00, "w_fund_flow": 0.03,
+            "strategy_filter": "ma_momentum",
+            "min_turnover_pct": 0.50, "top_n": 6,
+            "use_breakout_filter": False,
+            "stop_loss_pct": -0.08,
+        },
+    },
+    "oversold": {
+        "label": "超跌反弹（严格）",
+        "risk": "激进",
+        "desc": "RSI(14)<30 + 触及布林下轨 + 底背离信号。快进快出，设严格止损 ≤ -5%。",
+        "universe_filter": "active",
+        "overrides": {
+            "w_rsi": 0.42, "w_macd": 0.26, "w_momentum": 0.12, "w_liquidity": 0.08,
+            "w_fund_flow": 0.06, "w_trend": 0.04, "w_value": 0.02,
+            "w_size": 0.00, "w_quality": 0.00,
+            "strategy_filter": "oversold",
+            "rsi_direction": "reversal",      # 超跌类必须反转
+            "momentum_window": 10, "max_pe_ttm": 500, "max_pb": 50,
+            "min_turnover_pct": 0.30, "top_n": 5,
+            "use_breakout_filter": False,
+            "stop_loss_pct": -0.05,           # 严格止损 ≤ 5%
+        },
+    },
+    "dszn": {
+        "label": "DSZN 量价模型",
+        "risk": "平衡",
+        "desc": "八阶段量价：主攻 C/D/E 阶段（缩量回踩/横盘/放量突破），MA20 向上，量能形态判别。",
+        "universe_filter": "active",
+        "overrides": {
+            "w_liquidity": 0.34, "w_trend": 0.26, "w_momentum": 0.18,
+            "w_macd": 0.12, "w_rsi": 0.06, "w_fund_flow": 0.04,
+            "w_value": 0.00, "w_size": 0.00, "w_quality": 0.00,
+            "strategy_filter": "dszn",
+            "min_turnover_pct": 0.50, "top_n": 6,
+            "max_pe_ttm": 10000, "max_pb": 1000,
+            "use_breakout_filter": False,
+        },
+    },
+    "limit_up": {
+        "label": "涨停中继",
+        "risk": "激进",
+        "desc": "涨停板后 2~5 日缩量整理不破涨停底 + 均线完全多头(5>10>20>60>250)，博二波主升。",
+        "universe_filter": "active",
+        "overrides": {
+            "w_momentum": 0.35, "w_liquidity": 0.25, "w_trend": 0.20,
+            "w_macd": 0.10, "w_rsi": 0.06, "w_fund_flow": 0.04,
+            "w_value": 0.00, "w_size": 0.00, "w_quality": 0.00,
+            "strategy_filter": "limit_up",
+            "min_turnover_pct": 1.5, "top_n": 5,
+            "max_pe_ttm": 10000, "max_pb": 1000,
+            "use_breakout_filter": False,
+        },
+    },
+    "volume_breakout": {
+        "label": "倍量突破",
+        "risk": "平衡",
+        "desc": "成交量 ≥ 2× 近 20 日均量 + 突破 20 日最高价 + 换手 ≥ 3% + MACD 金叉确认。",
+        "universe_filter": "active",
+        "overrides": {
+            "w_momentum": 0.38, "w_liquidity": 0.28, "w_trend": 0.14,
+            "w_rsi": 0.08, "w_macd": 0.08, "w_value": 0.02,
+            "w_size": 0.00, "w_quality": 0.00, "w_fund_flow": 0.02,
+            "strategy_filter": "volume_breakout",
+            "min_turnover_pct": 3.0, "top_n": 5,
+            "use_breakout_filter": True, "breakout_window": 20,
+            "momentum_window": 20,
+        },
+    },
 }
 
 
