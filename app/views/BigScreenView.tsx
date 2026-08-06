@@ -1044,13 +1044,12 @@ export function BigScreenView() {
           <div style={{ width: 320, minWidth: 200, flex: "0 1 auto" }}>
             <StockSearch
               compact
+              hideSubmitButton
               placeholder="输入代码 / 名称 / 拼音首字母"
-              submitLabel="加载K线"
               value={searchQuery}
               onChange={setSearchQuery}
               onSubmit={handleSearchSubmit}
               onSelect={handleSearchSelect}
-              loading={false}
               suggestions={searchSuggestions}
             />
           </div>

@@ -509,6 +509,7 @@ export function StockSearch({
   compact = false,
   className = "",
   inputRef,
+  hideSubmitButton = false,
 }: {
   value: string;
   onChange: (next: string) => void;
@@ -522,6 +523,7 @@ export function StockSearch({
   compact?: boolean;
   className?: string;
   inputRef?: React.Ref<HTMLInputElement>;
+  hideSubmitButton?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const groups = open ? suggestions : [];
@@ -556,9 +558,11 @@ export function StockSearch({
         aria-label="股票代码或名称"
         autoComplete="off"
       />
-      <Button variant="primary" type="submit" disabled={loading || !value.trim()}>
-        {loading ? loadingLabel : submitLabel}
-      </Button>
+      {!hideSubmitButton && (
+        <Button variant="primary" type="submit" disabled={loading || !value.trim()}>
+          {loading ? loadingLabel : submitLabel}
+        </Button>
+      )}
       {totalItems > 0 && (
         <ul className="stock-search__suggestions" role="listbox">
           {groups.map((group) =>

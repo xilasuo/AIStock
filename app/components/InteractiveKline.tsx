@@ -77,6 +77,8 @@ type Props = {
   initialBars?: KlineBar[];
   height?: number;
   compact?: boolean;
+  /** 是否撑满父容器高度（大屏场景推荐）。若为 true，height 参数失效。 */
+  fillParent?: boolean;
 };
 
 function cssVar(name: string, fallback: string): string {
@@ -112,7 +114,7 @@ function bumpWidth(width: LineWidth): LineWidth {
   return next as LineWidth;
 }
 
-export function InteractiveKline({ code, name, initialBars, height = 480, compact = false }: Props) {
+export function InteractiveKline({ code, name, initialBars, height = 480, compact = false, fillParent = false }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -138,6 +140,8 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
   const [hoveredMarker, setHoveredMarker] = useState<MarkerKey | null>(null);
   const [legendPos, setLegendPos] = useState<{ left: number; top: number } | null>(null);
   const [legendExpanded, setLegendExpanded] = useState(false);
+  // 当 fillParent=true 时，图表高度跟随父容器；否则使用传入的 height prop。
+  const [chartHeight, setChartHeight] = useState(fillParent ? 0 : height);
   const [dragging, setDragging] = useState(false);
   const dragStateRef = useRef<{ startX: number; startY: number; originLeft: number; originTop: number } | null>(null);
   const legendRef = useRef<HTMLDivElement>(null);
@@ -218,13 +222,28 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
     };
   }, [code, period, reloadKey]);
 
+  // fillParent=true 时：监听父容器高度变化并同步到图表。
+  useEffect(() => {
+    if (!fillParent) return;
+    const parent = containerRef.current?.parentElement;
+    if (!parent) return;
+    const sync = () => {
+      const h = parent.clientHeight;
+      if (h > 0) setChartHeight(h);
+    };
+    sync();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(sync) : null;
+    ro?.observe(parent);
+    return () => ro?.disconnect();
+  }, [fillParent]);
+
   // 初始化图表（仅一次）
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     const chart = createChart(container, {
-      height,
+      height: chartHeight || height,
       width: container.clientWidth || 600,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
@@ -313,7 +332,7 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
       maRefs.current[period] = ma;
     }
 
-    const onResize = () => chart.applyOptions({ width: container.clientWidth || 600 });
+    const onResize = () => chart.applyOptions({ width: container.clientWidth || 600, height: chartHeight || height });
     window.addEventListener("resize", onResize);
 
     return () => {
