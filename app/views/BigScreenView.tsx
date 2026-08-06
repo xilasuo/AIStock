@@ -18,6 +18,7 @@ import { useRouter } from "next/navigation";
 import { calculatePortfolioInsights } from "../../lib/domain/portfolio-insights";
 import type { CapitalFlow, Trade } from "../../lib/domain/domain";
 import { formatDateTimeShanghai, shanghaiDate } from "../../lib/utils/time";
+import { TickNum } from "../components/TickNum";
 
 type Quote = { price: number; changePercent: number; fetchedAt: string };
 type MarketIndex = { code: string; name: string; price: number; changePercent: number; change: number };
@@ -1005,8 +1006,8 @@ export function BigScreenView() {
                 >
                   <span style={{ color: TEXT }}>{index.name}</span>
                   <span style={{ color: index.changePercent >= 0 ? UP : DOWN }}>
-                    {index.price.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{" "}
-                    {pct(index.changePercent)}
+                    <TickNum value={index.price} format={(v) => v.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} className="num" />{" "}
+                    <TickNum value={index.changePercent} format={pct} className="num" />
                   </span>
                 </div>
               ))}
@@ -1183,12 +1184,14 @@ export function BigScreenView() {
                       style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5, padding: "6px 0", borderBottom: `0.5px solid rgba(22,78,99,.55)` }}
                     >
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "34%" }}>{pos.name}</span>
-                      <span style={{ fontFamily: "var(--font-mono)", color: BRIGHT, fontSize: 12 }}>{money(pos.marketValueCents)}</span>
+                      <span style={{ fontFamily: "var(--font-mono)", color: BRIGHT, fontSize: 12 }}>
+                        <TickNum value={pos.marketValueCents} format={money} className="num" />
+                      </span>
                       <span style={{ fontFamily: "var(--font-mono)", width: 58, textAlign: "right", color: quote ? (quote.changePercent >= 0 ? UP : DOWN) : MUTED }}>
-                        {quote ? pct(quote.changePercent) : "—"}
+                        {quote ? <TickNum value={quote.changePercent} format={pct} className="num" /> : "—"}
                       </span>
                       <span style={{ fontFamily: "var(--font-mono)", width: 62, textAlign: "right", color: pos.returnPercent >= 0 ? UP : DOWN, opacity: 0.75 }}>
-                        {pct(pos.returnPercent)}
+                        <TickNum value={pos.returnPercent} format={pct} className="num" />
                       </span>
                     </div>
                   );

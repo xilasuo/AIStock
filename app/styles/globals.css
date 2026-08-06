@@ -105,6 +105,9 @@ body {
   margin: 0;
   min-height: 100vh;
   text-rendering: optimizeLegibility;
+  /* 全局数字等宽对齐：金融数据列不再错位，是专业感的核心来源 */
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
 }
 
 button,
@@ -120,6 +123,29 @@ select option,
 select optgroup {
   background: #0c1626;
   color: #e9f6ff;
+}
+
+/* 数字工具类：等宽对齐 + 等宽字体，用于需要强对齐的金融数值 */
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* 实时数值跳动闪烁：红涨绿跌（A股语义），600ms 渐隐回透明，仅实时窗口内触发 */
+.tick-num { border-radius: 4px; padding: 0 3px; margin: 0 -3px; display: inline-block; transition: background-color 0.25s ease; }
+.tick-num.up { animation: tickUp 0.6s ease-out; }
+.tick-num.down { animation: tickDown 0.6s ease-out; }
+@keyframes tickUp {
+  0% { background-color: rgba(255, 77, 109, 0.30); }
+  100% { background-color: transparent; }
+}
+@keyframes tickDown {
+  0% { background-color: rgba(33, 230, 164, 0.30); }
+  100% { background-color: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tick-num.up, .tick-num.down { animation: none; }
 }
 
 /* 输入框与可编辑区域内保留可见光标，便于输入定位 */
