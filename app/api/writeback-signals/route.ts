@@ -1,4 +1,4 @@
-import { desc, eq, or, isNull } from "drizzle-orm";
+import { sql, eq, or, isNull } from "drizzle-orm";
 import { requireApiUser, pushSharedSecret, getAuthenticatedUser } from "../../../lib/auth/auth";
 import { getDb, ensureSchema } from "../../../db";
 import { strategyWriteback } from "../../../db/schema";
@@ -25,7 +25,8 @@ const MAX_PUSH_BYTES = 1_000_000;
 export async function GET() {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
-  // 按登录用户隔离：优先返回本人回写结果；本人从未推送过时回退全局默认（user_id IS NULL）。
+  // 全局桶优先：run_hub 推送回写信号到 user_id=NULL 全局桶，所有账号登录后均见最新结果；
+  // 本人如有独立推送（user_id=本人）则次之。排序全局记录在前。
   const user = await getAuthenticatedUser();
   const userId = user?.id;
   try {
