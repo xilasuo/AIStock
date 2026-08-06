@@ -75,7 +75,11 @@ function sendJson(res, code, obj) {
 const server = http.createServer((req, res) => {
   // 允许前端跨端口调用（守护进程独立端口，避免 CORS 阻断）
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  // 动态回显浏览器预检声明要用的头（不写死，前端带自定义头也能过预检）
+  const reqHeaders = req.headers["access-control-request-headers"];
+  res.setHeader("Access-Control-Allow-Headers", reqHeaders || "Content-Type");
+  res.setHeader("Access-Control-Max-Age", "86400");
   if (req.method === "OPTIONS") {
     res.writeHead(204);
     res.end();
