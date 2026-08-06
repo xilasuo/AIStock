@@ -1135,8 +1135,8 @@ export function BigScreenView() {
           </section>
 
           <section className="fade-up" style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0, animationDelay: "90ms" }}>
-            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "16px 18px", display: "flex", flexDirection: "column", flex: 7, minHeight: 0, position: "relative" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "12px 14px", display: "flex", flexDirection: "column", flex: 7, minHeight: 0, position: "relative" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                 <span style={{ fontSize: 12, color: MUTED }}>
                   {klinePick
                     ? `${klinePick.name}（${klinePick.code}）· 日K 技术面板`
@@ -1219,7 +1219,7 @@ export function BigScreenView() {
               {klinePick ? (
                 <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", width: "100%" }}>
                   {/* 交互式 K 线：滚轮缩放 + 拖拽平移 + 日/周/月周期切换 + 仅最近 N 根 */}
-                  <InteractiveKline code={klinePick.code} name={klinePick.name} height={620} />
+                  <InteractiveKline code={klinePick.code} name={klinePick.name} fillParent />
                 </div>
               ) : chart ? (
                 <svg

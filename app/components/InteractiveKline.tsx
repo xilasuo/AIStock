@@ -346,7 +346,14 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
       volRef.current = null;
       maRefs.current = {};
     };
-  }, [height]);
+  }, []);
+
+  // 图表高度同步：fillParent 时父容器高度变化，或 height prop 变化，都更新图表尺寸。
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    chart.applyOptions({ height: chartHeight || height });
+  }, [chartHeight, height]);
 
   // bars 变化时更新图表 + 应用可见窗口
   useEffect(() => {
