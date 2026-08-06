@@ -1,5 +1,6 @@
 import { isIsoDate } from "../domain/domain";
 import { shanghaiIso } from "../utils/time";
+import { getMairuiSectorMoves } from "./mairui";
 
 export type SectorMove = {
   code: string;
@@ -16,7 +17,7 @@ export type SectorHeatmap = {
   date: string;
   sectors: SectorMove[];
   sampleSize: number;
-  basis: "etf-proxy";
+  basis: "etf-proxy" | "eastmoney-board" | "mairui-board";
   source: {
     name: string;
     url: string;
@@ -139,7 +140,30 @@ export async function getSectorHeatmap(date: string, limit = 10): Promise<Sector
   const validationError = validateSectorDate(date);
   if (validationError) throw new Error(validationError);
 
-  const moves = await loadSectorMoves(date);
+  // 三级兜底：腾讯ETF代理(主) → 东财板块榜(二级) → 麦蕊板块批量接口(三级)
+  // 任一级成功且板块数足够即通过；全失败才抛错。
+  let moves = await loadSectorMoves(date);
+  let basis: SectorHeatmap["basis"] = "etf-proxy";
+  let source = { name: "腾讯证券行业主题ETF行情", url: SOURCE_URL, fetchedAt: shanghaiIso() };
+
+  if (moves.length < 5) {
+    const em = await loadEastmoneySectorMoves(date, limit);
+    if (em.length >= 5) {
+      moves = em;
+      basis = "eastmoney-board";
+      source = { name: "东方财富板块涨幅榜", url: "https://quote.eastmoney.com/center/boardlist.html", fetchedAt: shanghaiIso() };
+    }
+  }
+
+  if (moves.length < 5) {
+    const mr = await loadMairuiSectorMoves(date, limit);
+    if (mr.length >= 5) {
+      moves = mr;
+      basis = "mairui-board";
+      source = { name: "麦蕊智数行业板块", url: "https://www.mairuiapi.com/", fetchedAt: shanghaiIso() };
+    }
+  }
+
   if (moves.length < 5) {
     throw new Error("该日期可能是非交易日，或备用行情源暂时不可用");
   }
@@ -148,11 +172,66 @@ export async function getSectorHeatmap(date: string, limit = 10): Promise<Sector
     date,
     sectors: rankSectorMoves(moves, limit),
     sampleSize: moves.length,
-    basis: "etf-proxy",
-    source: {
-      name: "腾讯证券行业主题ETF行情",
-      url: SOURCE_URL,
-      fetchedAt: shanghaiIso(),
-    },
+    basis,
+    source,
   };
+}
+
+// 二级数据源：东方财富板块涨幅榜（行业 + 概念）。一次性批量拉取，零额度成本。
+// 注：东财板块榜为实时/最近收盘数据，不保证与历史 date 完全一致；大屏主看当天，回退可接受。
+async function loadEastmoneySectorMoves(date: string, limit: number): Promise<SectorMove[]> {
+  try {
+    const fsList = ["m:90+t:2", "m:90+t:3"]; // 行业板块 + 概念板块
+    const lists: Array<{ f12?: string; f14?: string; f3?: number }> = [];
+    await Promise.all(
+      fsList.map(async (fs) => {
+        const url = `https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=100&po=1&np=1&fltt=2&invt=2&fs=${fs}&fields=f12,f14,f3&_=${Date.now()}`;
+        try {
+          const res = await fetch(url, {
+            headers: { "user-agent": "Mozilla/5.0", Referer: "https://quote.eastmoney.com/" },
+            signal: AbortSignal.timeout(8_000),
+          });
+          if (!res.ok) return;
+          const json = (await res.json()) as { data?: { diff?: Array<{ f12?: string; f14?: string; f3?: number }> } };
+          if (json.data?.diff) lists.push(...json.data.diff);
+        } catch {
+          /* 单个板块列表失败不阻断另一个 */
+        }
+      })
+    );
+    return lists
+      .filter((it) => it.f14 && Number.isFinite(it.f3))
+      .map((it) => ({
+        code: it.f12 ?? "",
+        name: it.f14 as string,
+        date,
+        close: 0,
+        changePercent: it.f3 as number,
+        amount: 0,
+        amplitude: 0,
+        turnover: 0,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+// 三级数据源适配：麦蕊行业板块批量接口（一次调用）。字段仅 name + changePercent，其余补占位。
+async function loadMairuiSectorMoves(date: string, limit: number): Promise<SectorMove[]> {
+  try {
+    const rows = await getMairuiSectorMoves();
+    if (!rows || rows.length === 0) return [];
+    return rows.map((r) => ({
+      code: "",
+      name: r.name,
+      date,
+      close: 0,
+      changePercent: r.changePercent,
+      amount: 0,
+      amplitude: 0,
+      turnover: 0,
+    }));
+  } catch {
+    return [];
+  }
 }

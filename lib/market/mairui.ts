@@ -363,3 +363,46 @@ export async function getMairuiFundamentals(code: string, force = false): Promis
     return null;
   }
 }
+
+// ---------------------------------------------------------------------------
+// 板块热力图兜底层（三级数据源，/api/sector-heatmap 在腾讯、东财都失败时使用）。
+// 麦蕊「行业板块」为批量接口（一次调用返回全部行业板块及涨跌幅），只消耗 1 次额度，
+// 比循环几十次个股行情划算得多；字段名未完全公开，对 zf/zdf 等常见键做容错提取。
+// 未配置 token / 熔断期 / 解析失败一律返回 null，由调用方回退，不影响主流程。
+// ---------------------------------------------------------------------------
+
+export type MairuiSector = { name: string; changePercent: number };
+
+export async function getMairuiSectorMoves(): Promise<MairuiSector[] | null> {
+  const token = await getMairuiToken();
+  if (!token) return null;
+  if (Date.now() < disabledUntil) return null;
+
+  const url = `${MAIRUI_BASE}/hsbk/hy/${token}`;
+  try {
+    const res = await fetch(url, {
+      headers: { "user-agent": "Mozilla/5.0 StockReviewAssistant/1.0" },
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (res.status === 401 || res.status === 403) {
+      tripCircuit();
+      return null;
+    }
+    if (!res.ok) return null;
+    const rows = (await res.json()) as unknown;
+    if (!Array.isArray(rows)) return null;
+    const out: MairuiSector[] = [];
+    for (const item of rows) {
+      const row = (item ?? {}) as Record<string, unknown>;
+      const name =
+        typeof row.name === "string" && row.name ? row.name
+        : typeof row.mc === "string" ? row.mc
+        : null;
+      const changePercent = pick(row, ["zf", "zdf", "changePercent", "涨跌幅", "change"]);
+      if (name && changePercent !== null) out.push({ name, changePercent });
+    }
+    return out.length ? out : null;
+  } catch {
+    return null;
+  }
+}
