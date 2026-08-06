@@ -60,6 +60,87 @@ const ACCENT = "var(--accent)";
 const CHART = "var(--up)";
 const RING_R = 9;
 
+/**
+ * 大屏头部实时时钟（独立隔离组件）。
+ * 自管理每秒 tick 的 now state，使父级整页（行情/持仓/图表）不再因时钟每秒重渲染。
+ * 仅负责头部时间文案、交易时段标签、实时连接状态与刷新倒计时环；
+ * 与父级实时窗口门控（loadData 的轮询调度）完全解耦，不影响数据加载逻辑。
+ */
+function RealtimeClock({ refreshMs, lastLoadAt }: { refreshMs: number; lastLoadAt: number | null }) {
+  const [now, setNow] = useState<Date | null>(null);
+
+  useEffect(() => {
+    const initial = window.setTimeout(() => setNow(new Date()), 0);
+    const timer = window.setInterval(() => setNow(new Date()), 1_000);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  const sessionLabel = useMemo(() => {
+    if (!now) return "";
+    const { h, m, day } = shanghaiParts(now);
+    if (day === 0 || day === 6) return "周末休市";
+    const t = h * 60 + m;
+    if (t < 9 * 60 + 30) return "盘前";
+    if (t <= 11 * 60 + 30) return "开盘中";
+    if (t < 13 * 60) return "午间休市";
+    if (t <= 15 * 60) return "开盘中";
+    return "已收盘";
+  }, [now]);
+
+  const live = useMemo(() => (now ? isRealtimeWindow(now) : false), [now]);
+  const timeText = now ? formatDateTimeShanghai(now) : "——:——:——";
+  const countdown = useMemo(() => {
+    if (!now || lastLoadAt == null) return Math.ceil(refreshMs / 1000);
+    const elapsed = Math.floor((now.getTime() - lastLoadAt) / 1000);
+    return Math.max(0, Math.ceil(refreshMs / 1000) - elapsed);
+  }, [now, refreshMs, lastLoadAt]);
+  const ringProgress = refreshMs > 0 ? countdown / (refreshMs / 1000) : 0;
+  const ringCircumference = 2 * Math.PI * RING_R;
+
+  return (
+    <>
+      <span
+        style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+        title={live ? "实时更新中（北京时间工作日 09:00–16:00）" : "非交易时段已锁定：仅在北京时间工作日 09:00–16:00 实时刷新（周末除外）"}
+      >
+        {live ? (
+          <>
+            <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden>
+              <circle cx="11" cy="11" r={RING_R} fill="none" stroke="rgba(34,211,238,.16)" strokeWidth="2.5" />
+              <circle
+                cx="11"
+                cy="11"
+                r={RING_R}
+                fill="none"
+                stroke={ACCENT}
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeDasharray={ringCircumference}
+                strokeDashoffset={ringCircumference * (1 - ringProgress)}
+                transform="rotate(-90 11 11)"
+              />
+              <text x="11" y="14.5" textAnchor="middle" fontSize="8" fill={MUTED} fontFamily="var(--font-mono)">
+                {countdown}
+              </text>
+            </svg>
+            实时连接
+          </>
+        ) : (
+          <>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: MUTED, display: "inline-block" }} />
+            已锁定 · 非实时时段
+          </>
+        )}
+      </span>
+      <span style={{ color: sessionLabel === "开盘中" ? ACCENT : MUTED, fontSize: 12 }}>{sessionLabel}</span>
+      <span>{timeText}</span>
+    </>
+  );
+}
+
 const MARKET_STATE_LABEL: Record<string, string> = {
   bull: "多头",
   neutral: "震荡",
@@ -311,7 +392,6 @@ export function BigScreenView() {
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
   const [scan, setScan] = useState<ScanBrief | null>(null);
   const [sectors, setSectors] = useState<{ date: string; items: SectorMove[] } | null>(null);
-  const [now, setNow] = useState<Date | null>(null);
   const [error, setError] = useState("");
   const [refreshMs, setRefreshMs] = useState<number>(TRADING_OPEN_MS);
   const [lastLoadAt, setLastLoadAt] = useState<number | null>(null);
@@ -441,13 +521,17 @@ export function BigScreenView() {
       tick();
     };
 
-    // 首次进入：无论是否窗口内都加载一次
+    // 首次进入：无论是否窗口内都加载一次。
+    // 窗口外用 queueMicrotask 延迟到 effect 提交后执行，避免 effect 内同步 setState 级联渲染（react-hooks/set-state-in-effect）。
     if (isRealtimeWindow()) {
       startDataPolling();
       startSlowPolling();
     } else {
-      void loadData();
-      void loadSlowData();
+      queueMicrotask(() => {
+        if (cancelled) return;
+        void loadData();
+        void loadSlowData();
+      });
     }
 
     // 定时启停：到达下一个边界自动按当前窗口状态开/关
@@ -466,15 +550,11 @@ export function BigScreenView() {
     };
     scheduleBoundary();
 
-    const clockInitial = window.setTimeout(() => setNow(new Date()), 0);
-    const clockTimer = window.setInterval(() => setNow(new Date()), 1_000);
     return () => {
       cancelled = true;
       clearDataTimer();
       clearSlowTimer();
       if (boundaryTimer != null) window.clearTimeout(boundaryTimer);
-      window.clearTimeout(clockInitial);
-      window.clearInterval(clockTimer);
     };
   }, [loadData, loadSlowData]);
 
@@ -542,7 +622,6 @@ export function BigScreenView() {
     setCurveIdx(idx);
     const node = chart.recent[idx];
     const delta = node.value - chart.first;
-    const pctv = (delta / chart.first) * 100;
     const data: DetailData = {
       title: node.date,
       subtitle: "账户净值估算",
@@ -728,22 +807,6 @@ export function BigScreenView() {
     [trades],
   );
 
-  /** 交易时段：盘前/开盘中/午间休市/已收盘/周末，驱动头部状态标签。 */
-  const sessionLabel = useMemo(() => {
-    if (!now) return "";
-    const { h, m, day } = shanghaiParts(now);
-    if (day === 0 || day === 6) return "周末休市";
-    const t = h * 60 + m;
-    if (t < 9 * 60 + 30) return "盘前";
-    if (t <= 11 * 60 + 30) return "开盘中";
-    if (t < 13 * 60) return "午间休市";
-    if (t <= 15 * 60) return "开盘中";
-    return "已收盘";
-  }, [now]);
-
-  /** 是否处于实时更新窗口（北京时间 09:00–16:00）。驱动头部实时状态标识。 */
-  const live = useMemo(() => (now ? isRealtimeWindow(now) : false), [now]);
-
   const scanPicks = (scan?.selected ?? []).slice(0, 8);
   const marketStateKey = scan?.marketState?.state ?? "";
   const marketStateLabel = MARKET_STATE_LABEL[marketStateKey] ?? (marketStateKey || "—");
@@ -751,18 +814,8 @@ export function BigScreenView() {
     marketStateKey === "bull" ? UP : marketStateKey === "bear" ? DOWN : MUTED;
 
   const activeIndices = indices.slice(0, 3);
-  const timeText = now ? formatDateTimeShanghai(now) : "——:——:——";
   const profitColor = (insights.totalProfitCents ?? 0) >= 0 ? UP : DOWN;
   const todayColor = (todayPnl?.gainCents ?? 0) >= 0 ? UP : DOWN;
-
-  // 刷新倒计时（秒）：基于上次加载时刻与当前节奏，驱动右上角倒计时环
-  const countdown = useMemo(() => {
-    if (!now || lastLoadAt == null) return Math.ceil(refreshMs / 1000);
-    const elapsed = Math.floor((now.getTime() - lastLoadAt) / 1000);
-    return Math.max(0, Math.ceil(refreshMs / 1000) - elapsed);
-  }, [now, refreshMs, lastLoadAt]);
-  const ringProgress = refreshMs > 0 ? countdown / (refreshMs / 1000) : 0;
-  const ringCircumference = 2 * Math.PI * RING_R;
 
   /**
    * AI 智能解读（规则版，零 LLM 成本，永远可用）：用与大屏同源的持仓/盈亏/风险/大盘/选股数据，
@@ -865,36 +918,7 @@ export function BigScreenView() {
             {scan?.marketState?.state && (
               <span style={{ color: marketStateColor }}>大盘状态 {marketStateLabel}</span>
             )}
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }} title={live ? "实时更新中（北京时间工作日 09:00–16:00）" : "非交易时段已锁定：仅在北京时间工作日 09:00–16:00 实时刷新（周末除外）"}>
-              {live ? (
-                <>
-                  <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden>
-                    <circle cx="11" cy="11" r={RING_R} fill="none" stroke="rgba(34,211,238,.16)" strokeWidth="2.5" />
-                    <circle
-                      cx="11"
-                      cy="11"
-                      r={RING_R}
-                      fill="none"
-                      stroke={ACCENT}
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeDasharray={ringCircumference}
-                      strokeDashoffset={ringCircumference * (1 - ringProgress)}
-                      transform="rotate(-90 11 11)"
-                    />
-                    <text x="11" y="14.5" textAnchor="middle" fontSize="8" fill={MUTED} fontFamily="var(--font-mono)">
-                      {countdown}
-                    </text>
-                  </svg>
-                  实时连接
-                </>
-              ) : (
-                <>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: MUTED, display: "inline-block" }} />
-                  已锁定 · 非实时时段
-                </>
-              )}
-            </span>
+            <RealtimeClock refreshMs={refreshMs} lastLoadAt={lastLoadAt} />
             <button
               type="button"
               onClick={() => setAiOpen(true)}
@@ -912,8 +936,6 @@ export function BigScreenView() {
             >
               智能解读
             </button>
-            <span style={{ color: sessionLabel === "开盘中" ? ACCENT : MUTED, fontSize: 12 }}>{sessionLabel}</span>
-            <span>{timeText}</span>
           </div>
         </header>
 
