@@ -88,8 +88,9 @@ function cssVar(name: string, fallback: string): string {
 }
 
 function toTimestamp(date: string): number {
-  // 东财返回 "YYYY-MM-DD"，按 UTC 解析避免时区偏移导致跨日错位
-  const parsed = Date.parse(`${date}T00:00:00Z`);
+  // 东财日/周K返回 "YYYY-MM-DD"，月K可能返回 "YYYY-MM"；统一补全为月初第1日再按 UTC 解析，避免时区偏移跨日错位
+  const normalized = /^\d{4}-\d{2}$/.test(date) ? `${date}-01` : date;
+  const parsed = Date.parse(`${normalized}T00:00:00Z`);
   return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : 0;
 }
 
@@ -405,12 +406,17 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
       if (process.env.NODE_ENV !== "production") console.warn("[InteractiveKline] setData failed:", e);
     }
 
-    // 应用可见窗口：range>0 显示最近 N 根，否则显示全部
+    // 应用可见窗口：range>0 显示最近 N 根，否则显示全部。
+    // 若 setVisibleLogicalRange 失败（跨周期时间轴未就绪），回退 fitContent 保证图表可见。
     const visible = range > 0 ? Math.min(range, bars.length) : bars.length;
     try {
       chart.timeScale().setVisibleLogicalRange({ from: bars.length - visible, to: bars.length - 1 });
     } catch {
-      /* 忽略时间轴范围设置异常 */
+      try {
+        chart.timeScale().fitContent();
+      } catch {
+        /* 忽略时间轴范围设置异常 */
+      }
     }
 
     // 标记「往前推第 20 日」的蜡烛：取最新一根往前数第 20 根（索引 bars.length-1-20）。
@@ -454,8 +460,9 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
           color: "rgba(232,121,249,.55)",
           lineWidth: 1 as LineWidth,
           lineStyle: 2, // 虚线
-          axisLabelVisible: false,
-          title: "20MA扣抵",
+          axisLabelVisible: true,
+          axisLabelColor: "rgba(232,121,249,.95)",
+          title: "扣抵",
         });
         setDeductPrice(deduct);
       } else {
