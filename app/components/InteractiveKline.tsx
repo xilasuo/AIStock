@@ -17,13 +17,14 @@ import {
   ColorType,
   CandlestickSeries,
   HistogramSeries,
-  LineSeries,
   type IChartApi,
+  type IPriceLine,
   type ISeriesApi,
+  type LineStyle,
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
-import type { KPeriod } from "../../lib/kline";
+import type { KPeriod, Markers } from "../../lib/kline";
 
 export type KlineBar = {
   date: string;
@@ -71,15 +72,17 @@ export function InteractiveKline({ code, name, initialBars, height = 380, compac
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const priceLinesRef = useRef<IPriceLine[]>([]);
   const [period, setPeriod] = useState<KPeriod>("day");
   const [range, setRange] = useState<number>(120);
   const [bars, setBars] = useState<KlineBar[]>(initialBars ?? []);
+  const [markers, setMarkers] = useState<Markers | null>(null);
   const [loading, setLoading] = useState(!initialBars);
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
   const barsRef = useRef<KlineBar[]>(bars);
 
-  // 拉取指定周期 K 线数据（reloadKey 变化也会重新拉取，用于重试）
+  // 拉取指定周期 K 线数据 + markers（reloadKey 变化也会重新拉取，用于重试）
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -87,11 +90,12 @@ export function InteractiveKline({ code, name, initialBars, height = 380, compac
     fetch(`/api/kline/${code}.json?period=${period}&t=${reloadKey}`, { headers: { "content-type": "application/json" } })
       .then(async (res) => {
         if (!res.ok) throw new Error(`接口 ${res.status}`);
-        const data = (await res.json()) as { ok?: boolean; bars?: KlineBar[]; error?: string };
+        const data = (await res.json()) as { ok?: boolean; bars?: KlineBar[]; markers?: Markers; error?: string };
         if (!data.ok || !data.bars?.length) throw new Error(data.error || "无K线数据");
         if (cancelled) return;
         barsRef.current = data.bars;
         setBars(data.bars);
+        setMarkers(data.markers ?? null);
       })
       .catch((e) => {
         if (cancelled) return;
@@ -166,6 +170,7 @@ export function InteractiveKline({ code, name, initialBars, height = 380, compac
 
     return () => {
       window.removeEventListener("resize", onResize);
+      priceLinesRef.current = [];
       chart.remove();
       chartRef.current = null;
       candleRef.current = null;
@@ -200,6 +205,97 @@ export function InteractiveKline({ code, name, initialBars, height = 380, compac
     const visible = range > 0 ? Math.min(range, bars.length) : bars.length;
     chart.timeScale().setVisibleLogicalRange({ from: bars.length - visible, to: bars.length - 1 });
   }, [bars, range]);
+
+  /**
+   * markers 变化时重建 5 条参考价格线：
+   *   - 泡沫顶（红色虚线 + 套牢盘提示）
+   *   - 突破确认位（灰色虚线）
+   *   - 现价（蓝色实线）
+   *   - 回踩点（灰色虚线，如有）
+   *   - 双底生死线（橙色虚线）
+   * 颜色与旧版 renderKlineSvg 保持一致；标注文字显示在右侧价格轴。
+   */
+  useEffect(() => {
+    const candle = candleRef.current;
+    if (!candle || !markers) return;
+
+    // 清除旧价格线
+    for (const line of priceLinesRef.current) {
+      try {
+        candle.removePriceLine(line);
+      } catch {
+        /* 图表已卸载 */
+      }
+    }
+    priceLinesRef.current = [];
+
+    const mk = markers;
+    const lines: IPriceLine[] = [];
+
+    // 泡沫顶（红色虚线）— isTrap 时在标签上追加「上方套牢盘」
+    lines.push(
+      candle.createPriceLine({
+        price: mk.top.price,
+        color: "rgba(239,68,68,.55)",
+        lineWidth: 1,
+        lineStyle: 2 as LineStyle, // Dashed
+        axisLabelVisible: true,
+        title: `${mk.top.price.toFixed(2)} 泡沫顶${mk.top.isTrap ? "（上方套牢盘）" : ""}`,
+      }),
+    );
+
+    // 突破确认位（灰色虚线）
+    lines.push(
+      candle.createPriceLine({
+        price: mk.breakout,
+        color: "rgba(156,163,175,.55)",
+        lineWidth: 1,
+        lineStyle: 2 as LineStyle,
+        axisLabelVisible: true,
+        title: `${mk.breakout.toFixed(2)} 突破确认位`,
+      }),
+    );
+
+    // 现价（蓝色实线，最粗）
+    lines.push(
+      candle.createPriceLine({
+        price: mk.priceNow,
+        color: "#3b82f6",
+        lineWidth: 2,
+        lineStyle: 0 as LineStyle, // Solid
+        axisLabelVisible: true,
+        title: `${mk.priceNow.toFixed(2)} 现价（${mk.maPos}）`,
+      }),
+    );
+
+    // 回踩点（灰色虚线，如有）
+    if (mk.retest) {
+      lines.push(
+        candle.createPriceLine({
+          price: mk.retest.price,
+          color: "rgba(156,163,175,.55)",
+          lineWidth: 1,
+          lineStyle: 2 as LineStyle,
+          axisLabelVisible: true,
+          title: `${mk.retest.price.toFixed(2)} 回踩点`,
+        }),
+      );
+    }
+
+    // 双底生死线（橙色虚线，最粗）
+    lines.push(
+      candle.createPriceLine({
+        price: mk.support,
+        color: "#f59e0b",
+        lineWidth: 1,
+        lineStyle: 2 as LineStyle,
+        axisLabelVisible: true,
+        title: `${mk.support.toFixed(2)} 双底（生死线）`,
+      }),
+    );
+
+    priceLinesRef.current = lines;
+  }, [markers]);
 
   // 顶部提示：现价 + 周期切换 + 范围快捷按钮
   const latest = bars.length ? bars[bars.length - 1] : null;
