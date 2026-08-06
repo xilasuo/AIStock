@@ -94,6 +94,12 @@ html {
   min-width: 320px;
 }
 
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+
 body {
   background: var(--bg-grad);
   /* 隐藏普通文字上的闪烁文本光标（caret），输入框中仍保留 */
@@ -5799,8 +5805,14 @@ svg { display: block; }
   padding: 14px 16px;
   min-width: 0;
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   border-radius: var(--radius-card);
+  transition: border-color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+}
+.stat:hover {
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-raised);
 }
 
 @media (max-width: 1100px) {
@@ -5826,6 +5838,16 @@ svg { display: block; }
   font-size: var(--fs-xl);
   line-height: 1.2;
   color: var(--text);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.stat__unit {
+  font-family: var(--font-sans);
+  font-variant-numeric: normal;
+  font-size: 0.7em;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-left: 3px;
 }
 .stat__hint {
   font-size: var(--fs-xs);
@@ -6252,6 +6274,7 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
   text-decoration: none;
 }
 .btn:active { transform: translateY(1px); }
+.btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .btn:disabled,
 .btn[aria-disabled="true"] { cursor: not-allowed; opacity: .5; transform: none; }
 .btn__icon { display: inline-flex; align-items: center; }
@@ -6326,6 +6349,12 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
+  transition: border-color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+}
+.card:hover {
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-raised);
 }
 .card--padded { padding: 20px; }
 .card--inset { background: var(--surface-soft); box-shadow: none; }

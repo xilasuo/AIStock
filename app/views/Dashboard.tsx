@@ -19,6 +19,7 @@ import { MarkdownMessage } from "../components/MarkdownMessage";
 import { StrategyScanView, type StrategyScanResponse } from "./StrategyScanView";
 import { WritebackView } from "./WritebackView";
 import { UsersAdmin } from "../components/UsersAdmin";
+import { TickNum } from "../components/TickNum";
 import {
   ArrowDown,
   ArrowUp,
@@ -1584,9 +1585,9 @@ function Home({
                         <div className="holding-top">
                           <span className="stock-avatar">{position.name.slice(0, 1)}</span>
                           <div><h4>{position.name}<small>{position.symbol}</small></h4><p>{position.quantity}股 · 成本{position.legacyPrecision ? "约" : ""}{tenThousandthsPrice(position.averageCostTenThousandths)}</p></div>
-                          <strong className={(rate ?? 0) >= 0 ? "up" : "down"}>{rate === null ? "行情更新中" : `${rate >= 0 ? "+" : ""}${rate.toFixed(2)}%`}</strong>
+                          <strong className={(rate ?? 0) >= 0 ? "up" : "down"}>{rate === null ? "行情更新中" : <TickNum value={rate} format={(n) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`} />}</strong>
                         </div>
-                        <div className="risk-line"><span>{insight?.allocationPercent !== null && insight?.allocationPercent !== undefined ? `${portfolioInsights.configured ? "账户仓位" : "持仓内部占比"} ${insight.allocationPercent.toFixed(1)}%` : "按当前参考价计算"}</span><b>{quote ? money(profitCents) : "暂无"}</b></div>
+                        <div className="risk-line"><span>{insight?.allocationPercent !== null && insight?.allocationPercent !== undefined ? `${portfolioInsights.configured ? "账户仓位" : "持仓内部占比"} ${insight.allocationPercent.toFixed(1)}%` : "按当前参考价计算"}</span><b>{quote ? <TickNum value={profitCents} format={money} /> : "暂无"}</b></div>
                         {quoteTime && <div className="hold-quote-time">现价更新于 {formatDateTimeShanghai(quoteTime)}</div>}
                         <div className="holding-alerts">
                           <span className={`holding-status ${stop ? "amber" : ""}`}><i />{stop ? `止损 ${alertPrice(stop)}` : "未设止损"}</span>
@@ -1728,12 +1729,12 @@ function PortfolioOverview({ insights, onConfigure }: { insights: PortfolioInsig
     <section className="panel portfolio-overview">
       <SectionHeader eyebrow="账户全景" title="我的仓位与盈亏" actions={!insights.configured && <Button variant="primary" onClick={onConfigure}>设置账户初始资金</Button>} />
       <div className="portfolio-metrics">
-        <Stat label="总资产" value={insights.totalAssetsCents === null ? "待设置" : money(insights.totalAssetsCents)} hint="现金 + 当前持仓市值" />
-        <Stat label="总仓位" value={insights.totalPositionPercent === null ? "待设置" : `${insights.totalPositionPercent.toFixed(1)}%`} hint="持仓市值 ÷ 总资产" />
-        <Stat label="持仓市值" value={money(insights.marketValueCents)} hint={insights.completePrices ? "按当前参考价" : "部分行情仍在更新"} />
-        <Stat label="可用现金" value={insights.cashCents === null ? "待设置" : money(insights.cashCents)} hint="按初始资金和交易流水估算" />
-        <Stat label="持仓浮盈亏" value={<span className={insights.unrealizedCents >= 0 ? "up" : "down"}>{money(insights.unrealizedCents)}</span>} hint="当前市值 - 持仓成本" />
-        <Stat label="账户总盈亏" value={<span className={(insights.totalProfitCents ?? 0) >= 0 ? "up" : "down"}>{insights.totalProfitCents === null ? "待设置" : money(insights.totalProfitCents)}</span>} hint={insights.totalProfitPercent === null ? "需要资金基准" : `${insights.totalProfitPercent >= 0 ? "+" : ""}${insights.totalProfitPercent.toFixed(2)}%`} />
+        <Stat label="总资产" value={insights.totalAssetsCents === null ? "待设置" : <TickNum value={insights.totalAssetsCents} format={money} />} hint="现金 + 当前持仓市值" />
+        <Stat label="总仓位" value={insights.totalPositionPercent === null ? "待设置" : <TickNum value={insights.totalPositionPercent} format={(n) => `${n.toFixed(1)}%`} />} hint="持仓市值 ÷ 总资产" />
+        <Stat label="持仓市值" value={<TickNum value={insights.marketValueCents} format={money} />} hint={insights.completePrices ? "按当前参考价" : "部分行情仍在更新"} />
+        <Stat label="可用现金" value={insights.cashCents === null ? "待设置" : <TickNum value={insights.cashCents} format={money} />} hint="按初始资金和交易流水估算" />
+        <Stat label="持仓浮盈亏" value={<span className={insights.unrealizedCents >= 0 ? "up" : "down"}><TickNum value={insights.unrealizedCents} format={money} /></span>} hint="当前市值 - 持仓成本" />
+        <Stat label="账户总盈亏" value={insights.totalProfitCents === null ? "待设置" : <span className={(insights.totalProfitCents) >= 0 ? "up" : "down"}><TickNum value={insights.totalProfitCents} format={money} /></span>} hint={insights.totalProfitPercent === null ? "需要资金基准" : `${insights.totalProfitPercent >= 0 ? "+" : ""}${insights.totalProfitPercent.toFixed(2)}%`} />
       </div>
       {points.length >= 2 ? (
         <div className="portfolio-chart-wrap">
