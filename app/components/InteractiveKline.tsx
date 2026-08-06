@@ -11,16 +11,20 @@
  * 另提供周期切换（日K/周K/月K）与「仅最近 N 根」快捷按钮。
  * 数据来自 /api/kline/<code>.json?period=…（服务端直连东财取数）。
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createChart,
   ColorType,
   CandlestickSeries,
   HistogramSeries,
+  LineSeries,
+  LineType,
+  TickMarkType,
   type IChartApi,
   type IPriceLine,
   type ISeriesApi,
   type LineStyle,
+  type LineWidth,
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
@@ -33,6 +37,35 @@ export type KlineBar = {
   high: number;
   low: number;
   vol: number;
+};
+
+/**
+ * 持有价格线实例 + 元数据的 ref 类型。
+ * LineSpec 在 effect 内闭包定义，为补 ref 类型可读，这里提到模块层只读骨架。
+ */
+type PriceLineEntry = {
+  key: MarkerKey;
+  line: IPriceLine;
+  label: string;
+  color: string;
+  price: number;
+  baseWidth: LineWidth;
+  baseStyle: LineStyle;
+};
+/**
+ * 5 条 marker 价格线在图例和 hover 高亮逻辑里共享的 key。
+ */
+export type MarkerKey = "top" | "breakout" | "price" | "retest" | "support";
+
+/**
+ * marker 价格线的可序列化描述（用于图例展示 + 状态对比）。
+ * 不直接持有 IPriceLine，避免 hover 状态变更时重建图表。
+ */
+type MarkerLegendItem = {
+  key: MarkerKey;
+  label: string;
+  price: number;
+  color: string;
 };
 
 const PERIODS: { key: KPeriod; label: string }[] = [
@@ -67,12 +100,35 @@ function toTimestamp(date: string): number {
   return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : 0;
 }
 
-export function InteractiveKline({ code, name, initialBars, height = 380, compact = false }: Props) {
+/**
+ * 把 rgba 颜色提到完全不透明（如有 alpha），便于 hover 高亮时颜色识别度提升。
+ * 仅处理形如 "rgba(r,g,b,a)" 或 "rgb(r,g,b)" 的简单字符串，保守失败时原样返回。
+ */
+function brightenColor(input: string): string {
+  const m = input.match(/^rgba?\(([^)]+)\)$/i);
+  if (!m) return input;
+  const parts = m[1].split(",").map((p) => p.trim());
+  if (parts.length < 3) return input;
+  return `rgb(${parts[0]}, ${parts[1]}, ${parts[2]})`;
+}
+
+/**
+ * 价格线宽：1→2, 2→3, 3→4, 4→4（封顶）
+ */
+function bumpWidth(width: LineWidth): LineWidth {
+  const v = width as number;
+  const next = Math.min(4, v + 1);
+  return next as LineWidth;
+}
+
+export function InteractiveKline({ code, name, initialBars, height = 480, compact = false }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const maRefs = useRef<Record<number, ISeriesApi<"Line"> | null>>({});
   const priceLinesRef = useRef<IPriceLine[]>([]);
+  const lineSpecsRef = useRef<PriceLineEntry[]>([]);
   const [period, setPeriod] = useState<KPeriod>("day");
   const [range, setRange] = useState<number>(120);
   const [bars, setBars] = useState<KlineBar[]>(initialBars ?? []);
@@ -80,7 +136,58 @@ export function InteractiveKline({ code, name, initialBars, height = 380, compac
   const [loading, setLoading] = useState(!initialBars);
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
+  const [hoveredMarker, setHoveredMarker] = useState<MarkerKey | null>(null);
+  const [legendPos, setLegendPos] = useState<{ left: number; top: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const dragStateRef = useRef<{ startX: number; startY: number; originLeft: number; originTop: number } | null>(null);
+  const legendRef = useRef<HTMLDivElement>(null);
   const barsRef = useRef<KlineBar[]>(bars);
+
+  // 拖拽图例：在图表区域内自由移动；松手后坐标持久于 legendPos，复位用双击
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (e: MouseEvent) => {
+      const state = dragStateRef.current;
+      if (!state) return;
+      const container = containerRef.current?.parentElement;
+      const legend = legendRef.current;
+      let left = state.originLeft + (e.clientX - state.startX);
+      let top = state.originTop + (e.clientY - state.startY);
+      if (container && legend) {
+        const rect = container.getBoundingClientRect();
+        const maxLeft = rect.width - legend.offsetWidth;
+        const maxTop = rect.height - legend.offsetHeight;
+        left = Math.max(0, Math.min(left, Math.max(0, maxLeft)));
+        top = Math.max(0, Math.min(top, Math.max(0, maxTop)));
+      }
+      setLegendPos({ left, top });
+    };
+    const onUp = () => {
+      dragStateRef.current = null;
+      setDragging(false);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [dragging]);
+
+  const startDrag = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const container = containerRef.current?.parentElement;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const legend = legendRef.current;
+    if (!legend) return;
+    const legendRect = legend.getBoundingClientRect();
+    const originLeft = legendRect.left - rect.left;
+    const originTop = legendRect.top - rect.top;
+    dragStateRef.current = { startX: e.clientX, startY: e.clientY, originLeft, originTop };
+    setLegendPos({ left: originLeft, top: originTop });
+    setDragging(true);
+  };
 
   // 拉取指定周期 K 线数据 + markers（reloadKey 变化也会重新拉取，用于重试）
   useEffect(() => {
@@ -137,6 +244,25 @@ export function InteractiveKline({ code, name, initialBars, height = 380, compac
         rightOffset: 4,
         barSpacing: 7,
         minBarSpacing: 2,
+        tickMarkFormatter: (time: Time, tickMarkType: TickMarkType) => {
+          const ts = typeof time === "number" ? time * 1000 : Date.parse(String(time));
+          const d = new Date(ts);
+          const yyyy = d.getFullYear();
+          const M = d.getMonth() + 1;
+          const dd = String(d.getDate()).padStart(2, "0");
+          switch (tickMarkType) {
+            case TickMarkType.Year:
+              return `${yyyy}年`;
+            case TickMarkType.Month:
+              return `${yyyy}年${M}月`;
+            case TickMarkType.DayOfMonth:
+            case TickMarkType.Time:
+            case TickMarkType.TimeWithSeconds:
+              return `${M}月${dd}日`;
+            default:
+              return `${M}月${dd}日`;
+          }
+        },
       },
       crosshair: { mode: 0 },
       handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
@@ -165,6 +291,26 @@ export function InteractiveKline({ code, name, initialBars, height = 380, compac
     chart.priceScale("").applyOptions({ scaleMargins: { top: 0.78, bottom: 0 } });
     volRef.current = vol;
 
+    // 均线 MA5/10/20/60（叠加在主图蜡烛之上）
+    const maColors: Record<number, string> = {
+      5: "#f5b301",
+      10: "#4f9bff",
+      20: "#e879f9",
+      60: "#34d399",
+    };
+    for (const period of [5, 10, 20, 60]) {
+      const ma = chart.addSeries(LineSeries, {
+        color: maColors[period],
+        lineWidth: 1 as LineWidth,
+        lineType: LineType.Simple,
+        priceLineVisible: false,
+        lastValueVisible: true,
+        crosshairMarkerVisible: false,
+        title: `MA${period}`,
+      });
+      maRefs.current[period] = ma;
+    }
+
     const onResize = () => chart.applyOptions({ width: container.clientWidth || 600 });
     window.addEventListener("resize", onResize);
 
@@ -175,6 +321,7 @@ export function InteractiveKline({ code, name, initialBars, height = 380, compac
       chartRef.current = null;
       candleRef.current = null;
       volRef.current = null;
+      maRefs.current = {};
     };
   }, [height]);
 
@@ -201,19 +348,35 @@ export function InteractiveKline({ code, name, initialBars, height = 380, compac
     candle.setData(candleData as { time: Time; open: number; high: number; low: number; close: number }[]);
     vol.setData(volData);
 
+    // 计算并填充均线 MA5/10/20/60
+    const closes = bars.map((b) => b.close);
+    for (const period of [5, 10, 20, 60]) {
+      const ma = maRefs.current[period];
+      if (!ma) continue;
+      const maData: { time: Time; value: number }[] = [];
+      for (let i = period - 1; i < bars.length; i++) {
+        let sum = 0;
+        for (let j = i - period + 1; j <= i; j++) sum += closes[j];
+        maData.push({ time: toTimestamp(bars[i].date) as UTCTimestamp, value: sum / period });
+      }
+      ma.setData(maData);
+    }
+
     // 应用可见窗口：range>0 显示最近 N 根，否则显示全部
     const visible = range > 0 ? Math.min(range, bars.length) : bars.length;
     chart.timeScale().setVisibleLogicalRange({ from: bars.length - visible, to: bars.length - 1 });
   }, [bars, range]);
 
   /**
-   * markers 变化时重建 5 条参考价格线：
-   *   - 泡沫顶（红色虚线 + 套牢盘提示）
+   * markers 变化时重建 5 条参考价格线（仅画水平线本体）。
+   *   - 泡沫顶（红色实线）— isTrap 时在线右侧叠「上方套牢盘」
    *   - 突破确认位（灰色虚线）
-   *   - 现价（蓝色实线）
+   *   - 现价（蓝色实线，最粗）
    *   - 回踩点（灰色虚线，如有）
    *   - 双底生死线（橙色虚线）
-   * 颜色与旧版 renderKlineSvg 保持一致；标注文字显示在右侧价格轴。
+   * 注意：lightweight-charts 价格线轴标签只能贴在右侧价格轴、且不可换行，5 条
+   * 同时叠加会堆成一团遮挡 K 线、几乎看不清。本组件关闭轴标签（axisLabelVisible:false），
+   * 把每条线的标签文案统一收敛到右上角图例（见下），图例中 hover 可高亮对应价格线。
    */
   useEffect(() => {
     const candle = candleRef.current;
@@ -231,76 +394,100 @@ export function InteractiveKline({ code, name, initialBars, height = 380, compac
 
     const mk = markers;
     const lines: IPriceLine[] = [];
+    type LineSpec = {
+      key: MarkerKey;
+      line: IPriceLine;
+      label: string;
+      color: string;
+      price: number;
+      baseWidth: LineWidth;
+      baseStyle: LineStyle;
+    };
+    const specs: LineSpec[] = [];
 
-    // 泡沫顶（红色虚线）— isTrap 时在标签上追加「上方套牢盘」
-    lines.push(
-      candle.createPriceLine({
-        price: mk.top.price,
-        color: "rgba(239,68,68,.55)",
-        lineWidth: 1,
-        lineStyle: 2 as LineStyle, // Dashed
-        axisLabelVisible: true,
-        title: `${mk.top.price.toFixed(2)} 泡沫顶${mk.top.isTrap ? "（上方套牢盘）" : ""}`,
-      }),
+    const pushLine = (
+      key: MarkerKey,
+      label: string,
+      price: number,
+      color: string,
+      lineWidth: LineWidth,
+      lineStyle: LineStyle,
+    ): void => {
+      const line = candle.createPriceLine({
+        price,
+        color,
+        lineWidth,
+        lineStyle,
+        axisLabelVisible: false,
+      });
+      lines.push(line);
+      specs.push({ key, line, label, color, price, baseWidth: lineWidth, baseStyle: lineStyle });
+    };
+
+    // 泡沫顶（红色实线）— isTrap 时标签追加「上方套牢盘」
+    pushLine(
+      "top",
+      mk.top.isTrap ? "泡沫顶（上套牢）" : "泡沫顶",
+      mk.top.price,
+      "rgba(239,68,68,.85)",
+      1,
+      2,
     );
 
     // 突破确认位（灰色虚线）
-    lines.push(
-      candle.createPriceLine({
-        price: mk.breakout,
-        color: "rgba(156,163,175,.55)",
-        lineWidth: 1,
-        lineStyle: 2 as LineStyle,
-        axisLabelVisible: true,
-        title: `${mk.breakout.toFixed(2)} 突破确认位`,
-      }),
-    );
+    pushLine("breakout", "突破确认位", mk.breakout, "rgba(156,163,175,.85)", 1, 2);
 
-    // 现价（蓝色实线，最粗）
-    lines.push(
-      candle.createPriceLine({
-        price: mk.priceNow,
-        color: "#3b82f6",
-        lineWidth: 2,
-        lineStyle: 0 as LineStyle, // Solid
-        axisLabelVisible: true,
-        title: `${mk.priceNow.toFixed(2)} 现价（${mk.maPos}）`,
-      }),
+    // 现价（蓝色实线，最粗，单独一档便于一眼定位）
+    pushLine(
+      "price",
+      `现价（${mk.maPos}）`,
+      mk.priceNow,
+      "#3b82f6",
+      2,
+      0,
     );
 
     // 回踩点（灰色虚线，如有）
     if (mk.retest) {
-      lines.push(
-        candle.createPriceLine({
-          price: mk.retest.price,
-          color: "rgba(156,163,175,.55)",
-          lineWidth: 1,
-          lineStyle: 2 as LineStyle,
-          axisLabelVisible: true,
-          title: `${mk.retest.price.toFixed(2)} 回踩点`,
-        }),
-      );
+      pushLine("retest", "回踩点", mk.retest.price, "rgba(156,163,175,.85)", 1, 2);
     }
 
-    // 双底生死线（橙色虚线，最粗）
-    lines.push(
-      candle.createPriceLine({
-        price: mk.support,
-        color: "#f59e0b",
-        lineWidth: 1,
-        lineStyle: 2 as LineStyle,
-        axisLabelVisible: true,
-        title: `${mk.support.toFixed(2)} 双底（生死线）`,
-      }),
-    );
+    // 双底生死线（橙色虚线）
+    pushLine("support", "双底（生死线）", mk.support, "#f59e0b", 1, 2);
 
     priceLinesRef.current = lines;
+    lineSpecsRef.current = specs;
+    setHoveredMarker(null);
   }, [markers]);
+
+  /**
+   * hoveredMarker 变化时切换对应价格线的视觉强度。
+   * 命中者：颜色加深 + 线宽加粗；非命中者：保持基准样式。
+   * 直接调 applyOptions 修改线本身的样式，不再使用 axisLabel。
+   */
+  useEffect(() => {
+    for (const spec of lineSpecsRef.current) {
+      const isActive = hoveredMarker === spec.key;
+      try {
+        spec.line.applyOptions({
+          color: isActive ? brightenColor(spec.color) : spec.color,
+          lineWidth: isActive ? bumpWidth(spec.baseWidth) : spec.baseWidth,
+        });
+      } catch {
+        /* 图表已卸载 */
+      }
+    }
+  }, [hoveredMarker]);
 
   // 顶部提示：现价 + 周期切换 + 范围快捷按钮
   const latest = bars.length ? bars[bars.length - 1] : null;
   const latestPct =
     latest && bars.length >= 2 ? ((latest.close - bars[bars.length - 2].close) / bars[bars.length - 2].close) * 100 : null;
+
+  // 图例数据：按价格从高到低，让顶部图例的自然顺序与价格轴自上而下的位置接近。
+  const legendItems: Array<{ key: MarkerKey; label: string; price: number; color: string; baseWidth: LineWidth }> = lineSpecsRef.current
+    .map((spec) => ({ key: spec.key, label: spec.label, price: spec.price, color: spec.color, baseWidth: spec.baseWidth }))
+    .sort((a, b) => b.price - a.price);
 
   return (
     <div className="interactive-kline" style={{ width: "100%", display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
@@ -389,6 +576,82 @@ export function InteractiveKline({ code, name, initialBars, height = 380, compac
           </div>
         )}
         <div ref={containerRef} style={{ width: "100%", height: "100%", opacity: loading || error ? 0 : 1 }} />
+
+        {/* Marker 图例：在图表右上角，列出 5 条参考线的标签 + 价格。
+            之前这些文字全部贴在右侧价格轴上，5 条同时叠加会堆成一团挡住 K 线；
+            改为浮层后默认完全可见，hover 对应条目可加亮 K 线上同色价格线。
+            pointer-events:auto 覆盖父元素 none，避免点击穿透到 canvas。 */}
+        {!loading && !error && legendItems.length > 0 && (
+          <div
+            ref={legendRef}
+            className="kline-marker-legend"
+            onMouseDown={startDrag}
+            onDoubleClick={() => setLegendPos(null)}
+            title={dragging ? "拖动中…" : "拖动可移动图例，双击复位"}
+            style={{
+              position: "absolute",
+              ...(legendPos
+                ? { left: legendPos.left, top: legendPos.top, right: "auto" }
+                : { top: 8, right: 8 }),
+              padding: "8px 10px",
+              background: "rgba(8,16,28,.72)",
+              backdropFilter: "blur(6px)",
+              WebkitBackdropFilter: "blur(6px)",
+              border: "0.5px solid rgba(148,163,184,.25)",
+              borderRadius: 8,
+              boxShadow: "0 4px 16px rgba(0,0,0,.28)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+              minWidth: 132,
+              maxWidth: 220,
+              pointerEvents: "auto",
+              zIndex: 2,
+              cursor: dragging ? "grabbing" : "grab",
+            }}
+          >
+            {legendItems.map((item) => {
+              const active = hoveredMarker === item.key;
+              const dimmed = hoveredMarker !== null && !active;
+              return (
+                <div
+                  key={item.key}
+                  onMouseEnter={() => !dragging && setHoveredMarker(item.key)}
+                  onMouseLeave={() => !dragging && setHoveredMarker((curr) => (curr === item.key ? null : curr))}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "2px 4px",
+                    borderRadius: 4,
+                    cursor: "pointer",
+                    opacity: dimmed ? 0.45 : 1,
+                    background: active ? "rgba(255,255,255,.06)" : "transparent",
+                    transition: "opacity .15s, background .15s",
+                  }}
+                  title={`高亮 K 线上的「${item.label}」`}
+                >
+                  <span
+                    style={{
+                      width: 10,
+                      height: 2,
+                      background: item.color,
+                      borderRadius: 1,
+                      flexShrink: 0,
+                      display: "inline-block",
+                    }}
+                  />
+                  <span style={{ fontSize: 11, color: "var(--text)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {item.label}
+                  </span>
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text)", fontWeight: 500 }}>
+                    {item.price.toFixed(2)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

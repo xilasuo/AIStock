@@ -15,7 +15,7 @@ export async function GET() {
     const user = await getCurrentUser();
     await ensureSchema();
     const alerts = await getDb().select().from(alertRules)
-      .where(eq(alertRules.userId, user.id)).orderBy(desc(alertRules.id));
+      .where(eq(alertRules.userId, user.id)).orderBy(desc(alertRules.id)).limit(500);
     return Response.json({ alerts });
   } catch {
     return Response.json({ error: "提醒暂时无法读取" }, { status: 503 });

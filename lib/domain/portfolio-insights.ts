@@ -45,12 +45,13 @@ export function calculatePortfolioInsights(
   initialCapitalCents: number | null,
   capitalFlows: CapitalFlow[] = [],
 ): PortfolioInsights {
-  const totalDepositCents = capitalFlows
-    .filter((f) => f.amountCents > 0)
-    .reduce((sum, f) => sum + f.amountCents, 0);
-  const totalWithdrawalCents = capitalFlows
-    .filter((f) => f.amountCents < 0)
-    .reduce((sum, f) => sum + Math.abs(f.amountCents), 0);
+  // 一次遍历完成存/取汇总，避免两次 filter + 两次 reduce。
+  let totalDepositCents = 0;
+  let totalWithdrawalCents = 0;
+  for (const f of capitalFlows) {
+    if (f.amountCents > 0) totalDepositCents += f.amountCents;
+    else if (f.amountCents < 0) totalWithdrawalCents += Math.abs(f.amountCents);
+  }
   const netFlowCents = totalDepositCents - totalWithdrawalCents;
 
   const portfolio = calculatePortfolio(trades);
@@ -160,14 +161,14 @@ function buildPortfolioHistory(
         : tradeValueCents(trade) - trade.feeCents;
       tradeIndex += 1;
     }
-    for (const [symbol, rows] of Object.entries(historyRows)) {
-      const close = rows.get(date);
+    // 只对当前有持仓的 symbol 取最新价（historyRows 已是 Map<symbol, Map<date, close>>），
+    // 避免每天遍历全部 symbol 并重建 Object.entries（原 O(dates × symbols) 热点）。
+    let marketValueCents = 0;
+    for (const [symbol, quantity] of quantities) {
+      const close = historyRows[symbol]?.get(date);
       if (close !== undefined) latestPrices.set(symbol, close);
+      marketValueCents += Math.round((latestPrices.get(symbol) ?? 0) * 100 * quantity);
     }
-    const marketValueCents = [...quantities.entries()].reduce(
-      (sum, [symbol, quantity]) => sum + Math.round((latestPrices.get(symbol) ?? 0) * 100 * quantity),
-      0,
-    );
     const totalAssetsCents = cashCents + marketValueCents;
     points.push({
       date,

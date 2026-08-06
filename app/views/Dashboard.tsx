@@ -332,13 +332,18 @@ const buyReasons = ["业绩向好", "估值便宜", "行业景气/题材", "放�
 // 卖出理由：先区分「纪律卖」（止盈/止损/逻辑失效）与「情绪卖」（怕回吐/拿不住/想换股），统计才有意义
 const sellReasons = ["达到止盈目标", "触发止损", "买入逻辑失效", "跌破支撑位", "仓位过重降风险", "大盘/板块转弱", "害怕利润回吐", "拿不住/焦虑", "想换别的股票", "临时需要资金", "不知道为什么卖", "其他"];
 
+// 模块级 NumberFormat 单例：避免列表/表格每行每价格都新建 Intl.NumberFormat（高频渲染热点）。
+const CURRENCY_2 = new Intl.NumberFormat("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const CURRENCY_3 = new Intl.NumberFormat("zh-CN", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+const CURRENCY_4 = new Intl.NumberFormat("zh-CN", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+
 function money(cents: number) {
-  return `¥${(cents / 100).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `¥${CURRENCY_2.format(cents / 100)}`;
 }
 
 function price(value: number) {
-  const digits = Math.abs(value) < 10 ? 3 : 2;
-  return `¥${value.toLocaleString("zh-CN", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+  const fmt = Math.abs(value) < 10 ? CURRENCY_3 : CURRENCY_2;
+  return `¥${fmt.format(value)}`;
 }
 
 function millisPrice(millis: number) {
@@ -346,10 +351,7 @@ function millisPrice(millis: number) {
 }
 
 function tenThousandthsPrice(value: number) {
-  return `¥${(value / 10_000).toLocaleString("zh-CN", {
-    minimumFractionDigits: 4,
-    maximumFractionDigits: 4,
-  })}`;
+  return `¥${CURRENCY_4.format(value / 10_000)}`;
 }
 
 function alertPrice(alert: AlertRule) {
@@ -478,7 +480,12 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     capitalFlows,
   ), [initialCapitalCents, capitalFlows, quotes, trades]);
   const tradeCycles = useMemo(() => buildTradeCycles(trades), [trades]);
-  const closedCycles = tradeCycles.filter((cycle) => cycle.endTradeId !== null);
+  // 以下派生值用 useMemo：避免每次渲染都重建新数组，导致下游 useMemo（如
+  // reviewedCycleIds）的浅比较依赖每次失效、重复执行 O(reviews×cycles) 查找。
+  const closedCycles = useMemo(
+    () => tradeCycles.filter((cycle) => cycle.endTradeId !== null),
+    [tradeCycles],
+  );
   const reviewedCycleIds = useMemo(() => {
     const ids = new Set(reviews.flatMap((review) => review.cycleEndTradeId ? [review.cycleEndTradeId] : []));
     for (const review of reviews.filter((item) => item.cycleEndTradeId === null)) {
@@ -489,8 +496,11 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     }
     return ids;
   }, [closedCycles, reviews]);
-  const pendingReviews = closedCycles.filter((cycle) =>
-    cycle.endTradeId !== null && !reviewedCycleIds.has(cycle.endTradeId)
+  const pendingReviews = useMemo(
+    () => closedCycles.filter((cycle) =>
+      cycle.endTradeId !== null && !reviewedCycleIds.has(cycle.endTradeId),
+    ),
+    [closedCycles, reviewedCycleIds],
   );
 
   const flash = useCallback((message: string) => {
@@ -554,24 +564,34 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     return () => window.clearTimeout(timer);
   }, [loadData]);
 
-  // 本地引擎守护进程在线状态：进入页面探测一次，之后每 60s 刷新。
-  // 云端部署时本机无守护进程 → 恒离线（此时选股走 WorkBuddy 跑批，不依赖它）。
+  // 本地引擎守护进程在线状态：进入页面探测一次，之后若在线才每 60s 刷新。
+  // 云端部署时本机无守护进程 → 恒离线（选股走 WorkBuddy 跑批，不依赖它）。
+  // 优化：首次探测失败即标记离线并停止轮询，避免云端每 60s 白白发起请求并等待超时。
   useEffect(() => {
     const ENGINE_HEALTH_URL = "http://127.0.0.1:8787/health";
     let cancelled = false;
     async function probe() {
       try {
         const response = await fetch(ENGINE_HEALTH_URL, {
-          signal: AbortSignal.timeout(3000),
+          signal: AbortSignal.timeout(1500),
           cache: "no-store",
         });
-        if (!cancelled) setEngineOnline(response.ok);
+        if (cancelled) return;
+        const online = response.ok;
+        setEngineOnline(online);
+        return online;
       } catch {
         if (!cancelled) setEngineOnline(false);
+        return false;
       }
     }
-    void probe();
-    const timer = window.setInterval(() => void probe(), 60_000);
+    let timer: number | undefined;
+    void probe().then((online) => {
+      // 仅当在线时保持轮询；离线（如云端）不重复探测，省去无谓的定时请求与超时等待。
+      if (online && !cancelled) {
+        timer = window.setInterval(() => void probe(), 60_000);
+      }
+    });
     return () => {
       cancelled = true;
       if (timer !== undefined) window.clearInterval(timer);
@@ -727,7 +747,9 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     }
   }, []);
 
-  // 首屏与每次状态变化后：为缺失或已过期的持仓/关注/提醒行情发起拉取
+  // 首屏与每次状态变化后：为缺失或已过期的持仓/关注/提醒行情发起拉取。
+  // 注意：依赖中刻意不含 `quotes` —— quoteStale 读的是 ref（quoteFetchedAt.current），
+  // 而非 quotes 对象；若加入 quotes，每分钟轻量价格轮询都会重建 timer 并触发昂贵的全量分析拉取。
   useEffect(() => {
     const symbols = new Set([
       ...portfolio.positions.map((position) => position.symbol),
@@ -740,7 +762,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [alerts, portfolio.positions, watchlist, quotes, quoteStale, refreshQuote]);
+  }, [alerts, portfolio.positions, watchlist, quoteStale, refreshQuote]);
 
   const markAlertTriggered = useCallback(async (alert: AlertRule, current: number, target: number) => {
     const message = `${alert.name}已触发${alert.type}提醒：当前${price(current)}，目标${price(target)}`;
@@ -4206,14 +4228,14 @@ function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, qu
   );
 
   // 已完成的交易周期显示在上方，便于先看结果再补复盘；其余按交易日期倒序
-  const sortedTrades = [...trades].sort((a, b) => {
+  const sortedTrades = useMemo(() => [...trades].sort((a, b) => {
     const cycleA = cycleByTradeId.get(a.id);
     const cycleB = cycleByTradeId.get(b.id);
     const aClosed = cycleA?.endTradeId !== null && cycleA?.endTradeId !== undefined;
     const bClosed = cycleB?.endTradeId !== null && cycleB?.endTradeId !== undefined;
     if (aClosed !== bClosed) return aClosed ? -1 : 1;
     return b.tradeDate.localeCompare(a.tradeDate) || b.id - a.id;
-  });
+  }), [trades, cycleByTradeId]);
 
   // 用户可控排序：默认沿用 sortedTrades（已完成优先 + 日期倒序）；
   // 选具体列时按该列排序（数字/时间按数值，文字按字典序）。

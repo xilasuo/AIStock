@@ -78,22 +78,32 @@ export async function checkAndNotifyAlerts(
     : [];
   const usernameById = new Map(userRows.map((u) => [u.id, u.username]));
 
+  // 先批量拉取所有涉及 symbol 的实时价，再统一判定，避免串行 N+1（P0 优化）。
+  const symbols = [...new Set(rules.map((r) => r.symbol))];
   const priceCache = new Map<string, number | null>();
+  await Promise.all(
+    symbols.map(async (s) => {
+      try {
+        const realtime = await getRealtime(s);
+        priceCache.set(s, realtime?.price != null ? Math.round(realtime.price * 1000) : null);
+      } catch {
+        priceCache.set(s, null);
+      }
+    }),
+  );
+
+  const now = shanghaiIso();
+  const triggeredIds: number[] = [];
   let notified = 0;
 
   for (const rule of rules) {
-    let priceMillis = priceCache.get(rule.symbol);
-    if (priceMillis === undefined) {
-      try {
-        const realtime = await getRealtime(rule.symbol);
-        priceMillis = realtime?.price != null ? Math.round(realtime.price * 1000) : null;
-      } catch {
-        priceMillis = null;
-      }
-      priceCache.set(rule.symbol, priceMillis);
-    }
+    const priceMillis = priceCache.get(rule.symbol);
     if (priceMillis === null) {
       errors.push(`无法获取 ${rule.symbol} 现价，跳过提醒（行情源暂不可用，建议稍后重试或检查网络）`);
+      continue;
+    }
+    if (priceMillis === undefined) {
+      errors.push(`无法获取 ${rule.symbol} 现价，跳过提醒`);
       continue;
     }
     const targetMillis = rule.targetPriceMillis ?? rule.targetPriceCents * 10;
@@ -108,12 +118,17 @@ export async function checkAndNotifyAlerts(
     const notifyErrors = await sendNotify(env, title, message);
     errors.push(...notifyErrors);
     if (notifyErrors.length === 0) {
-      await db
-        .update(schema.alertRules)
-        .set({ triggeredAt: shanghaiIso() })
-        .where(eq(schema.alertRules.id, rule.id));
+      triggeredIds.push(rule.id);
       notified += 1;
     }
+  }
+
+  // 命中提醒批量标记，减少逐条 UPDATE 往返。
+  if (triggeredIds.length > 0) {
+    await db
+      .update(schema.alertRules)
+      .set({ triggeredAt: now })
+      .where(inArray(schema.alertRules.id, triggeredIds));
   }
 
   return { checked: rules.length, notified, errors };

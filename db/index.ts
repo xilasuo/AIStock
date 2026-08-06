@@ -259,6 +259,35 @@ export async function ensureSchema() {
       db.prepare(
         `CREATE UNIQUE INDEX IF NOT EXISTS trading_preferences_user_idx ON trading_preferences(user_id)`,
       ),
+      // 按 user_id 过滤是绝大多数业务查询的主路径；原 symbol 索引错配实际访问模式，
+      // 这里补建 user_id 复合索引，避免全表扫描（P0 性能优化）。
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS trade_records_user_idx ON trade_records(user_id, trade_date)`,
+      ),
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS watch_items_user_idx ON watch_items(user_id)`,
+      ),
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS alert_rules_user_idx ON alert_rules(user_id)`,
+      ),
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS reviews_user_idx ON reviews(user_id)`,
+      ),
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS analysis_reports_user_idx ON analysis_reports(user_id, symbol)`,
+      ),
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS announcement_notes_user_idx ON announcement_notes(user_id, symbol)`,
+      ),
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS capital_flows_user_idx ON capital_flows(user_id)`,
+      ),
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS strategy_feedback_user_idx ON strategy_feedback(user_id)`,
+      ),
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS watch_details_user_idx ON watch_details(user_id, symbol)`,
+      ),
     ]);
 
     // 2) watch_details 老表（单列 symbol 主键）迁移到复合主键 (symbol, user_id)

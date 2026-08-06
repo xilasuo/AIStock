@@ -1111,7 +1111,7 @@ export function BigScreenView() {
               {klinePick ? (
                 <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", width: "100%" }}>
                   {/* 交互式 K 线：滚轮缩放 + 拖拽平移 + 日/周/月周期切换 + 仅最近 N 根 */}
-                  <InteractiveKline code={klinePick.code} name={klinePick.name} />
+                  <InteractiveKline code={klinePick.code} name={klinePick.name} height={520} />
                 </div>
               ) : chart ? (
                 <svg

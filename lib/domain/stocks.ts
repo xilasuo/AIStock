@@ -54,6 +54,30 @@ for (const [code, name] of Object.entries(A_STOCK_LIST)) {
   }
 }
 
+// 预建索引（模块加载时一次性构建，P1 性能优化）：
+// - 规范化名称 → [code, name] 列表：避免每次搜索都对 5500+ 只股票逐项 normalizeStockName（含多次 regex）。
+// - 代码 → 名称：一次查表即得，无需遍历。
+// 这样 searchLocalStocks / resolveStockByName 的 O(n) 全表扫描降级为索引查表 + 命中项遍历。
+const NORMALIZED_NAME_INDEX: Array<{ code: string; name: string; norm: string; lower: string }> = [];
+const CODE_NAME_INDEX: Record<string, string> = {};
+for (const [code, name] of Object.entries(A_STOCK_LIST)) {
+  CODE_NAME_INDEX[code] = name;
+  NORMALIZED_NAME_INDEX.push({
+    code,
+    name,
+    norm: normalizeStockName(name),
+    lower: code.toLowerCase(),
+  });
+}
+// 拼音首字母索引：code → 小写缩写（含 *ST 去星版本）
+const PINYIN_INDEX: Array<{ code: string; name: string; lower: string; noStar: string }> = [];
+for (const [code, name] of Object.entries(A_STOCK_LIST)) {
+  const abbr = A_STOCK_PINYIN[code];
+  if (!abbr) continue;
+  const a = abbr.toLowerCase();
+  PINYIN_INDEX.push({ code, name, lower: a, noStar: a.replace(/\*/g, "") });
+}
+
 export function isEtfCode(code: string) {
   return Boolean(FUND_PROFILES[code]);
 }
@@ -139,15 +163,15 @@ export function resolveStockByName(name: string): { code: string; name: string }
   const norm = normalizeStockName(clean);
   if (!norm) return null;
 
-  const entries = Object.entries(A_STOCK_LIST) as Array<[string, string]>;
-  const exactNorm = entries.find(([, n]) => normalizeStockName(n) === norm);
-  if (exactNorm) return { code: exactNorm[0], name: exactNorm[1] };
+  // 走预建规范化索引（O(n) 仅遍历一次），避免每次都对全表重复 normalizeStockName。
+  const exactNorm = NORMALIZED_NAME_INDEX.find((e) => e.norm === norm);
+  if (exactNorm) return { code: exactNorm.code, name: exactNorm.name };
 
-  const fuzzy = entries.filter(([, n]) => {
-    const nn = normalizeStockName(n);
+  const fuzzy = NORMALIZED_NAME_INDEX.filter((e) => {
+    const nn = e.norm;
     return (nn.includes(norm) || norm.includes(nn)) && nn !== norm;
   });
-  if (fuzzy.length === 1) return { code: fuzzy[0][0], name: fuzzy[0][1] };
+  if (fuzzy.length === 1) return { code: fuzzy[0].code, name: fuzzy[0].name };
   return null;
 }
 
@@ -164,37 +188,34 @@ export function searchLocalStocks(
   if (!clean) return [];
   const norm = normalizeStockName(clean);
   const lower = clean.toLowerCase();
-  const entries = Object.entries(A_STOCK_LIST) as Array<[string, string]>;
 
   const codeHits: Array<{ code: string; name: string }> = [];
   const nameHits: Array<{ code: string; name: string }> = [];
   const pinyinHits: Array<{ code: string; name: string }> = [];
   const seen = new Set<string>();
 
-  for (const [code, name] of entries) {
-    if (code.startsWith(clean)) {
-      seen.add(code);
-      codeHits.push({ code, name });
+  // 走预建索引遍历，避免逐项调用 normalizeStockName（含多次 regex）造成按键卡顿。
+  for (const e of NORMALIZED_NAME_INDEX) {
+    if (e.lower.startsWith(lower)) {
+      seen.add(e.code);
+      codeHits.push({ code: e.code, name: e.name });
     }
   }
-  for (const [code, name] of entries) {
-    if (seen.has(code)) continue;
-    if (normalizeStockName(name).includes(norm)) {
-      seen.add(code);
-      nameHits.push({ code, name });
+  for (const e of NORMALIZED_NAME_INDEX) {
+    if (seen.has(e.code)) continue;
+    if (e.norm.includes(norm)) {
+      seen.add(e.code);
+      nameHits.push({ code: e.code, name: e.name });
     }
   }
   // 拼音首字母前缀命中（如 gzmt → 贵州茅台；仅在输入为字母或 *（ST 股）时参与，
   // 避免中文误匹配）。ST 股缩写以 * 开头（*ST美丽 → *stml），输入 stml 时去掉 * 容错。
   if (/^[a-z*]+$/i.test(clean)) {
-    for (const [code, name] of entries) {
-      if (seen.has(code)) continue;
-      const abbr = A_STOCK_PINYIN[code];
-      if (!abbr) continue;
-      const noStar = abbr.replace(/\*/g, "");
-      if (abbr.startsWith(lower) || (noStar !== abbr && noStar.startsWith(lower))) {
-        seen.add(code);
-        pinyinHits.push({ code, name });
+    for (const e of PINYIN_INDEX) {
+      if (seen.has(e.code)) continue;
+      if (e.lower.startsWith(lower) || (e.noStar !== e.lower && e.noStar.startsWith(lower))) {
+        seen.add(e.code);
+        pinyinHits.push({ code: e.code, name: e.name });
       }
     }
   }

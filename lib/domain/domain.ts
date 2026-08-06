@@ -177,6 +177,36 @@ export function findInvalidSell(trades: Trade[]): InvalidSell | null {
   return null;
 }
 
+// 直接基于单个周期的 trades 计算已实现盈亏（分），避免对子数组再跑 calculatePortfolio
+// （其内部会重新整排序 + 重建全市场 positions Map，导致 buildTradeCycles 退化为 O(n²)）。
+function calculateCycleRealized(cycleTrades: Trade[]): number {
+  const positions = new Map<string, { quantity: number; avgTenThousandths: number }>();
+  let realizedMillis = 0;
+
+  for (const trade of cycleTrades) {
+    const priceTenThousandths =
+      trade.priceTenThousandths ?? (trade.priceMillis ?? trade.priceCents * 10) * 10;
+    const pos = positions.get(trade.symbol) ?? { quantity: 0, avgTenThousandths: 0 };
+
+    if (trade.side === "买入") {
+      const totalCost = pos.avgTenThousandths * pos.quantity + priceTenThousandths * trade.quantity + trade.feeCents * 100;
+      pos.quantity += trade.quantity;
+      pos.avgTenThousandths = pos.quantity > 0 ? Math.round(totalCost / pos.quantity) : 0;
+      positions.set(trade.symbol, pos);
+      continue;
+    }
+
+    const soldQuantity = Math.min(trade.quantity, pos.quantity);
+    if (soldQuantity <= 0) continue;
+    const profit = priceTenThousandths * soldQuantity - pos.avgTenThousandths * soldQuantity - trade.feeCents * 100;
+    realizedMillis += profit / 10;
+    pos.quantity -= soldQuantity;
+    positions.set(trade.symbol, pos);
+  }
+
+  return Math.round(realizedMillis / 10);
+}
+
 export function buildTradeCycles(trades: Trade[]): TradeCycle[] {
   const cycles: TradeCycle[] = [];
   const open = new Map<string, { quantity: number; trades: Trade[] }>();
@@ -204,7 +234,7 @@ export function buildTradeCycles(trades: Trade[]): TradeCycle[] {
       endTradeId: trade.id,
       startDate: current.trades[0].tradeDate,
       endDate: trade.tradeDate,
-      realizedCents: calculatePortfolio(current.trades).realizedCents,
+      realizedCents: calculateCycleRealized(current.trades),
     });
     open.delete(trade.symbol);
   }
@@ -219,7 +249,7 @@ export function buildTradeCycles(trades: Trade[]): TradeCycle[] {
       endTradeId: null,
       startDate: first.tradeDate,
       endDate: null,
-      realizedCents: calculatePortfolio(current.trades).realizedCents,
+      realizedCents: calculateCycleRealized(current.trades),
     });
   }
 
@@ -304,10 +334,15 @@ export function aggregateMarketHistory(
   }
 
   const closes = grouped.map((row) => row.close);
+  // 增量滑动窗口前缀和：避免每次对 closes.slice().reduce()，将 O(n×85) 降为 O(n)。
+  const prefixSum: number[] = new Array(closes.length + 1).fill(0);
+  for (let i = 0; i < closes.length; i++) {
+    prefixSum[i + 1] = prefixSum[i] + closes[i];
+  }
   const movingAverage = (index: number, window: number) => {
     if (index + 1 < window) return null;
-    const values = closes.slice(index + 1 - window, index + 1);
-    return values.reduce((sum, value) => sum + value, 0) / window;
+    const sum = prefixSum[index + 1] - prefixSum[index + 1 - window];
+    return sum / window;
   };
 
   return grouped.map((row, index) => ({

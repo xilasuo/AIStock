@@ -27,7 +27,7 @@ export async function GET() {
     const user = await getCurrentUser();
     await ensureSchema();
     const rows = await getDb().select().from(reviews)
-      .where(eq(reviews.userId, user.id)).orderBy(desc(reviews.id));
+      .where(eq(reviews.userId, user.id)).orderBy(desc(reviews.id)).limit(500);
     return Response.json({
       reviews: rows.map((review) => ({ ...review, tags: parseReviewTags(review.tags) })),
     });
