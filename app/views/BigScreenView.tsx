@@ -209,6 +209,25 @@ function toPath(points: Array<{ x: number; y: number }>): string {
   return points.map((p, index) => `${index === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
 }
 
+/** Catmull-Rom 转 Bézier 平滑曲线：消除折线拐角，视觉更顺滑（hover 仍用原始 chart.pts）。 */
+function smoothPath(points: Array<{ x: number; y: number }>): string {
+  if (points.length < 2) return "";
+  if (points.length === 2) return toPath(points);
+  let d = `M${points[0].x.toFixed(1)},${points[0].y.toFixed(1)}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i - 1] ?? points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2] ?? p2;
+    const c1x = p1.x + (p2.x - p0.x) / 6;
+    const c1y = p1.y + (p2.y - p0.y) / 6;
+    const c2x = p2.x - (p3.x - p1.x) / 6;
+    const c2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
+  }
+  return d;
+}
+
 /** 板块色块底色：红涨绿跌，涨跌幅越大颜色越浓（±3% 到顶）。 */
 function heatColor(changePercent: number): string {
   const intensity = Math.min(Math.abs(changePercent) / 3, 1);
@@ -599,8 +618,10 @@ export function BigScreenView() {
       y: CHART_PAD + (1 - (p.value - min) / range) * innerH,
     }));
     const line = toPath(pts);
+    const smoothLine = smoothPath(pts);
     const area = `${line} L${pts[pts.length - 1].x.toFixed(1)},${CHART_H} L${pts[0].x.toFixed(1)},${CHART_H} Z`;
-    return { pts, line, area, min, max, latest: recent[recent.length - 1].value, first: recent[0].value, recent };
+    const smoothArea = `${smoothLine} L${pts[pts.length - 1].x.toFixed(1)},${CHART_H} L${pts[0].x.toFixed(1)},${CHART_H} Z`;
+    return { pts, line, smoothLine, area, smoothArea, min, max, latest: recent[recent.length - 1].value, first: recent[0].value, recent };
   }, [series]);
 
   const positions = insights.positions.filter((p) => p.marketValueCents > 0);
@@ -936,7 +957,7 @@ export function BigScreenView() {
         </div>
 
         <main style={{ display: "grid", gridTemplateColumns: "minmax(230px, 290px) minmax(0, 1fr) minmax(270px, 330px) minmax(250px, 310px)", gap: 14, flex: 1, minHeight: 0 }}>
-          <section style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
+          <section className="fade-up" style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0, animationDelay: "0ms" }}>
             <div className="interactive bs-panel" style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 18px" }}>
               <div style={{ fontSize: 12, color: MUTED }}>总资产</div>
               <div className="bs-hero" style={{ fontSize: 30, fontWeight: 600, fontFamily: "var(--font-mono)", margin: "6px 0 4px" }}>
@@ -1014,7 +1035,7 @@ export function BigScreenView() {
             </div>
           </section>
 
-          <section style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+          <section className="fade-up" style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0, animationDelay: "90ms" }}>
             <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "16px 18px", display: "flex", flexDirection: "column", flex: 5, minHeight: 0 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <span style={{ fontSize: 12, color: MUTED }}>资产走势 · 近 60 个节点（最新价估算）</span>
@@ -1032,13 +1053,20 @@ export function BigScreenView() {
                   onMouseMove={handleCurveMove}
                   onMouseLeave={handleCurveLeave}
                 >
-                  <line x1={CHART_PAD} y1={CHART_PAD} x2={CHART_W - CHART_PAD} y2={CHART_PAD} stroke={BORDER} strokeWidth="0.5" />
-                  <line x1={CHART_PAD} y1={CHART_H / 2} x2={CHART_W - CHART_PAD} y2={CHART_H / 2} stroke={BORDER} strokeWidth="0.5" />
-                  <line x1={CHART_PAD} y1={CHART_H - CHART_PAD} x2={CHART_W - CHART_PAD} y2={CHART_H - CHART_PAD} stroke={BORDER} strokeWidth="0.5" />
-                  <path d={chart.area} fill="rgba(255,107,107,.10)" />
-                  <path d={chart.line} fill="none" stroke="rgba(255,107,107,.25)" strokeWidth="5" strokeLinecap="round" />
-                  <path d={chart.line} fill="none" stroke={CHART} strokeWidth="1.6" strokeLinecap="round" />
+                  <defs>
+                    <linearGradient id="assetFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="rgba(255,107,107,.22)" />
+                      <stop offset="100%" stopColor="rgba(255,107,107,0)" />
+                    </linearGradient>
+                  </defs>
+                  <line x1={CHART_PAD} y1={CHART_PAD} x2={CHART_W - CHART_PAD} y2={CHART_PAD} stroke="rgba(255,255,255,.06)" strokeWidth="0.5" strokeDasharray="2 3" />
+                  <line x1={CHART_PAD} y1={CHART_H / 2} x2={CHART_W - CHART_PAD} y2={CHART_H / 2} stroke="rgba(255,255,255,.06)" strokeWidth="0.5" strokeDasharray="2 3" />
+                  <line x1={CHART_PAD} y1={CHART_H - CHART_PAD} x2={CHART_W - CHART_PAD} y2={CHART_H - CHART_PAD} stroke="rgba(255,255,255,.06)" strokeWidth="0.5" strokeDasharray="2 3" />
+                  <path d={chart.smoothArea} fill="url(#assetFill)" />
+                  <path d={chart.smoothLine} fill="none" stroke="rgba(255,107,107,.22)" strokeWidth="5" strokeLinecap="round" />
+                  <path d={chart.smoothLine} fill="none" stroke={CHART} strokeWidth="1.6" strokeLinecap="round" />
                   <circle cx={chart.pts[chart.pts.length - 1].x} cy={chart.pts[chart.pts.length - 1].y} r="3.5" fill={CHART} />
+                  <circle cx={chart.pts[chart.pts.length - 1].x} cy={chart.pts[chart.pts.length - 1].y} r="6.5" fill="none" stroke="rgba(0,229,255,.35)" strokeWidth="1" />
                   {curveIdx !== null && (
                     <g pointerEvents="none">
                       <line
@@ -1117,7 +1145,7 @@ export function BigScreenView() {
             </div>
           </section>
 
-          <section style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
+          <section className="fade-up" style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0, animationDelay: "180ms" }}>
             <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 16px", display: "flex", gap: 14, alignItems: "center" }}>
               <svg viewBox="0 0 80 80" width="84" height="84" style={{ flexShrink: 0 }}>
                 <circle cx="40" cy="40" r="32" fill="none" stroke={CARD} strokeWidth="11" />
@@ -1200,7 +1228,7 @@ export function BigScreenView() {
             </div>
           </section>
 
-          <section style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
+          <section className="fade-up" style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0, animationDelay: "270ms" }}>
             <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 16px", flex: 3, minHeight: 0, overflow: "hidden" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
                 <span style={{ fontSize: 12, color: MUTED }}>策略选股榜</span>
