@@ -839,9 +839,9 @@ export function BigScreenView() {
     return items;
   }, [watchlist, positions, quotes]);
 
-  // 最近交易：按日期倒序取前 6 条
+  // 最近交易：按日期倒序取前 4 条
   const recentTrades = useMemo(
-    () => [...trades].sort((a, b) => b.tradeDate.localeCompare(a.tradeDate) || b.id - a.id).slice(0, 6),
+    () => [...trades].sort((a, b) => b.tradeDate.localeCompare(a.tradeDate) || b.id - a.id).slice(0, 4),
     [trades],
   );
 
@@ -1137,7 +1137,7 @@ export function BigScreenView() {
           </section>
 
           <section className="fade-up" style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0, animationDelay: "90ms" }}>
-            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "16px 18px", display: "flex", flexDirection: "column", flex: 5, minHeight: 0, position: "relative" }}>
+            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "16px 18px", display: "flex", flexDirection: "column", flex: 7, minHeight: 0, position: "relative" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <span style={{ fontSize: 12, color: MUTED }}>
                   {klinePick
@@ -1221,7 +1221,7 @@ export function BigScreenView() {
               {klinePick ? (
                 <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", width: "100%" }}>
                   {/* 交互式 K 线：滚轮缩放 + 拖拽平移 + 日/周/月周期切换 + 仅最近 N 根 */}
-                  <InteractiveKline code={klinePick.code} name={klinePick.name} height={520} />
+                  <InteractiveKline code={klinePick.code} name={klinePick.name} height={620} />
                 </div>
               ) : chart ? (
                 <svg
@@ -1279,7 +1279,7 @@ export function BigScreenView() {
                 </div>
               )}
             </div>
-            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 18px", flex: 3, minHeight: 0, overflow: "hidden" }}>
+            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "12px 18px", flex: 2, minHeight: 0, overflow: "hidden" }}>
               <div style={{ fontSize: 12, color: MUTED, marginBottom: 6 }}>最近交易</div>
               {recentTrades.length === 0 && <div style={{ fontSize: 12, color: MUTED }}>暂无交易记录</div>}
               {recentTrades.map((trade) => {
