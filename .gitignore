@@ -143,3 +143,6 @@ dev/
 # ---- Playwright (e2e 测试产物) ----
 /test-results/
 /playwright-report/
+
+# K线面板调试产物（render_kline.py 测试输出，正式产物在 reports/）
+/*.svg
