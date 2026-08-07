@@ -132,6 +132,8 @@ function bumpWidth(width: LineWidth): LineWidth {
 
 export function InteractiveKline({ code, name, initialBars, height = 480, compact = false, fillParent = false }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // 容器尺寸缓存（避免在 render 期间访问 ref 触发 react-hooks/refs 告警）；由 fill-parent 同步逻辑更新。
+  const [containerSize, setContainerSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volRef = useRef<ISeriesApi<"Histogram"> | null>(null);
@@ -166,6 +168,15 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
   const dragStateRef = useRef<{ startX: number; startY: number; originLeft: number; originTop: number } | null>(null);
   const legendRef = useRef<HTMLDivElement>(null);
   const barsRef = useRef<KlineBar[]>(bars);
+  // 十字光标悬浮面板：跟随鼠标显示当前 K 线的 OHLC / 涨跌幅 / 成交量 / 各周期均线值。
+  // 解决「鼠标划进 K 线图看不见任何数据」的体验缺失（其他炒股软件均有此悬浮窗）。
+  const [crosshair, setCrosshair] = useState<{
+    bar: KlineBar;
+    prevClose: number | null;
+    ma: { p: number; v: number }[];
+    x: number;
+    y: number;
+  } | null>(null);
 
   // 拖拽图例：在图表区域内自由移动；松手后坐标持久于 legendPos，复位用双击
   useEffect(() => {
@@ -263,6 +274,7 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
     const sync = () => {
       const h = parent.clientHeight;
       if (h > 0) setChartHeight(h);
+      setContainerSize({ w: parent.clientWidth || 0, h });
     };
     sync();
     const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(sync) : null;
@@ -327,6 +339,53 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
       handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
     });
     chartRef.current = chart;
+
+    // 十字光标移动 → 显示悬浮数据窗（开/高/低/收/涨跌幅/量/各均线）。
+    // 用 param.time 反查对应 K 线；param.time 为 null（移出图表）时清空面板。
+    const maPeriods = [5, 10, 20, 60];
+    const onCrosshairMove = (param: Parameters<Parameters<IChartApi["subscribeCrosshairMove"]>[0]>[0]) => {
+      const t = param.time;
+      if (t == null) {
+        setCrosshair(null);
+        return;
+      }
+      const list = barsRef.current;
+      if (!list.length) {
+        setCrosshair(null);
+        return;
+      }
+      // lightweight-charts v5 的 time 为 UTCTimestamp（秒）或 business day 对象；
+      // 这里把 bars 的时间戳全部算成秒后定位最近的索引。
+      const target = typeof t === "number" ? t : Math.floor(Date.parse(`${t}`) / 1000);
+      let idx = -1;
+      for (let i = 0; i < list.length; i++) {
+        if (toTimestamp(list[i].date) === target) {
+          idx = i;
+          break;
+        }
+      }
+      if (idx < 0) {
+        // 分时/非整日对齐时退而求其次：取光标逻辑索引（param.logical 可能更准确）
+        const li = typeof param.logical === "number" ? param.logical : -1;
+        idx = li >= 0 && li < list.length ? li : list.length - 1;
+      }
+      const bar = list[idx];
+      const prevClose = idx > 0 ? list[idx - 1].close : null;
+      const closes = list.map((b) => b.close);
+      const ma = maPeriods.map((p) => {
+        let sum = 0;
+        let n = 0;
+        for (let j = idx - p + 1; j <= idx; j++) {
+          if (j >= 0) {
+            sum += closes[j];
+            n++;
+          }
+        }
+        return { p, v: n ? sum / n : bar.close };
+      });
+      setCrosshair({ bar, prevClose, ma, x: param.point?.x ?? 0, y: param.point?.y ?? 0 });
+    };
+    chart.subscribeCrosshairMove(onCrosshairMove);
 
     const candle = chart.addSeries(CandlestickSeries, {
       upColor: cssVar("--up", "#ef4444"),
@@ -753,6 +812,75 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
                 </svg>
               </button>
             )}
+
+            {/* 十字光标悬浮数据窗：跟随鼠标显示该根 OHLC / 涨跌幅 / 成交量 / 各均线 */}
+            {crosshair && (() => {
+              const W = containerSize.w;
+              const H = containerSize.h;
+              const offset = 16;
+              const panelW = 230;
+              const panelH = 132;
+              // 默认贴在光标右下方；靠近右/下边缘时翻转到光标左上方，避免出界。
+              const left = crosshair.x + offset + panelW > W ? crosshair.x - offset - panelW : crosshair.x + offset;
+              const top = crosshair.y + offset + panelH > H ? crosshair.y - offset - panelH : crosshair.y + offset;
+              return (
+              <div
+                style={{
+                  position: "absolute",
+                  top,
+                  left,
+                  padding: "7px 10px",
+                  background: "rgba(8,16,28,.78)",
+                  backdropFilter: "blur(6px)",
+                  WebkitBackdropFilter: "blur(6px)",
+                  border: "0.5px solid rgba(148,163,184,.28)",
+                  borderRadius: 8,
+                  boxShadow: "0 4px 16px rgba(0,0,0,.32)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 3,
+                  minWidth: 168,
+                  maxWidth: 240,
+                  pointerEvents: "none",
+                  zIndex: 3,
+                  fontFamily: "var(--font-mono)",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 11, color: "var(--text)" }}>
+                  <span>{crosshair.bar.date}</span>
+                  <span style={{ color: "var(--accent, #6ea8fe)", fontWeight: 600 }}>
+                    {PERIODS.find((p) => p.key === period)?.label ?? period}
+                  </span>
+                </div>
+                {crosshair.prevClose != null && (() => {
+                  const chg = crosshair.bar.close - crosshair.prevClose;
+                  const pct = (chg / (crosshair.prevClose || 1)) * 100;
+                  const up = chg >= 0;
+                  return (
+                    <div style={{ fontSize: 12, fontWeight: 600, color: up ? "var(--up)" : "var(--down)" }}>
+                      {crosshair.bar.close.toFixed(2)}　{up ? "+" : ""}{chg.toFixed(2)}　{up ? "+" : ""}{pct.toFixed(2)}%
+                    </div>
+                  );
+                })()}
+                <div style={{ display: "grid", gridTemplateColumns: "auto auto", gap: "1px 12px", fontSize: 10.5, color: "var(--muted)" }}>
+                  <span>开 {crosshair.bar.open.toFixed(2)}</span>
+                  <span>高 {crosshair.bar.high.toFixed(2)}</span>
+                  <span>低 {crosshair.bar.low.toFixed(2)}</span>
+                  <span>收 {crosshair.bar.close.toFixed(2)}</span>
+                  {crosshair.bar.vol != null && (
+                      <span style={{ gridColumn: "1 / -1" }}>量 {(crosshair.bar.vol / 100).toLocaleString("zh-CN", { maximumFractionDigits: 0 })} 手</span>
+                  )}
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 8px", marginTop: 2, paddingTop: 3, borderTop: "0.5px solid rgba(148,163,184,.15)", fontSize: 10, color: "var(--text)" }}>
+                  {crosshair.ma.map((m) => (
+                    <span key={m.p} style={{ color: "var(--ma" + m.p + ")" } as React.CSSProperties}>
+                      MA{m.p} {m.v.toFixed(2)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              );
+            })()}
 
             {legendExpanded && (
               <div
