@@ -3,11 +3,9 @@ import {
   access,
   cp,
   mkdir,
-  readdir,
   readFile,
   rename,
   rm,
-  stat,
 } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
@@ -85,23 +83,6 @@ async function syncFile(src: string, dest: string): Promise<void> {
   removeDirBypassShim(backup); // 清理备份
 }
 
-// 增量同步目录：只复制源中缺失的文件（drizzle 迁移只增不减），目标已存在
-// 的文件一律跳过。零覆盖、零删除，完全不触发 safe-delete shim 的删除拦截。
-async function syncDirAdditive(src: string, dest: string): Promise<void> {
-  await mkdir(dest, { recursive: true });
-  const rels = await readdir(src, { recursive: true });
-  for (const rel of rels) {
-    const s = resolve(src, rel);
-    const d = resolve(dest, rel);
-    const st = await stat(s);
-    if (st.isDirectory()) {
-      await mkdir(d, { recursive: true });
-    } else if (!(await exists(d))) {
-      await cp(s, d);
-    }
-  }
-}
-
 // Packages Sites metadata and migrations after Vite finishes compiling.
 export function sites(): Plugin {
   let root = process.cwd();
@@ -132,12 +113,12 @@ export function sites(): Plugin {
     async closeBundle() {
       const outputDirectory = resolve(root, outDir, ".openai");
       const hostingConfig = resolve(root, ".openai", "hosting.json");
-      const drizzleSource = resolve(root, "drizzle");
 
       // buildStart 已尽力清空 dist；这里对 .openai 采用零删除语义：
       // - rm force 对不存在路径不产生删除计数（安全）
-      // - hosting.json / drizzle 通过 syncFile / 目录替换幂等同步，
-      //   均不触发 safe-delete shim 的删除拦截。
+      // - hosting.json 通过 syncFile 幂等同步，不触发 safe-delete shim 的删除拦截。
+      // 注意：drizzle/ 迁移目录已于方案 A 废弃（以 db/index.ts 的 ensureSchema
+      // 运行时建表为唯一事实源），不再同步进部署产物。
       try {
         await rm(outputDirectory, { recursive: true, force: true });
       } catch {
@@ -151,10 +132,6 @@ export function sites(): Plugin {
 
       if (await exists(hostingConfig)) {
         await syncFile(hostingConfig, resolve(outputDirectory, "hosting.json"));
-      }
-      if (await exists(drizzleSource)) {
-        // 增量同步：只补缺失迁移文件，零覆盖零删除（见 syncDirAdditive）
-        await syncDirAdditive(drizzleSource, resolve(outputDirectory, "drizzle"));
       }
     },
   };

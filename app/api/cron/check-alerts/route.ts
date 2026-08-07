@@ -1,5 +1,6 @@
 import { checkAndNotifyAlerts } from "../../../../lib/utils/notify";
 import { getAuthenticatedUser } from "../../../../lib/auth/auth";
+import { safeEqual } from "../../../../lib/auth/crypto";
 
 /** 读取 Cron 预共享密钥（用于无 Cookie 的定时器调用）。 */
 async function getCronSecret(): Promise<string | undefined> {
@@ -16,9 +17,11 @@ export async function POST(request: Request) {
   // 调度器通道：Cloudflare Cron 定时器无会话，凭 CRON_SECRET（Bearer）调用。
   const header = request.headers.get("authorization") ?? "";
   const secret = await getCronSecret();
-  if (secret && header === `Bearer ${secret}`) {
+  if (secret && (await safeEqual(header, `Bearer ${secret}`))) {
     const result = await checkAndNotifyAlerts();
-    return Response.json(result);
+    return Response.json(result, {
+      headers: { "Cache-Control": "no-store" },
+    });
   }
   // 人工触发：必须是已登录的超级管理员，避免任意普通用户触发全站 webhook 推送。
   const user = await getAuthenticatedUser();

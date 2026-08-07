@@ -2,7 +2,9 @@
 
 面向个人使用的 A 股记录与复盘工具。它负责整理公开行情、记录交易、触发价格提醒并辅助复盘，不提供荐股或自动交易。
 
-技术栈：Next.js 16（App Router，前端页面与 API 路由都在 `app/`）+ Cloudflare Workers（边缘入口在 `worker/`，拉起 Next 构建产物）+ Cloudflare D1（SQLite）+ drizzle ORM。构建使用 `vinext`（Cloudflare 适配的 Next 构建工具，非原生 `next`）。架构是「纯前端 + 边缘函数 + SQLite」，无独立后端单体服务。仓库内也包含 `Dockerfile`/`docker-compose.yml`（方便自托管）与 `trading_agent/`（Python 量化脚本，详见下文）。
+技术栈：Next.js 16（App Router，前端页面与 API 路由都在 `app/`）+ Cloudflare Workers（边缘入口在 `worker/`，拉起 Next 构建产物）+ Cloudflare D1（SQLite）+ drizzle ORM（仅作查询层，建表由运行时 `ensureSchema` 负责）。构建使用 `vinext`（Cloudflare 适配的 Next 构建工具，非原生 `next`）。架构是「纯前端 + 边缘函数 + SQLite」，无独立后端单体服务。仓库内也包含 `Dockerfile`/`docker-compose.yml`（方便自托管）与 `trading_agent/`（Python 量化脚本，详见下文）。
+
+> **数据库 schema 事实源说明**：`drizzle/` 迁移目录与 `drizzle-kit` 已废弃。所有建表、加列、建索引的唯一事实源是 `db/index.ts` 的 `ensureSchema()`（运行时幂等执行，`CREATE TABLE/INDEX IF NOT EXISTS` + 增量 `addColumnIfMissing`）。`db/schema.ts` 仅作为 drizzle 查询类型推断与人工对照文档，**禁止再运行 `drizzle-kit generate`**。任何结构变更必须先改 `ensureSchema`，再同步镜像到 `schema.ts`。
 
 ## 主要功能
 
@@ -81,7 +83,7 @@ npm run dev
 
 ## 部署
 
-- Cloudflare Workers：使用 `worker/`（边缘入口）与 `build/`（`vinext build` 产物）。数据库为 D1，迁移位于 `drizzle/`（不要手工删除或重新编号）。
+- Cloudflare Workers：使用 `worker/`（边缘入口）与 `build/`（`vinext build` 产物）。数据库为 D1，schema 由运行时 `ensureSchema()`（`db/index.ts`）幂等维护，不依赖迁移文件。
 - Docker：使用 `Dockerfile`、`docker-compose.yml`、`start.sh` 和 `deploy.sh`。
 
 ### Docker 部署（Ubuntu 24 + Docker 26+）
@@ -258,4 +260,4 @@ npm run engine                  # 实际执行 node trading_agent/local_engine_s
 - 图表使用 `lightweight-charts`；分析页导出 PDF 用 `html-to-image` + `jspdf`（动态 import）。
 - 金额统一以整数存储（`priceMillis` ×1000 为主，旧数据可能仅 `priceCents` ×100），前端避免散落浮点金额计算，格式化集中在 `lib/format.ts`。
 
-数据库迁移位于 `drizzle/`，不要手工删除或重新编号。
+数据库 schema 由 `db/index.ts` 的 `ensureSchema()` 运行时幂等维护（建表/加列/建索引），不依赖迁移文件；`drizzle/` 与 `drizzle-kit` 已废弃，禁止再运行 `drizzle-kit generate`。

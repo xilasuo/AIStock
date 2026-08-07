@@ -1,5 +1,13 @@
 import { sql } from "drizzle-orm";
-import { integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 本文件是「文档镜像」：方案 A 后，drizzle-kit 与 drizzle/ 迁移目录已废弃，
+// 真实建表 / 加列 / 建索引的唯一事实源是 db/index.ts 的 ensureSchema() 运行时。
+// 本 schema.ts 仅用于：① drizzle ORM 的查询类型推断（getDb 仍传入 schema）；
+// ② 作为 ensureSchema 的人工对照文档。任何结构性变更必须同步改 ensureSchema，
+// 禁止再运行 drizzle-kit generate（无配置、无迁移目录）。
+// ─────────────────────────────────────────────────────────────────────────────
 
 // 多用户账户表（超级管理员在后台增删；普通用户不能自助注册）。
 // 密码仅存 PBKDF2 哈希 + 随机 salt，绝不存明文。
@@ -12,7 +20,10 @@ export const users = sqliteTable("users", {
   role: text("role", { enum: ["super_admin", "user"] }).notNull().default("user"),
   disabled: integer("disabled", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-});
+}, (table) => ({
+  // 每次冷启动 ensureSchema 都会 WHERE role = 'super_admin' 检查种子账号。
+  roleIdx: index("users_role_idx").on(table.role),
+}));
 
 // Keep the original prototype table in the migration graph so existing data is
 // never dropped when the new, validated tables are introduced.
@@ -46,7 +57,10 @@ export const tradeRecords = sqliteTable("trade_records", {
   otherReason: text("other_reason"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at"),
-});
+}, (table) => ({
+  // 与 ensureSchema 运行时索引逐字一致（现网真实索引为准）。
+  userIdx: index("trade_records_user_idx").on(table.userId, table.tradeDate),
+}));
 
 export const watchItems = sqliteTable("watch_items", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -57,6 +71,7 @@ export const watchItems = sqliteTable("watch_items", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
   userSymbolUnique: uniqueIndex("watch_items_user_symbol_idx").on(table.userId, table.symbol),
+  userIdx: index("watch_items_user_idx").on(table.userId),
 }));
 
 export const watchDetails = sqliteTable("watch_details", {
@@ -71,6 +86,7 @@ export const watchDetails = sqliteTable("watch_details", {
   conditionValue: real("condition_value"),
 }, (table) => ({
   pk: primaryKey({ columns: [table.symbol, table.userId] }),
+  userIdx: index("watch_details_user_idx").on(table.userId, table.symbol),
 }));
 
 export const alertRules = sqliteTable("alert_rules", {
@@ -85,7 +101,10 @@ export const alertRules = sqliteTable("alert_rules", {
   acknowledgedAt: text("acknowledged_at"),
   triggeredAt: text("triggered_at"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-});
+}, (table) => ({
+  // 与 ensureSchema 运行时索引逐字一致。
+  userIdx: index("alert_rules_user_idx").on(table.userId),
+}));
 
 export const reviews = sqliteTable("reviews", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -101,7 +120,10 @@ export const reviews = sqliteTable("reviews", {
   tags: text("tags").notNull().default("[]"),
   deviationReason: text("deviation_reason").notNull().default(""),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-});
+}, (table) => ({
+  // 与 ensureSchema 运行时索引逐字一致。
+  userIdx: index("reviews_user_idx").on(table.userId),
+}));
 
 export const analysisReports = sqliteTable("analysis_reports", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -116,7 +138,10 @@ export const analysisReports = sqliteTable("analysis_reports", {
   summary: text("summary").notNull(),
   reportJson: text("report_json").notNull(),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-});
+}, (table) => ({
+  // 与 ensureSchema 运行时索引逐字一致。
+  userIdx: index("analysis_reports_user_idx").on(table.userId, table.symbol),
+}));
 
 export const announcementNotes = sqliteTable("announcement_notes", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -130,7 +155,9 @@ export const announcementNotes = sqliteTable("announcement_notes", {
   risksJson: text("risks_json").notNull().default("[]"),
   mode: text("mode", { enum: ["deepseek", "automatic"] }).notNull(),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-});
+}, (table) => ({
+  userIdx: index("announcement_notes_user_idx").on(table.userId, table.symbol),
+}));
 
 export const accountSettings = sqliteTable("account_settings", {
   id: integer("id").primaryKey(),
@@ -146,7 +173,9 @@ export const capitalFlows = sqliteTable("capital_flows", {
   flowDate: text("flow_date").notNull(),
   note: text("note"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-});
+}, (table) => ({
+  userIdx: index("capital_flows_user_idx").on(table.userId),
+}));
 
 export const tradingPreferences = sqliteTable("trading_preferences", {
   id: integer("id").primaryKey(),
@@ -179,7 +208,10 @@ export const strategyFeedback = sqliteTable("strategy_feedback", {
   source: text("source").notNull().default("web"),
   factors: text("factors").notNull().default(""),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-});
+}, (table) => ({
+  // 与 ensureSchema 运行时索引逐字一致。
+  userIdx: index("strategy_feedback_user_idx").on(table.userId),
+}));
 
 // 策略扫描推送结果（跨机器联动 · 本地 trading_agent 推送 / 云端读取）
 // 用 D1 存储而非裸文件：Cloudflare Workers 运行时不允许 handler 任意写文件系统。
@@ -188,7 +220,10 @@ export const strategyScan = sqliteTable("strategy_scan", {
   payload: text("payload").notNull(),
   userId: integer("user_id"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-});
+}, (table) => ({
+  // 按「用户 + 时间倒序」分页读取扫描结果。
+  userIdx: index("strategy_scan_user_idx").on(table.userId, table.createdAt),
+}));
 
 // 候选回写信号推送结果（dry-run；真实下单需接入带下单能力的连接器）
 export const strategyWriteback = sqliteTable("strategy_writeback", {
@@ -196,7 +231,9 @@ export const strategyWriteback = sqliteTable("strategy_writeback", {
   userId: integer("user_id"),
   payload: text("payload").notNull(),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-});
+}, (table) => ({
+  userIdx: index("strategy_writeback_user_idx").on(table.userId, table.createdAt),
+}));
 
 // 云端「选股前置条件」配置（网页保存 / 本地 trading_agent 拉取）。
 // 与 strategy_scan（扫描结果）分离，避免配置数据污染扫描结果渲染。
@@ -207,4 +244,7 @@ export const strategyConfig = sqliteTable("strategy_config", {
   userId: integer("user_id"),
   payload: text("payload").notNull(),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-});
+}, (table) => ({
+  // 读配置主路径：WHERE user_id = ? ORDER BY updated_at DESC。
+  userIdx: index("strategy_config_user_idx").on(table.userId, table.updatedAt),
+}));

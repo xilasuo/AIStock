@@ -2,6 +2,15 @@ import { env } from "cloudflare:workers";
 import { drizzle } from "drizzle-orm/d1";
 import * as schema from "./schema";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 数据库 schema 的唯一事实源（方案 A）。
+// drizzle/ 迁移目录与 drizzle-kit 已废弃，本文件运行时幂等维护全部表 / 列 / 索引：
+//   - CREATE TABLE / CREATE INDEX IF NOT EXISTS 保证可重复执行、对现网库热加；
+//   - addColumnIfMissing 增量补列，兼容老库；
+//   - 首次启动用 APP_USERNAME/APP_PASSWORD 种子超级管理员。
+// 任何结构变更必须改这里，并同步镜像到 db/schema.ts（仅作类型推断与文档）。
+// ─────────────────────────────────────────────────────────────────────────────
+
 let schemaReady: Promise<void> | null = null;
 
 export function getDb() {
@@ -11,13 +20,26 @@ export function getDb() {
   return drizzle(env.DB, { schema });
 }
 
+// 仅允许内部硬编码的表名/列名流入原始 SQL，杜绝任何外部输入拼接进 DDL。
+// 标识符必须是合法 SQL 标识符（字母/下划线开头，仅含字母数字下划线）。
+const SQL_IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+function assertSqlIdentifier(value: string, label: string): void {
+  if (!SQL_IDENTIFIER.test(value)) {
+    throw new Error(`非法的数据库标识符 ${label}: ${value}`);
+  }
+}
+
 async function addColumnIfMissing(table: string, column: string, definition: string) {
+  // table / column 必须来自内部常量（调用点均为硬编码字符串），不允许任何外部输入。
+  assertSqlIdentifier(table, "table");
+  assertSqlIdentifier(column, "column");
   const db = env.DB;
   const info = await db.prepare(`PRAGMA table_info(${table})`).all();
   const columns = info.results as Array<{ name?: string }>;
   if (columns.some((item) => item.name === column)) return;
 
   try {
+    // definition 同样仅来自内部常量（含列类型与默认值），不外源。
     await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${definition}`).run();
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
@@ -289,6 +311,23 @@ export async function ensureSchema() {
       ),
       db.prepare(
         `CREATE INDEX IF NOT EXISTS watch_details_user_idx ON watch_details(user_id, symbol)`,
+      ),
+      // 选股前置配置读取主路径：WHERE user_id = ? ORDER BY updated_at DESC。
+      // 原表零索引，读配置全表扫描；补 (user_id, updated_at) 复合索引正好匹配访问模式。
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS strategy_config_user_idx ON strategy_config(user_id, updated_at)`,
+      ),
+      // 每次冷启动 ensureSchema 都要 SELECT ... WHERE role = 'super_admin'；补 role 索引。
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS users_role_idx ON users(role)`,
+      ),
+      // 扫描/回写结果按「用户 + 时间倒序」分页，原仅有 created_at 单列索引；
+      // 补 (user_id, created_at) 复合索引以命中真实查询顺序。
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS strategy_scan_user_idx ON strategy_scan(user_id, created_at)`,
+      ),
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS strategy_writeback_user_idx ON strategy_writeback(user_id, created_at)`,
       ),
     ]);
 

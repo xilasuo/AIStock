@@ -5,6 +5,7 @@ import {
   hashPassword,
   createSessionToken,
   verifyToken,
+  safeEqual,
 } from "../lib/auth/crypto";
 import { normalizePreferences, DEFAULT_PREFERENCES } from "../lib/utils/preferences";
 import { buildTradeCycles, type Trade } from "../lib/domain/domain";
@@ -62,6 +63,21 @@ test("过期 token 被拒绝", async () => {
   const expired = new Date("2020-01-01T00:00:00Z").getTime();
   const token = await createSessionToken({ id: 7, username: "alice", role: "user" }, SECRET, expired);
   assert.equal(await verifyToken(token, SECRET), null);
+});
+
+test("safeEqual 恒定时间比较：相等/不等/长度不同/空串", async () => {
+  // 相等的令牌通过（P0 推送令牌校验依赖它）
+  assert.equal(await safeEqual("push-token-abc", "push-token-abc"), true);
+  // 仅一字节不同应被拒绝
+  assert.equal(await safeEqual("push-token-abc", "push-token-abd"), false);
+  // 长度不同应被拒绝（内部先摘要再逐字节异或，长度差异也会体现在摘要上）
+  assert.equal(await safeEqual("short", "muchlongertoken"), false);
+  // 空串与非空串不相等
+  assert.equal(await safeEqual("", "x"), false);
+  // 两个空串相等（摘要相同）
+  assert.equal(await safeEqual("", ""), true);
+  // 前缀相同但长度不同不应被误判为相等（防前缀爆破）
+  assert.equal(await safeEqual("token", "token-extra"), false);
 });
 
 test("normalizePreferences 缺省回落默认且不会串读", () => {

@@ -76,6 +76,22 @@ export function pushSharedSecret(): string | undefined {
 }
 
 /**
+ * 校验请求头中的推送令牌是否与云端 STRATEGY_PUSH_TOKEN（回退 CRON_SECRET）一致。
+ *
+ * 统一使用恒定时间比较（safeEqual），避免通过响应耗时侧信道逐字节爆破令牌；
+ * 未配置密钥或未携带令牌时一律返回 false（不允许空令牌通过）。
+ */
+export async function verifyPushToken(req: Request): Promise<boolean> {
+  const secret = pushSharedSecret();
+  const provided =
+    req.headers.get("x-push-token") ||
+    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
+    undefined;
+  if (!secret || !provided) return false;
+  return safeEqual(provided, secret);
+}
+
+/**
  * 登录会话「或」推送令牌任一通过即可（用于读取类接口，如策略配置 GET）。
  *
  * 设计意图：多用户改造后所有 API 都要求登录会话（requireApiUser）。
@@ -89,13 +105,7 @@ export async function requireApiUserOrPushToken(
 ): Promise<Response | null> {
   const user = await getAuthenticatedUser();
   if (user) return null;
-  const secret = pushSharedSecret();
-  const provided =
-    req.headers.get("x-push-token") ||
-    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
-    undefined;
-  // 恒定时间比较，避免通过响应耗时侧信道逐字节爆破推送令牌
-  if (secret && provided && (await safeEqual(provided, secret))) return null;
+  if (await verifyPushToken(req)) return null;
   return Response.json({ error: "请先登录后再使用" }, { status: 401 });
 }
 

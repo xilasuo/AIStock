@@ -1,1 +1,0 @@
-ALTER TABLE `trade_records` ADD `price_ten_thousandths` integer;

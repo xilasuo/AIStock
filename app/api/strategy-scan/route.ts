@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { getAuthenticatedUser, pushSharedSecret } from "../../../lib/auth/auth";
+import { getAuthenticatedUser, verifyPushToken } from "../../../lib/auth/auth";
 import { getDb, ensureSchema } from "../../../db";
 import { strategyScan } from "../../../db/schema";
 import { shanghaiIso } from "../../../lib/utils/time";
@@ -77,12 +77,8 @@ export async function POST(req: Request) {
   if (user) {
     userId = user.id;
   } else {
-    const secret = pushSharedSecret();
-    const provided =
-      req.headers.get("x-push-token") ||
-      req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
-      undefined;
-    if (!secret || provided !== secret) {
+    // 恒定时间比较，防止通过响应耗时侧信道逐字节爆破推送令牌
+    if (!(await verifyPushToken(req))) {
       return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
     }
     userId = null;

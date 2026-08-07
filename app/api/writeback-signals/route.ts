@@ -1,5 +1,5 @@
 import { sql, eq, or, isNull } from "drizzle-orm";
-import { requireApiUser, pushSharedSecret, getAuthenticatedUser } from "../../../lib/auth/auth";
+import { requireApiUser, verifyPushToken, getAuthenticatedUser } from "../../../lib/auth/auth";
 import { getDb, ensureSchema } from "../../../db";
 import { strategyWriteback } from "../../../db/schema";
 import { shanghaiIso } from "../../../lib/utils/time";
@@ -57,13 +57,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  // 推送鉴权：本地 PC 持有的 token 需与云端一致
-  const secret = pushSharedSecret();
-  const provided =
-    req.headers.get("x-push-token") ||
-    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
-    undefined;
-  if (!secret || provided !== secret) {
+  // 推送鉴权：本地 PC 持有的 token 需与云端一致（恒定时间比较，防耗时侧信道爆破）
+  if (!(await verifyPushToken(req))) {
     return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
   const contentLength = Number(req.headers.get("content-length") ?? 0);

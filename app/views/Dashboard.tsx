@@ -58,7 +58,6 @@ import {
   Users,
   AlertTriangle,
   X,
-  ChevronUp,
   RotateCw,
   Zap,
   Monitor,
@@ -90,7 +89,6 @@ import {
   type TradingPreferences,
 } from "../../lib/utils/preferences";
 import {
-  DEFAULT_TRADE_MODE,
   TRADE_MODES,
   resolveTradeMode,
   type TradeModeInfo,
@@ -4850,13 +4848,15 @@ function AlertEditModal({ alert, onClose, onSave }: {
   const [value, setValue] = useState(String((alert.targetPriceMillis ?? alert.targetPriceCents * 10) / 1000));
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     inputRef.current?.focus();
-    const close = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape") onCloseRef.current(); };
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
-  }, [onClose]);
+  }, []);
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -5102,12 +5102,16 @@ function TradeModal({ mode, stock, editTrade, positions, analysisQuote, livePric
     }
   }
 
+  // 仅在弹窗挂载时聚焦一次股票代码框；用 ref 持有最新的 onClose，避免父组件
+  // 重渲染传入新的 onClose 引用导致 effect 反复执行、反复抢走输入焦点。
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
     symbolInputRef.current?.focus();
-    const close = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape") onCloseRef.current(); };
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
-  }, [onClose]);
+  }, []);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -5355,12 +5359,15 @@ function ReviewModal({ cycle, onClose, onSaved }: {
     setTags(tags.filter((tag) => tag !== target));
   }
 
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     firstInput.current?.focus();
-    const close = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape") onCloseRef.current(); };
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
-  }, [onClose]);
+  }, []);
 
   async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
