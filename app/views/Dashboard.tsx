@@ -287,11 +287,9 @@ const QUOTE_TTL_MS = 5 * 60 * 1000;
 // 视口断点：≤ breakpoint 视为移动端。用于区分「PC 浮窗」与「移动端全屏对话页」。
 // 客户端组件内初始化即用 matchMedia 取值，避免首帧闪烁；并在断点变化时实时更新。
 function useIsMobile(breakpoint = 768) {
-  const [isMobile, setIsMobile] = useState(
-    () => typeof window !== "undefined" && window.matchMedia(`(max-width: ${breakpoint}px)`).matches,
-  );
+  // 统一初始 false，避免 SSR 与客户端 hydration 因 window 差异导致 mismatch
+  const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
-    if (typeof window === "undefined") return;
     const mq = window.matchMedia(`(max-width: ${breakpoint}px)`);
     const update = () => setIsMobile(mq.matches);
     update();
