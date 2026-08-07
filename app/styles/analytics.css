@@ -13,19 +13,10 @@
   gap: 24px;
 }
 
-.stat-grid--analytics {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
 .export-toolbar {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-}
-
-.equity-chart {
-  width: 100%;
-  height: 220px;
 }
 
 .chart-empty {
