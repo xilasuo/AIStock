@@ -414,6 +414,13 @@ export function BigScreenView() {
   const [stealth, setStealth] = useState(false);
   const prefsRef = useRef<Record<string, unknown> | null>(null);
 
+  // 客户端挂载门控：BigScreenView 含实时时钟/行情/持仓等大量随渲染时刻变化的文本，
+  // SSR 阶段（服务器时刻）与客户端水合（浏览器时刻）极易产生文本不一致，
+  // 触发 React #418 hydration mismatch。用 mounted 门控后首屏（SSR 与 CSR）统一渲染稳定骨架，
+  // 挂载完成后再在客户端渲染真实内容，彻底消除 hydration 不匹配。
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   // 大屏中央主图：交互式 K 线选中股票（前端拉取本地渲染，支持缩放/平移/周期切换）
   const [klinePick, setKlinePick] = useState<{ code: string; name: string } | null>(null);
   const openKline = (code: string, name: string) => {
@@ -973,6 +980,10 @@ export function BigScreenView() {
     }
     return blocks;
   }, [insights, todayPnl, positions, quotes, riskAlerts, scan, scanPicks, marketStateKey, marketStateLabel]);
+
+  if (!mounted) {
+    return <div className="boot-loading">正在加载大屏…</div>;
+  }
 
   return (
     <div className="bigscreen" style={{ background: BG, color: TEXT, height: "100vh", overflow: "hidden", fontFamily: "var(--font-sans)" }}>
