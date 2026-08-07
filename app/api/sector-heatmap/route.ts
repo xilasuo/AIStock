@@ -14,8 +14,8 @@ export async function GET(request: Request) {
   if (validationError) {
     return Response.json({ error: validationError }, { status: 400 });
   }
-  if (!Number.isInteger(limit) || limit < 1 || limit > 10) {
-    return Response.json({ error: "板块数量必须在1到10之间" }, { status: 400 });
+  if (!Number.isInteger(limit) || limit < 1 || limit > 40) {
+    return Response.json({ error: "板块数量必须在1到40之间" }, { status: 400 });
   }
 
   try {

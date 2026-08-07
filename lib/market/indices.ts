@@ -26,6 +26,8 @@ export const MAJOR_INDICES: Array<{ code: string; tencent: string; name: string 
   { code: "000300", tencent: "sh000300", name: "沪深300" },
   { code: "000688", tencent: "sh000688", name: "科创50" },
   { code: "000016", tencent: "sh000016", name: "上证50" },
+  { code: "000905", tencent: "sh000905", name: "中证500" },
+  { code: "000852", tencent: "sh000852", name: "中证1000" },
   { code: "899050", tencent: "bj899050", name: "北证50" },
 ];
 

@@ -42,7 +42,7 @@ type TencentKlineResponse = {
   }>;
 };
 
-const INDUSTRY_PROXIES: IndustryProxy[] = [
+export const INDUSTRY_PROXIES: IndustryProxy[] = [
   { code: "512480", name: "半导体", symbol: "sh512480" },
   { code: "515030", name: "新能源汽车", symbol: "sh515030" },
   { code: "512010", name: "医药", symbol: "sh512010" },
@@ -109,6 +109,17 @@ export function rankSectorMoves(moves: SectorMove[], limit = 10) {
       left.name.localeCompare(right.name, "zh-CN")
     )
     .slice(0, limit);
+}
+
+/**
+ * 把板块名解析为「可拉取 K 线的证券代码」。
+ * 板块热力可能来自麦蕊/东财板块榜（code 为空或东财板块代码，无法直接拉 K 线），
+ * 这里按板块名在腾讯行业 ETF 代理表里匹配出对应的 6 位 ETF 代码（如 半导体→512480）。
+ * 匹配不到返回 null，调用方应禁用点击并提示。
+ */
+export function resolveSectorKlineCode(name: string): string | null {
+  const hit = INDUSTRY_PROXIES.find((p) => p.name === name || name.includes(p.name) || p.name.includes(name));
+  return hit ? hit.code : null;
 }
 
 async function loadSectorMove(

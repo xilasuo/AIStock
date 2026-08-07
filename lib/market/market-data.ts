@@ -71,7 +71,8 @@ function eastmoneySecid(code: string): string {
 /** 6 位代码 → 腾讯符号（如 600000→sh600000） */
 export function tencentSymbol(code: string): string {
   if (/^\d{6}$/.test(code)) {
-    const prefix = code.startsWith("6") || code.startsWith("9") ? "sh" : "sz";
+    // 5 开头为上交所基金（ETF/LOF），与 6/9 同属沪市
+    const prefix = code.startsWith("5") || code.startsWith("6") || code.startsWith("9") ? "sh" : "sz";
     return `${prefix}${code}`;
   }
   return code;

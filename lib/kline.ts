@@ -43,19 +43,38 @@ const UA =
 
 /* ------------------------- 取数：东财 -> 新浪 双源 ------------------------- */
 
+/** 是否为核心指数代码：指数取数需 fqt=0（不复权），且 secid 按交易所归位。 */
+export function isIndexCode(code: string): boolean {
+  if (code.startsWith("880") || code.startsWith("999")) return true;
+  if (code.startsWith("399")) return true;
+  if (code.startsWith("899")) return true; // 北证50 等北交所指数
+  const indices = new Set([
+    "000001", // 上证指数（东财 1.000001 为上证，0.000001 为平安银行）
+    "000016", "000300", "000688", "000905", "000852",
+    "000010", "000009", "000013",
+  ]);
+  return indices.has(code);
+}
+
 function emSecid(code: string): string {
   if (code.startsWith("880") || code.startsWith("999")) return "1.";
   if (code.startsWith("399")) return "0.";
+  if (code.startsWith("899")) return "0."; // 北证50 东财 secid 用 0.899050
   const pureIndex = new Set([
-    "000016", "000300", "000688", "000905", "000010", "000009", "000013",
+    "000001", "000016", "000300", "000688", "000905", "000852",
+    "000010", "000009", "000013",
   ]);
   if (pureIndex.has(code)) return "1.";
-  return code.startsWith("6") ? "1." : "0.";
+  // 5 开头为上交所基金（ETF/LOF，如 512xxx/515xxx/516xxx/561xxx），属沪市。
+  if (code.startsWith("5") || code.startsWith("6")) return "1.";
+  return "0.";
 }
 
 function sinaPrefix(code: string): string {
-  if (code.startsWith("6") || code.startsWith("9")) return "sh";
+  if (code.startsWith("5") || code.startsWith("6") || code.startsWith("9")) return "sh";
   if (code.startsWith("8")) return "bj";
+  // 指数按交易所归位：399xxx/899xxx 深/北，其余核心指数（000001/000300等）沪
+  if (isIndexCode(code)) return code.startsWith("399") || code.startsWith("899") ? (code.startsWith("899") ? "bj" : "sz") : "sh";
   return "sz";
 }
 
@@ -105,7 +124,7 @@ export async function fetchKline(
       const url =
         `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${emSecid(code)}${code}` +
         `&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57` +
-        `&klt=${klt}&fqt=1&end=20500101&lmt=${limit}`;
+        `&klt=${klt}&fqt=${isIndexCode(code) ? 0 : 1}&end=20500101&lmt=${limit}`;
       const res = await fetch(url, {
         headers: { "User-Agent": UA, Referer: "https://quote.eastmoney.com/" },
         signal: AbortSignal.timeout(8000),
@@ -163,7 +182,7 @@ export async function fetchKline(
     const url =
       `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${emSecid(code)}${code}` +
       `&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57` +
-        `&klt=${KLT[period]}&fqt=1&end=20500101&lmt=${limit}`;
+        `&klt=${KLT[period]}&fqt=${isIndexCode(code) ? 0 : 1}&end=20500101&lmt=${limit}`;
       const res = await fetch(url, {
         headers: { "User-Agent": UA, Referer: "https://quote.eastmoney.com/" },
         signal: AbortSignal.timeout(8000),

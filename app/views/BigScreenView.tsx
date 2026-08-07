@@ -25,6 +25,7 @@ import { StockSearch } from "../components/ui";
 import { StrategyModal } from "../components/StrategyModal";
 import { searchLocalStocks } from "../../lib/domain/stocks";
 import { recordQuota, useMairuiQuota } from "../../lib/market/mairui-quota";
+import { resolveSectorKlineCode } from "../../lib/market/sectors";
 
 type Quote = { price: number; changePercent: number; fetchedAt: string };
 type MarketIndex = { code: string; name: string; price: number; changePercent: number; change: number };
@@ -503,7 +504,7 @@ export function BigScreenView() {
     if (isRealtimeWindow()) {
       try {
         const data = await jsonRequest<{ date: string; sectors: SectorMove[] }>(
-          `/api/sector-heatmap?date=${shanghaiDate()}&limit=10&live=1`,
+          `/api/sector-heatmap?date=${shanghaiDate()}&limit=32&live=1`,
         );
         if (data.sectors?.length) {
           setSectors({ date: data.date, items: data.sectors });
@@ -516,7 +517,7 @@ export function BigScreenView() {
     for (const date of recentDates(4)) {
       try {
         const data = await jsonRequest<{ date: string; sectors: SectorMove[] }>(
-          `/api/sector-heatmap?date=${date}&limit=10`,
+          `/api/sector-heatmap?date=${date}&limit=32`,
         );
         if (data.sectors?.length) {
           setSectors({ date: data.date, items: data.sectors });
@@ -885,7 +886,7 @@ export function BigScreenView() {
   const marketStateColor =
     marketStateKey === "bull" ? UP : marketStateKey === "bear" ? DOWN : MUTED;
 
-  const activeIndices = indices.slice(0, 3);
+  const activeIndices = indices.slice(0, 9);
   const profitColor = (insights.totalProfitCents ?? 0) >= 0 ? UP : DOWN;
   const todayColor = (todayPnl?.gainCents ?? 0) >= 0 ? UP : DOWN;
 
@@ -1225,33 +1226,52 @@ export function BigScreenView() {
                 </div>
               </div>
             </div>
-            <div className="interactive bs-panel" style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "12px 16px", flex: 1, minHeight: 0 }}>
-              <div style={{ fontSize: 11, color: MUTED, marginBottom: 6 }}>大盘指数</div>
-              {activeIndices.length === 0 && <div style={{ fontSize: 12, color: MUTED }}>暂无指数数据</div>}
-              {activeIndices.map((index) => (
-                <div
-                  key={index.code}
-                  className="row-hover interactive"
-                  onMouseEnter={(e) =>
-                    showTooltip(e, {
-                      title: index.name,
-                      subtitle: index.code,
-                      rows: [
-                        { k: "最新价", v: index.price.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
-                        { k: "涨跌幅", v: pct(index.changePercent), c: index.changePercent >= 0 ? "up" : "down" },
-                      ],
-                    })
-                  }
-                  onMouseLeave={() => setHover(null)}
-                  style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontFamily: "var(--font-mono)", padding: "5px 0" }}
-                >
-                  <span style={{ color: TEXT }}>{index.name}</span>
-                  <span style={{ color: index.changePercent >= 0 ? UP : DOWN }}>
-                    <TickNum value={index.price} format={(v) => v.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} className="num" />{" "}
-                    <TickNum value={index.changePercent} format={pct} className="num" />
-                  </span>
-                </div>
-              ))}
+            <div className="interactive bs-panel" style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "12px 16px", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <div style={{ fontSize: 11, color: MUTED, marginBottom: 6, flexShrink: 0 }}>大盘指数</div>
+              <div style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingRight: 4 }}>
+                {activeIndices.length === 0 && <div style={{ fontSize: 12, color: MUTED }}>暂无指数数据</div>}
+                {activeIndices.map((index) => {
+                  const active = isActiveKlineCode(index.code);
+                  return (
+                    <div
+                      key={index.code}
+                      className="row-hover interactive"
+                      onMouseEnter={(e) =>
+                        showTooltip(e, {
+                          title: index.name,
+                          subtitle: index.code,
+                          rows: [
+                            { k: "最新价", v: index.price.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
+                            { k: "涨跌幅", v: pct(index.changePercent), c: index.changePercent >= 0 ? "up" : "down" },
+                          ],
+                          note: active
+                            ? "中央主图正在展示该指数日K。再次点击其它指数可切换。"
+                            : "点击该指数，中央主图切换为其日K。",
+                        })
+                      }
+                      onMouseLeave={() => setHover(null)}
+                      onClick={() => openKline(index.code, index.name)}
+                      title={`点击查看 ${index.name}（${index.code}）日K`}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        fontSize: 13,
+                        fontFamily: "var(--font-mono)",
+                        padding: "5px 0",
+                        cursor: "pointer",
+                        background: active ? "rgba(0,229,255,.08)" : "transparent",
+                        borderRadius: 4,
+                      }}
+                    >
+                      <span style={{ color: TEXT }}>{index.name}</span>
+                      <span style={{ color: index.changePercent >= 0 ? UP : DOWN }}>
+                        <TickNum value={index.price} format={(v) => v.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} className="num" />{" "}
+                        <TickNum value={index.changePercent} format={pct} className="num" />
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </section>
 
@@ -1641,33 +1661,49 @@ export function BigScreenView() {
                 );
               })}
             </div>
-            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 16px", flex: 2, minHeight: 0, overflow: "hidden" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 16px", flex: 2, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8, flexShrink: 0 }}>
                 <span style={{ fontSize: 12, color: MUTED }}>板块热力</span>
                 <span style={{ fontSize: 10, color: MUTED, fontFamily: "var(--font-mono)" }}>{sectors?.date ?? "加载中"}</span>
               </div>
               {!sectors && <div style={{ fontSize: 12, color: MUTED }}>板块数据读取中…</div>}
               {sectors && (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                  {sectors.items.slice(0, 10).map((sector) => (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, flex: 1, minHeight: 0, overflowY: "auto", paddingRight: 4 }}>
+                  {sectors.items.map((sector) => {
+                    // 板块热力可能来自麦蕊/东财板块榜，code 为空或东财板块代码无法直接拉 K 线；
+                    // 统一按板块名解析到对应的 ETF 代码。解析不到则该板块无法查看 K 线（点击无跳转）。
+                    const klineCode = resolveSectorKlineCode(sector.name);
+                    const active = !!klineCode && isActiveKlineCode(klineCode);
+                    return (
                     <div
-                      key={sector.code}
+                      key={sector.code || sector.name}
                       className="heat-tile interactive"
                       onMouseEnter={(e) =>
                         showTooltip(e, {
                           title: sector.name,
-                          subtitle: sector.code,
+                          subtitle: klineCode ?? sector.code,
                           rows: [{ k: "今日涨跌幅", v: pct(sector.changePercent), c: sector.changePercent >= 0 ? "up" : "down" }],
-                          note: "板块数据来自 ETF 代理口径，反映当日行业强弱。",
+                          note: klineCode
+                            ? active
+                              ? "中央主图正在展示该板块 ETF 日K。再次点击其它板块可切换。"
+                              : "点击该板块，中央主图切换为其 ETF 日K。"
+                            : "该板块暂无可查看的K线标的。",
                         })
                       }
                       onMouseLeave={() => setHover(null)}
+                      onClick={() => {
+                        if (klineCode) openKline(klineCode, sector.name);
+                      }}
+                      title={klineCode ? `点击查看 ${sector.name}（${klineCode}）日K` : `${sector.name}：暂无可查看的K线标的`}
                       style={{
                         background: heatColor(sector.changePercent),
-                        border: `0.5px solid ${sector.changePercent >= 0 ? "rgba(255,107,107,.35)" : "rgba(45,212,191,.35)"}`,
+                        border: active
+                          ? "1.5px solid var(--accent)"
+                          : `0.5px solid ${sector.changePercent >= 0 ? "rgba(255,107,107,.35)" : "rgba(45,212,191,.35)"}`,
                         borderRadius: 8,
                         padding: "6px 8px",
                         minWidth: 0,
+                        cursor: klineCode ? "pointer" : "default",
                       }}
                     >
                       <div style={{ fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sector.name}</div>
@@ -1675,7 +1711,8 @@ export function BigScreenView() {
                         {pct(sector.changePercent)}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

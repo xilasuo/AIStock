@@ -417,6 +417,8 @@ const MAJOR_INDEX_CODES: Array<{ mairui: string; code: string; name: string }> =
   { mairui: "000300.SH", code: "000300", name: "沪深300" },
   { mairui: "000688.SH", code: "000688", name: "科创50" },
   { mairui: "000016.SH", code: "000016", name: "上证50" },
+  { mairui: "000905.SH", code: "000905", name: "中证500" },
+  { mairui: "000852.SH", code: "000852", name: "中证1000" },
   { mairui: "899050.BJ", code: "899050", name: "北证50" },
 ];
 
