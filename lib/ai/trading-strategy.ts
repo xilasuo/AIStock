@@ -44,6 +44,67 @@ export interface StructuredStrategy {
   dataGaps: string;
 }
 
+/** 把结构化策略渲染成 markdown 块（带"结论/依据/止盈/止损/..."标签），供前端 StrategyBlocks 分块展示 */
+export function renderStructuredToText(s: StructuredStrategy): string {
+  const lines: string[] = [];
+  const actionLabelMap: Record<NonNullable<StrategyAction>, string> = {
+    "开新仓": "开新仓",
+    "加仓": "加仓",
+    "持有": "持有",
+    "减仓": "减仓",
+    "清仓": "清仓",
+    "观望": "观望",
+  };
+  const actionText = s.action ? actionLabelMap[s.action] : "未给";
+  lines.push(`结论：${actionText}。${s.actionSummary || ""}`);
+
+  // 依据：综合 reasoning + 价格 + 仓位（仅在有具体数字时附上，便于回看）
+  const reasoning = s.reasoning?.trim();
+  if (reasoning) lines.push(`依据：${reasoning}`);
+
+  // 止盈
+  const tpLines: string[] = [];
+  if (s.takeProfitPrice !== null) tpLines.push(`止盈价 ¥${s.takeProfitPrice.toFixed(2)}`);
+  if (s.takeProfitCondition) tpLines.push(s.takeProfitCondition);
+  if (tpLines.length) lines.push(`止盈：${tpLines.join("；")}`);
+
+  // 止损
+  const slLines: string[] = [];
+  if (s.stopLossPrice !== null) slLines.push(`止损价 ¥${s.stopLossPrice.toFixed(2)}`);
+  if (s.stopLossCondition) slLines.push(s.stopLossCondition);
+  if (slLines.length) lines.push(`止损：${slLines.join("；")}`);
+
+  // 加仓
+  const addLines: string[] = [];
+  if (s.addAllowed) {
+    if (s.addTriggerPrice !== null) addLines.push(`触发价 ¥${s.addTriggerPrice.toFixed(2)}`);
+    if (s.addMaxShares !== null) addLines.push(`上限 ${s.addMaxShares} 股`);
+    if (s.addCondition) addLines.push(s.addCondition);
+  } else if (s.addCondition) {
+    addLines.push(`不允许加仓：${s.addCondition}`);
+  }
+  if (addLines.length) lines.push(`加仓：${addLines.join("；")}`);
+
+  // 减仓/清仓
+  if (s.reduceCondition) lines.push(`减仓：${s.reduceCondition}`);
+
+  // 仓位计算（仅当给出了股数/成数）
+  if (s.suggestedShares !== null || s.suggestedCheng !== null) {
+    const parts: string[] = [];
+    if (s.suggestedShares !== null) parts.push(`${s.suggestedShares} 股`);
+    if (s.suggestedCheng !== null) parts.push(`${(s.suggestedCheng * 100).toFixed(1)} 成`);
+    lines.push(`仓位计算：${parts.join("，")}`);
+  }
+
+  // 风险与缺口
+  const riskParts: string[] = [];
+  if (s.risks?.trim()) riskParts.push(s.risks.trim());
+  if (s.dataGaps?.trim()) riskParts.push(`数据缺口：${s.dataGaps.trim()}`);
+  if (riskParts.length) lines.push(`风险与缺口：${riskParts.join("；")}`);
+
+  return lines.join("\n");
+}
+
 type DeepSeekResponse = {
   choices?: Array<{ message?: { content?: string } }>;
 };
@@ -554,13 +615,13 @@ export async function generateStrategy(
     const structured = parseStructuredOutput(aiAnswer);
 
     if (structured) {
-      // 结构化解析成功 → 校验 + 对比规则引擎
+      // 结构化解析成功 → 校验 + 对比规则引擎 + 用渲染版 markdown 替代原文
       const validationWarnings = validateStructured(structured, context, prefs);
       const aiAction = structured.action;
       const diff = ruleAction !== null && aiAction !== null ? ruleAction !== aiAction : null;
 
       return {
-        content: aiAnswer, // 保留原始文本，前端可降级
+        content: renderStructuredToText(structured), // 用渲染版 markdown，前端 StrategyBlocks 才能分块
         mode: ai.provider,
         ruleAction,
         aiAction,
