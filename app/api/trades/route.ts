@@ -404,13 +404,13 @@ export async function PATCH(request: Request) {
         createdAt: shanghaiIso(),
       }));
       const [tradeRows] = await db.batch([
-        db.update(tradeRecords).set(updates).where(eq(tradeRecords.id, id)).returning(),
+        db.update(tradeRecords).set(updates).where(and(eq(tradeRecords.id, id), eq(tradeRecords.userId, user.id))).returning(),
         db.delete(alertRules).where(and(eq(alertRules.userId, user.id), eq(alertRules.symbol, next.symbol), isNull(alertRules.acknowledgedAt))),
         db.insert(alertRules).values(targets),
       ]);
       trade = tradeRows[0];
     } else {
-      [trade] = await db.update(tradeRecords).set(updates).where(eq(tradeRecords.id, id)).returning();
+      [trade] = await db.update(tradeRecords).set(updates).where(and(eq(tradeRecords.id, id), eq(tradeRecords.userId, user.id))).returning();
     }
     return Response.json({ trade });
   } catch {

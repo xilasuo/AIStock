@@ -5584,10 +5584,12 @@ function PreferencesSettings({ preferences, onSave }: { preferences: TradingPref
         <div className="form-group">
           <label>单股最大仓位（%）</label>
           <input className="text-input" type="number" min="1" step="1" value={maxConcentrationPercent} onChange={(e) => setMaxConcentrationPercent(e.target.value)} />
+          <Hint>单只股票市值 ÷ 账户总资产 的上限，控制个股集中度。</Hint>
         </div>
         <div className="form-group">
           <label>账户最大总仓位（%）</label>
           <input className="text-input" type="number" min="1" step="1" value={maxPositionPercent} onChange={(e) => setMaxPositionPercent(e.target.value)} />
+          <Hint>全部持仓市值 ÷ 账户总资产 的上限，控制整体杠杆。</Hint>
         </div>
       </div>
       <div className="form-group checkbox">
