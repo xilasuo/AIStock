@@ -127,4 +127,20 @@ export function bytesToBase64Url(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
+/**
+ * 纯逻辑比较「请求方提供的令牌」与「云端共享密钥」是否一致。
+ * 抽离出 env/Request 依赖以便单测（verifyPushToken 在 auth.ts 中读 env 后调用）。
+ *
+ * 规则：
+ * - 密钥或令牌任一为空 → false（不允许空令牌通过）
+ * - 统一恒定时间比较（safeEqual），避免响应耗时侧信道逐字节爆破
+ */
+export function verifyPushTokenValue(
+  provided: string | undefined,
+  secret: string | undefined,
+): Promise<boolean> {
+  if (!secret || !provided) return Promise.resolve(false);
+  return safeEqual(provided, secret);
+}
+
 export { SESSION_SECONDS };

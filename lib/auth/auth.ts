@@ -11,6 +11,7 @@ import {
   generateSalt,
   hashPassword,
   SESSION_SECONDS,
+  verifyPushTokenValue,
 } from "./crypto";
 
 export type AuthenticatedUser = {
@@ -78,8 +79,8 @@ export function pushSharedSecret(): string | undefined {
 /**
  * 校验请求头中的推送令牌是否与云端 STRATEGY_PUSH_TOKEN（回退 CRON_SECRET）一致。
  *
- * 统一使用恒定时间比较（safeEqual），避免通过响应耗时侧信道逐字节爆破令牌；
- * 未配置密钥或未携带令牌时一律返回 false（不允许空令牌通过）。
+ * 比较逻辑在 crypto.verifyPushTokenValue（纯函数，可单测）；此处仅负责从
+ * 请求头提取令牌并读取云端密钥。统一恒定时间比较，避免响应耗时侧信道。
  */
 export async function verifyPushToken(req: Request): Promise<boolean> {
   const secret = pushSharedSecret();
@@ -87,8 +88,7 @@ export async function verifyPushToken(req: Request): Promise<boolean> {
     req.headers.get("x-push-token") ||
     req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
     undefined;
-  if (!secret || !provided) return false;
-  return safeEqual(provided, secret);
+  return verifyPushTokenValue(provided, secret);
 }
 
 /**

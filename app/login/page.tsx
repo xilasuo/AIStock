@@ -30,7 +30,7 @@ export default async function LoginPage({
         <div className="login-main">
           {!configured && (
             <div className="login-error">
-              尚未配置登录密钥。请在环境变量中设置 APP_AUTH_SECRET（至少 32 位）。首次启动还需设置 APP_USERNAME 与 APP_PASSWORD（至少 12 位）以初始化超级管理员账号。
+              尚未配置登录密钥。必须设置 APP_AUTH_SECRET（至少 32 位）才能启用登录；首次启动还需设置 APP_USERNAME 与 APP_PASSWORD（均至少 12 位）以初始化超级管理员账号。
             </div>
           )}
           {configured && error && <div className="login-error">账号或密码不正确，请重新输入。</div>}

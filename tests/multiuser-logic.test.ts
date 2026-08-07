@@ -6,6 +6,7 @@ import {
   createSessionToken,
   verifyToken,
   safeEqual,
+  verifyPushTokenValue,
 } from "../lib/auth/crypto";
 import { normalizePreferences, DEFAULT_PREFERENCES } from "../lib/utils/preferences";
 import { buildTradeCycles, type Trade } from "../lib/domain/domain";
@@ -78,6 +79,22 @@ test("safeEqual 恒定时间比较：相等/不等/长度不同/空串", async (
   assert.equal(await safeEqual("", ""), true);
   // 前缀相同但长度不同不应被误判为相等（防前缀爆破）
   assert.equal(await safeEqual("token", "token-extra"), false);
+});
+
+test("verifyPushTokenValue 推送令牌比较：匹配/不匹配/空值拒绝", async () => {
+  const secret = "strategy-push-token-123";
+  // 令牌与密钥一致 → 通过
+  assert.equal(await verifyPushTokenValue("strategy-push-token-123", secret), true);
+  // 令牌被篡改一字节 → 拒绝
+  assert.equal(await verifyPushTokenValue("strategy-push-token-124", secret), false);
+  // 令牌为空 → 拒绝（不允许空令牌通过）
+  assert.equal(await verifyPushTokenValue(undefined, secret), false);
+  assert.equal(await verifyPushTokenValue("", secret), false);
+  // 密钥未配置（undefined/空）→ 拒绝
+  assert.equal(await verifyPushTokenValue("some-token", undefined), false);
+  assert.equal(await verifyPushTokenValue("some-token", ""), false);
+  // 密钥与令牌都为空 → 拒绝（不会误判相等）
+  assert.equal(await verifyPushTokenValue(undefined, undefined), false);
 });
 
 test("normalizePreferences 缺省回落默认且不会串读", () => {
