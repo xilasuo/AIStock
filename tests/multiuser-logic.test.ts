@@ -70,8 +70,8 @@ test("normalizePreferences 缺省回落默认且不会串读", () => {
   // 用户 A 无偏好 -> 默认；用户 B 的偏好独立（激进预设默认值生效）
   const b = normalizePreferences({ riskProfile: "激进" });
   assert.equal(b.riskProfile, "激进");
-  assert.equal(b.maxLossPercent, 4); // 激进预设默认
-  assert.equal(b.enforceStopLoss, false);
+  assert.equal(b.maxLossPercent, 6); // 激进预设默认（占买入价 % 止损线）
+  assert.equal(b.enforceStopLoss, true);
   assert.equal(b.disciplineNote, "");
   // A 仍是默认，未被 B 影响
   assert.equal(normalizePreferences(undefined).riskProfile, "平衡");
@@ -80,13 +80,13 @@ test("normalizePreferences 缺省回落默认且不会串读", () => {
 test("normalizePreferences 采纳合法值、回落非法值、截断长备注", () => {
   const p = normalizePreferences({
     riskProfile: "平衡",
-    maxLossPercent: -5, // 负值非法 -> 回落预设默认 2
+    maxLossPercent: -5, // 负值非法 -> 回落预设默认(平衡=3)
     maxConcentrationPercent: 999, // 超上限 -> 钳到 100
     maxPositionPercent: 50, // 合法 -> 原样保留
     enforceStopLoss: true,
     disciplineNote: "x".repeat(600),
   });
-  assert.equal(p.maxLossPercent, 2); // 负值回落预设
+  assert.equal(p.maxLossPercent, 3); // 负值回落预设(平衡=3)
   assert.equal(p.maxConcentrationPercent, 100); // 上限
   assert.equal(p.maxPositionPercent, 50); // 合法保留
   assert.equal(p.disciplineNote.length, 500); // 截断

@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     const side = payload.side;
     const rawPrice = Number(payload.price);
     const maxLossNumber = Number(payload.maxLoss);
-    const rawMaxLoss =
+    let rawMaxLoss =
       payload.maxLoss === undefined || payload.maxLoss === null || payload.maxLoss === "" || maxLossNumber === 0
         ? null
         : maxLossNumber;
@@ -52,8 +52,26 @@ export async function POST(request: Request) {
     const tradeDate = payload.tradeDate;
     const reason = String(payload.reason ?? "").trim();
     const otherReason = String(payload.otherReason ?? "").trim();
-    const maxLossCents = rawMaxLoss === null ? null : toCents(rawMaxLoss);
+    let maxLossCents = rawMaxLoss === null ? null : toCents(rawMaxLoss);
     let feeCents = toCents(rawFee);
+
+    // 提前取偏好与 db，便于在「未手动填最大亏损」时按 maxLossPercent 自动推算止损
+    await ensureSchema();
+    const db = getDb();
+    const prefs = await fetchPreferences(db, user.id);
+    // 买入且未填最大亏损金额时，按「单笔最大可亏（占买入价 %）」自动推算止损：
+    // 止损价 = 买入价 ×(1 − maxLossPercent%)，对应每股最大亏损 = 买入价 × maxLossPercent%。
+    if (
+      side === "买入" &&
+      rawMaxLoss === null &&
+      Number(prefs.maxLossPercent) > 0 &&
+      priceTenThousandths > 0 &&
+      quantity > 0
+    ) {
+      const autoMaxLossYuan = rawPrice * (prefs.maxLossPercent / 100);
+      rawMaxLoss = autoMaxLossYuan;
+      maxLossCents = toCents(autoMaxLossYuan);
+    }
     // 可选：技术面止损价（元），来自分析支撑位，优先于 maxLoss 反推止损
     const stopLossNumber = Number(payload.stopLoss);
     const stopLoss = payload.stopLoss !== undefined && payload.stopLoss !== null && payload.stopLoss !== "" && Number.isFinite(stopLossNumber) && stopLossNumber > 0
@@ -108,11 +126,8 @@ export async function POST(request: Request) {
       return Response.json({ error: "止损价必须低于买入价" }, { status: 400 });
     }
 
-    await ensureSchema();
-    const db = getDb();
     // 手续费兜底：显式填了 >0 保留；空或为 0 时按「交易费用」设置自动补算，避免手续费漏记成 0
     if (!hasExplicitFee) {
-      const prefs = await fetchPreferences(db, user.id);
       const amountYuan = (priceTenThousandths * quantity) / 10000;
       feeCents = estimateTradeFeeCents(amountYuan, side === "卖出" ? "卖出" : "买入", prefs);
     }

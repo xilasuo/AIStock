@@ -139,7 +139,7 @@ export function buildStrategyFallback(context: AssistantContext, prefs: TradingP
     return [
       `结论：开新仓判断——可以开新仓（买入建仓）。`,
       `依据：总仓位${totalPosition.toFixed(2)}%仍有空间，现金${context.portfolio.cash === null ? "暂无" : `¥${context.portfolio.cash.toFixed(2)}`}；现价¥${quote.price.toFixed(3)}，风险观察线¥${quote.support.toFixed(3)}，单笔风险每股约¥${riskPerShare.toFixed(3)}。`,
-      `建议仓位：约${cheng.toFixed(2)}成（约${shares}股），按价格到支撑线的距离控单笔亏损（单笔可亏=总资产${prefs.maxLossPercent}%、单股不超${prefs.maxConcentrationPercent}%）；${prefs.enforceStopLoss ? "买入前必须先设止损，" : ""}止损位设在¥${quote.support.toFixed(3)}下方。`,
+      `建议仓位：约${cheng.toFixed(2)}成（约${shares}股），按价格到支撑线的距离控单笔亏损（单笔可亏=占买入价${prefs.maxLossPercent}%、单股不超${prefs.maxConcentrationPercent}%）；${prefs.enforceStopLoss ? "买入前必须先设止损，" : ""}止损位设在¥${quote.support.toFixed(3)}下方。`,
       `风险与缺口：开新仓只限风险，不证明会涨；${context.missingInformation.slice(0, 2).join("、") || "最新公告仍需自行核验"}${osc ? `\n动能信号：${osc}` : ""}。`,
       "下一步：先定买入逻辑与失效条件，再决定下不下手，最终由你确认执行。",
     ].join("\n");

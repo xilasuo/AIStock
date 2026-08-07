@@ -7432,6 +7432,36 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
   margin: 10px 0 0;
 }
 
+/* 买入弹窗：自动按设置比例建止损的确认条 */
+.auto-stoploss-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-soft));
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.auto-stoploss__check {
+  flex: 0 0 auto;
+  width: 18px; height: 18px;
+  display: grid; place-items: center;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: 1px;
+}
+.auto-stoploss__text { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.auto-stoploss__text strong { color: var(--text); font-size: var(--fs-sm); }
+.auto-stoploss__text span { color: var(--text-muted); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
+.link-btn {
+  background: none; border: 0; color: var(--accent-ink);
+  font-size: var(--fs-xs); cursor: pointer; padding: 0; white-space: nowrap;
+}
+.link-btn:hover { text-decoration: underline; }
+
 /* 榜单次要因子列默认收起（避免 16 列横向溢出），点「展开全部因子」再显示 */
 .scan-table-wrap:not(.scan-table-wrap--extra) .scan-col--optional { display: none; }
 

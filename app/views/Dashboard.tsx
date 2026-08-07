@@ -5036,6 +5036,8 @@ function TradeModal({ mode, stock, editTrade, positions, analysisQuote, livePric
   const priceRef = useRef<HTMLInputElement>(null);
   const qtyRef = useRef<HTMLInputElement>(null);
   const reasonFieldsetRef = useRef<HTMLFieldSetElement>(null);
+  const [customMaxLoss, setCustomMaxLoss] = useState(Boolean(editTrade?.side === "买入" && editTrade?.maxLossCents));
+  const [previewStop, setPreviewStop] = useState("");
   const [saving, setSaving] = useState(false);
   const [selectedReason, setSelectedReason] = useState(editTrade?.reason ?? "");
   const [reasonError, setReasonError] = useState(false);
@@ -5094,6 +5096,10 @@ function TradeModal({ mode, stock, editTrade, positions, analysisQuote, livePric
     if (!Number.isFinite(p) || p <= 0 || !Number.isFinite(q) || q <= 0) return;
     const cents = estimateTradeFeeCents(p * q, mode === "sell" ? "卖出" : "买入", prefs ?? DEFAULT_PREFERENCES);
     setFeeValue((cents / 100).toFixed(2));
+    // 实时预览：自动止损价 = 买入价 ×(1 − maxLossPercent%)
+    if (mode === "buy" && prefs?.maxLossPercent) {
+      setPreviewStop((p * (1 - Number(prefs.maxLossPercent) / 100)).toFixed(2));
+    }
   }
 
   useEffect(() => {
@@ -5231,9 +5237,21 @@ function TradeModal({ mode, stock, editTrade, positions, analysisQuote, livePric
                 <Field label="止损价（元，可选）" help="留空时按下方「最多接受亏损」反推；也可点上方「技术面建议」用支撑位自动填入，系统据此设止损并算止盈。">
                   <Input ref={stopLossRef} name="stopLoss" type="number" min="0" step="any" defaultValue={defaultStopLoss} placeholder="技术面支撑位或自定" />
                 </Field>
-                <Field label="最多接受亏损（元）" help={`这笔最多愿意亏多少？系统按「成本价 − 亏损 ÷ 股数」反推止损价，并按 ${TAKE_PROFIT_1_R}/${TAKE_PROFIT_2_R} 倍风险自动算止盈一、止盈二。`}>
-                  <Input ref={maxLossRef} name="maxLoss" type="number" min="0" step="0.01" defaultValue={defaultMaxLoss} placeholder="例如 500" />
-                </Field>
+                {prefs?.maxLossPercent && !customMaxLoss ? (
+                  <div className="auto-stoploss-box">
+                    <span className="auto-stoploss__check">✓</span>
+                    <div className="auto-stoploss__text">
+                      <strong>自动按买入价 {prefs.maxLossPercent}% 建立止损</strong>
+                      <span>{previewStop ? `买入价触发止损价约 ¥${previewStop}（亏损 ${prefs.maxLossPercent} 个点）` : `填写买入价格后自动换算止损价`}，止盈一/二按 ${TAKE_PROFIT_1_R}/${TAKE_PROFIT_2_R}R 推算。</span>
+                    </div>
+                    <button type="button" className="link-btn" onClick={() => setCustomMaxLoss(true)}>自定义金额</button>
+                  </div>
+                ) : (
+                  <Field label="最多接受亏损（元）" help={prefs?.maxLossPercent ? `留空则按设置「单笔最大可亏 ${prefs.maxLossPercent}%」自动以买入价 ×(1−${prefs.maxLossPercent}%) 建立止损提醒。` : `这笔最多愿意亏多少？系统按「成本价 − 亏损 ÷ 股数」反推止损价，并按 ${TAKE_PROFIT_1_R}/${TAKE_PROFIT_2_R} 倍风险自动算止盈一、止盈二。`}>
+                    <Input ref={maxLossRef} name="maxLoss" type="number" min="0" step="0.01" defaultValue={defaultMaxLoss} placeholder={prefs?.maxLossPercent ? `留空=自动(${prefs.maxLossPercent}%)` : "例如 500"} />
+                    {customMaxLoss && <button type="button" className="link-btn" onClick={() => setCustomMaxLoss(false)} style={{ marginTop: 6 }}>恢复自动</button>}
+                  </Field>
+                )}
                 <Field label="止盈价一（元，可选）" help={`留空则按 ${TAKE_PROFIT_1_R} 倍风险自动推算；填写后覆盖系统推算。`}>
                   <Input ref={takeProfit1Ref} name="takeProfit1" type="number" min="0" step="any" defaultValue={defaultTakeProfit1} placeholder={`留空则按 ${TAKE_PROFIT_1_R}R 推算`} />
                 </Field>
@@ -5559,8 +5577,9 @@ function PreferencesSettings({ preferences, onSave }: { preferences: TradingPref
       </div>
       <div className="form-row">
         <div className="form-group">
-          <label>单笔最大可亏（占总资产 %）</label>
+          <label>单笔最大可亏（占买入价 %）</label>
           <input className="text-input" type="number" min="0.1" step="0.1" value={maxLossPercent} onChange={(e) => setMaxLossPercent(e.target.value)} />
+          <Hint>买入未填「最多接受亏损」时，自动以买入价 ×(1−本比例) 建立止损提醒（如填 3 即亏损 3 个点触发）。</Hint>
         </div>
         <div className="form-group">
           <label>单股最大仓位（%）</label>

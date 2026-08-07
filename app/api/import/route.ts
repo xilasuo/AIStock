@@ -37,7 +37,12 @@ export async function POST(request: Request) {
     const ordered = [...rows].sort((a, b) => (a.tradeDate < b.tradeDate ? -1 : a.tradeDate > b.tradeDate ? 1 : 0));
     const alertInserts: Array<typeof alertRules.$inferInsert> = [];
     for (const row of ordered) {
-      const maxLoss = extractMaxLossPercent(row.reason);
+      let maxLoss = extractMaxLossPercent(row.reason);
+      // 交割单未带亏损比例时，若设置了「单笔最大可亏（占买入价 %）」，买入自动按
+      // 买入价 ×(1 − 该%) 建立止损提醒，与手动买入行为一致。
+      if (maxLoss === null && row.side === "买入" && Number(prefs.maxLossPercent) > 0 && row.price > 0) {
+        maxLoss = row.price * (prefs.maxLossPercent / 100);
+      }
       // 交割单自带实际费用则原样保留；缺费用列(fee=0)时按「交易费用」设置自动补算，避免漏记成 0
       const feeYuan = row.fee > 0
         ? row.fee

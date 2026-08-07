@@ -29,10 +29,12 @@ export const DEFAULT_FEE_SETTINGS = {
   minCommissionCents: 500,
 } as const;
 
+// maxLossPercent 语义统一为「占买入价 % 的止损线」：买入未填最大亏损时，
+// 自动以 买入价 ×(1 − maxLossPercent%) 建立止损提醒。
 export const RISK_PRESETS: Record<RiskProfile, Omit<TradingPreferences, "tradeMode" | "disciplineNote" | "commissionRateTenThousandths" | "minCommissionCents">> = {
-  保守: { riskProfile: "保守", maxLossPercent: 1, maxConcentrationPercent: 15, maxPositionPercent: 50, enforceStopLoss: true, stealthMode: false },
-  平衡: { riskProfile: "平衡", maxLossPercent: 2, maxConcentrationPercent: 30, maxPositionPercent: 70, enforceStopLoss: true, stealthMode: false },
-  激进: { riskProfile: "激进", maxLossPercent: 4, maxConcentrationPercent: 50, maxPositionPercent: 90, enforceStopLoss: false, stealthMode: false },
+  保守: { riskProfile: "保守", maxLossPercent: 2, maxConcentrationPercent: 15, maxPositionPercent: 50, enforceStopLoss: true, stealthMode: false },
+  平衡: { riskProfile: "平衡", maxLossPercent: 3, maxConcentrationPercent: 30, maxPositionPercent: 70, enforceStopLoss: true, stealthMode: false },
+  激进: { riskProfile: "激进", maxLossPercent: 6, maxConcentrationPercent: 50, maxPositionPercent: 90, enforceStopLoss: true, stealthMode: false },
 };
 
 export const DEFAULT_PREFERENCES: TradingPreferences = {
@@ -82,9 +84,9 @@ export function normalizePreferences(row: PreferencesInput | undefined | null): 
     maxLossPercent: clampPercent(row.maxLossPercent, preset.maxLossPercent),
     maxConcentrationPercent: clampPercent(row.maxConcentrationPercent, preset.maxConcentrationPercent),
     maxPositionPercent: clampPercent(row.maxPositionPercent, preset.maxPositionPercent),
-    enforceStopLoss: Boolean(row.enforceStopLoss),
+    enforceStopLoss: typeof row.enforceStopLoss === "boolean" ? row.enforceStopLoss : preset.enforceStopLoss,
     disciplineNote: typeof row.disciplineNote === "string" ? row.disciplineNote.slice(0, 500) : "",
-    stealthMode: Boolean(row.stealthMode),
+    stealthMode: typeof row.stealthMode === "boolean" ? row.stealthMode : preset.stealthMode,
     commissionRateTenThousandths: clampNonNegative(row.commissionRateTenThousandths, DEFAULT_FEE_SETTINGS.commissionRateTenThousandths) || DEFAULT_FEE_SETTINGS.commissionRateTenThousandths,
     minCommissionCents: clampNonNegative(row.minCommissionCents, DEFAULT_FEE_SETTINGS.minCommissionCents),
   };

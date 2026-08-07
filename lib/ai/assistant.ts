@@ -192,7 +192,7 @@ export function buildFallbackAnswer(
       : stockPosition >= 20
         ? "该股占比已高，先降集中度，别再堆单票"
         : "仓位层面仍有空间，但空间不等于买点，标的得自己过关";
-    return `### 结论\n操盘手视角——${constraint}。\n### 依据\n当前总仓位${totalPosition.toFixed(2)}%，${stock.name}仓位${stockPosition.toFixed(2)}%，现金${context.portfolio.cash === null ? "暂无" : `¥${context.portfolio.cash.toFixed(2)}`}；当前价¥${quote.price.toFixed(3)}，风险观察线¥${quote.support.toFixed(3)}，单笔风险每股¥${riskPerShare.toFixed(3)}。\n可挂单仓位：约${cheng.toFixed(2)}成（约${shares}股），按价格到支撑线的距离控单笔亏损（单笔可亏=总资产${prefs.maxLossPercent}%、单股不超${prefs.maxConcentrationPercent}%），最终由你确认执行${prefs.enforceStopLoss ? "，且买入前必须先设止损" : ""}。\n### 风险与缺口\n仓位只限风险，不证明会涨；${context.missingInformation.slice(0, 2).join("、") || "最新公告仍需核验"}${osc ? `\n动能：${osc}` : ""}。\n### 下一步\n先定买入逻辑、失效条件和单笔最大亏损，再决定下不下手。`;
+    return `### 结论\n操盘手视角——${constraint}。\n### 依据\n当前总仓位${totalPosition.toFixed(2)}%，${stock.name}仓位${stockPosition.toFixed(2)}%，现金${context.portfolio.cash === null ? "暂无" : `¥${context.portfolio.cash.toFixed(2)}`}；当前价¥${quote.price.toFixed(3)}，风险观察线¥${quote.support.toFixed(3)}，单笔风险每股¥${riskPerShare.toFixed(3)}。\n可挂单仓位：约${cheng.toFixed(2)}成（约${shares}股），按价格到支撑线的距离控单笔亏损（单笔可亏=占买入价${prefs.maxLossPercent}%、单股不超${prefs.maxConcentrationPercent}%），最终由你确认执行${prefs.enforceStopLoss ? "，且买入前必须先设止损" : ""}。\n### 风险与缺口\n仓位只限风险，不证明会涨；${context.missingInformation.slice(0, 2).join("、") || "最新公告仍需核验"}${osc ? `\n动能：${osc}` : ""}。\n### 下一步\n先定买入逻辑、失效条件和单笔最大亏损，再决定下不下手。`;
   }
 
   if (/卖出|减仓|清仓|止盈|获利了结|离场/.test(question)) {
