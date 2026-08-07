@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.13"
+
+      # 注意：本仓库 .gitignore 忽略了 package-lock.json，因此无法使用 npm ci。
+      # 这意味着 CI 与本地可能装到不同的依赖版本（供应链风险）。
+      # 建议后续取消忽略并提交 lockfile，再把此处切回 npm ci。
+      - name: 安装依赖
+        run: npm install --no-audit --no-fund
+
+      - name: 类型检查
+        run: npm run typecheck
+
+      - name: 代码规范
+        run: npm run lint
+
+      - name: 单元测试
+        run: npm test
+
+      - name: 构建
+        run: npm run build

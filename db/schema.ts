@@ -19,6 +19,8 @@ export const users = sqliteTable("users", {
   displayName: text("display_name").notNull().default(""),
   role: text("role", { enum: ["super_admin", "user"] }).notNull().default("user"),
   disabled: integer("disabled", { mode: "boolean" }).notNull().default(false),
+  // 会话版本号：改密 / 禁用 / 改角色时自增，使该用户已签发的 token 立即失效。
+  tokenVersion: integer("token_version").notNull().default(0),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
   // 每次冷启动 ensureSchema 都会 WHERE role = 'super_admin' 检查种子账号。

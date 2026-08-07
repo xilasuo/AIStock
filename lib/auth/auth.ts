@@ -12,6 +12,7 @@ import {
   hashPassword,
   SESSION_SECONDS,
   verifyPushTokenValue,
+  type SessionUser,
 } from "./crypto";
 
 export type AuthenticatedUser = {
@@ -52,7 +53,52 @@ export async function getAuthenticatedUser(): Promise<AuthenticatedUser | null> 
   const payload = await verifySessionToken(token, config.secret);
   if (!payload) return null;
 
-  return payload;
+  // 验签只证明 token 未被篡改，不代表账号当前仍然有效。必须回查数据库，
+  // 否则「禁用 / 删除 / 改密 / 降级」在 token 自然过期前（最长 30 天）全部无效：
+  //   - 已禁用或已删除的用户仍能访问全部业务接口；
+  //   - 被降级的超管凭旧 token 仍可通过 requireSuperAdmin，构成权限提升。
+  // 角色一律以库为准，不信任 token 内的 role。
+  return resolveLiveUser(payload);
+}
+
+/**
+ * 用会话 payload 回查数据库，返回「当前仍然有效」的用户；任一条件不满足即视为未登录：
+ * 用户不存在（已删除）、已禁用、token_version 已自增（改密/禁用/改角色后作废存量会话）。
+ *
+ * 返回值中的 role / username 以数据库为准，避免 token 内的陈旧值被信任。
+ */
+async function resolveLiveUser(session: SessionUser): Promise<AuthenticatedUser | null> {
+  let row;
+  try {
+    const db = getDb();
+    const rows = await db
+      .select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        role: users.role,
+        disabled: users.disabled,
+        tokenVersion: users.tokenVersion,
+      })
+      .from(users)
+      .where(eq(users.id, session.id))
+      .limit(1);
+    row = rows[0];
+  } catch (error) {
+    // 数据库不可用时保守判定为未登录（fail-closed），不放行任何请求。
+    console.error("[auth] 回查用户失败，按未登录处理", error);
+    return null;
+  }
+
+  if (!row || row.disabled) return null;
+  if ((row.tokenVersion ?? 0) !== session.tokenVersion) return null;
+
+  return {
+    id: row.id,
+    username: row.username,
+    displayName: row.displayName || row.username,
+    role: row.role as "super_admin" | "user",
+  };
 }
 
 export async function requireAuthenticatedUser(): Promise<AuthenticatedUser> {
@@ -176,15 +222,8 @@ function getAuthConfig(): AuthConfig | null {
   return { secret };
 }
 
-async function verifySessionToken(token: string, secret: string): Promise<AuthenticatedUser | null> {
-  const session = await verifyToken(token, secret);
-  if (!session) return null;
-  return {
-    id: session.id,
-    username: session.username,
-    displayName: session.displayName,
-    role: session.role,
-  };
+async function verifySessionToken(token: string, secret: string): Promise<SessionUser | null> {
+  return verifyToken(token, secret);
 }
 
 // 账户管理接口复用同一套密码哈希工具（实现位于 lib/crypto.ts）

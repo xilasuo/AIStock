@@ -282,6 +282,11 @@ export async function ensureSchema() {
     // 供 optimizer 计算「哪些因子在用户认可的信号里更重要」，反向调整权重。
     await addColumnIfMissing("strategy_feedback", "factors", "factors TEXT NOT NULL DEFAULT ''");
 
+    // 1.10) 会话版本号：支撑「改密 / 禁用 / 降级后立刻踢下线」。
+    // 会话 token 内嵌签发时的 token_version，鉴权时与库中当前值比对，不一致即失效。
+    // 管理员修改密码、禁用账号、变更角色时自增该列，使该用户存量 token 全部作废。
+    await addColumnIfMissing("users", "token_version", "token_version INTEGER NOT NULL DEFAULT 0");
+
     // 逐个建索引（不放入 db.batch）：D1 中 ALTER TABLE ADD COLUMN 后，同一 batch 内
     // 的 CREATE INDEX 可能因 schema 缓存看不到刚加的列而报 no such column。逐条 run()
     // 每条都会重新解析 schema，保证 ADD COLUMN 后的索引创建稳健幂等。

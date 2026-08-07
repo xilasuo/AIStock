@@ -152,6 +152,17 @@ docker compose exec fupanbu grep -l "strategyScan" /app/app/api/strategy-scan/ro
 
 ---
 
+## 7.1 价格提醒触发判定的权威归属
+
+> 2026-08-07 收口：提醒的 `triggeredAt` 标记**统一由服务端负责**，前端不再判定也不再写 `trigger`。
+
+- **权威源**：`/api/cron/check-alerts`（Cloudflare Cron Trigger 或外部定时器触发，需 `Authorization: Bearer <CRON_SECRET>`）调 `lib/utils/notify.ts` 的 `checkAndNotifyAlerts`：拉实时价 → 按止损/止盈判定 → 命中则经 `NOTIFY_WEBHOOK_URLS` 推送并批量 `UPDATE triggeredAt`。多用户隔离：按 `userId` 分组，推送文案带用户名前缀。
+- **前端角色降级**：`app/views/Dashboard.tsx` 的 `checkAlerts` 仅做「基于最新行情的即时闪烁 + 系统通知」展示，检测到触发时**不再** `PATCH trigger`。用户可在提醒面板手动 `acknowledge`（已读）或 `disable`（停用）。
+- **`/api/alerts` PATCH 已移除 `trigger` action**：避免任何登录客户端绕过行情自行把提醒标记为已触发。合法 action 仅 `disable` / `acknowledge` / `update`（改价会清 `triggeredAt`/`acknowledgedAt` 视为新提醒）。
+- **运维含义**：若希望离线（app 关闭）也能收到止损/止盈推送，必须配置 `NOTIFY_WEBHOOK_URLS` 并启用 cron 定时调用 `/api/cron/check-alerts`；仅靠前端轮询无法覆盖离线时段。
+
+---
+
 ## 8. WorkBuddy 自动化编排（盘前·邮箱+企业微信推送）
 
 > 本自动化（名称「每日选股中枢编排（盘前·邮箱+企业微信推送）」，状态 ACTIVE）是「中枢模式」的定时驱动方，存储于 WorkBuddy 自动化数据库（**不在本仓库**）。此处沉淀其编排逻辑，便于维护与复现。**下文不记录任何 token / 密码明文；本地绝对路径一律泛化为相对路径或 `<...>` 占位符；邮箱地址仅以「agent-mail 智能体邮箱」指代（明文见使用手册）。**

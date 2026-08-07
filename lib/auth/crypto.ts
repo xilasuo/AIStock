@@ -10,6 +10,12 @@ export type SessionUser = {
   displayName: string;
   role: "super_admin" | "user";
   email?: string;
+  /**
+   * 签发该 token 时用户的会话版本号。鉴权时需与库中 users.token_version 比对，
+   * 不一致说明期间发生过改密 / 禁用 / 角色变更，token 应立即失效。
+   * 老 token（改造前签发，payload 无此字段）按 0 处理。
+   */
+  tokenVersion: number;
 };
 
 export function generateSalt(): string {
@@ -62,6 +68,7 @@ export async function verifyToken(
       username?: unknown;
       role?: unknown;
       expiresAt?: unknown;
+      tokenVersion?: unknown;
     };
     if (
       typeof parsed.sub !== "number" ||
@@ -77,6 +84,8 @@ export async function verifyToken(
       username: parsed.username,
       displayName: parsed.username,
       role: parsed.role,
+      // 改造前签发的老 token 无该字段，按 0 处理（与库中默认值一致，不会误杀）。
+      tokenVersion: typeof parsed.tokenVersion === "number" ? parsed.tokenVersion : 0,
     };
   } catch {
     return null;
@@ -84,13 +93,19 @@ export async function verifyToken(
 }
 
 export async function createSessionToken(
-  user: { id: number; username: string; role: "super_admin" | "user" },
+  user: { id: number; username: string; role: "super_admin" | "user"; tokenVersion?: number },
   secret: string,
   nowMs = Date.now(),
 ): Promise<string> {
   const expiresAt = Math.floor(nowMs / 1000) + SESSION_SECONDS;
   const payload = toBase64Url(
-    JSON.stringify({ sub: user.id, username: user.username, role: user.role, expiresAt }),
+    JSON.stringify({
+      sub: user.id,
+      username: user.username,
+      role: user.role,
+      expiresAt,
+      tokenVersion: user.tokenVersion ?? 0,
+    }),
   );
   const signature = await signToken(payload, secret);
   return `${payload}.${signature}`;

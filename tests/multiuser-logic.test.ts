@@ -60,6 +60,25 @@ test("篡改 token 或错误密钥被拒绝", async () => {
   assert.equal(await verifyToken("not.a.token", SECRET), null);
 });
 
+test("会话 token 携带签发时的会话版本号", async () => {
+  const token = await createSessionToken(
+    { id: 7, username: "alice", role: "user", tokenVersion: 3 },
+    SECRET,
+  );
+  const user = await verifyToken(token, SECRET);
+  assert.ok(user);
+  assert.equal(user.tokenVersion, 3);
+});
+
+test("改造前签发的老 token 缺少版本号时按 0 处理", async () => {
+  // 老 token 的 payload 里没有 tokenVersion 字段，解析后应回落为 0，
+  // 与库中 token_version 的默认值一致，避免升级瞬间把所有人踢下线。
+  const token = await createSessionToken({ id: 7, username: "alice", role: "user" }, SECRET);
+  const user = await verifyToken(token, SECRET);
+  assert.ok(user);
+  assert.equal(user.tokenVersion, 0);
+});
+
 test("过期 token 被拒绝", async () => {
   const expired = new Date("2020-01-01T00:00:00Z").getTime();
   const token = await createSessionToken({ id: 7, username: "alice", role: "user" }, SECRET, expired);

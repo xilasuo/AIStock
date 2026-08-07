@@ -33,7 +33,14 @@ export default async function LoginPage({
               尚未配置登录密钥。必须设置 APP_AUTH_SECRET（至少 32 位）才能启用登录；首次启动还需设置 APP_USERNAME 与 APP_PASSWORD（均至少 12 位）以初始化超级管理员账号。
             </div>
           )}
-          {configured && error && <div className="login-error">账号或密码不正确，请重新输入。</div>}
+          {configured && error === "locked" && (
+            <div className="login-error">
+              失败次数过多，该账号或来源已被临时锁定，请稍后再试。
+            </div>
+          )}
+          {configured && error && error !== "locked" && (
+            <div className="login-error">账号或密码不正确，请重新输入。</div>
+          )}
           <div className="login-main-head">
             <span className="eyebrow">登录</span>
             <h2>登录你的个人空间</h2>

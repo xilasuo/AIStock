@@ -54,6 +54,54 @@ test("超出持仓数量的卖出不会制造负持仓", () => {
   assert.equal(summary.realizedCents, -20_000);
 });
 
+test("卖出被截断时手续费按实际成交比例摊销", () => {
+  // 持仓 20 股，卖单申报 100 股：实际只能成交 20 股（1/5），
+  // 手续费 500 分也应只摊 1/5（100 分），而不是整笔扣除。
+  // 收入 20×90 元 - 成本 20×100 元 = -200 元，再扣 1 元手续费 = -201 元。
+  const summary = calculatePortfolio([
+    trade({ quantity: 20, priceCents: 10_000 }),
+    trade({
+      id: 2,
+      side: "卖出",
+      quantity: 100,
+      priceCents: 9_000,
+      tradeDate: "2026-07-02",
+      feeCents: 500,
+    }),
+  ]);
+
+  assert.equal(summary.realizedCents, -20_100);
+});
+
+test("卖出未被截断时手续费全额计入", () => {
+  // 持仓与卖出数量一致，不存在截断，手续费应 100% 计入。
+  const summary = calculatePortfolio([
+    trade({ quantity: 100, priceCents: 10_000 }),
+    trade({
+      id: 2,
+      side: "卖出",
+      quantity: 100,
+      priceCents: 11_000,
+      tradeDate: "2026-07-02",
+      feeCents: 500,
+    }),
+  ]);
+
+  assert.equal(summary.realizedCents, 99_500);
+});
+
+test("多次部分卖出的成本摊销不累积舍入误差", () => {
+  // 成本无法整除的标的分三次卖光，最终应无残留持仓与残留成本。
+  const summary = calculatePortfolio([
+    trade({ id: 1, side: "买入", priceCents: 33, priceMillis: 333, quantity: 3 }),
+    trade({ id: 2, side: "卖出", priceCents: 33, priceMillis: 333, quantity: 1, tradeDate: "2026-07-02" }),
+    trade({ id: 3, side: "卖出", priceCents: 33, priceMillis: 333, quantity: 1, tradeDate: "2026-07-03" }),
+    trade({ id: 4, side: "卖出", priceCents: 33, priceMillis: 333, quantity: 1, tradeDate: "2026-07-04" }),
+  ]);
+
+  assert.equal(summary.positions.length, 0);
+});
+
 test("按日期补录的卖出不能破坏后续交易的可卖数量", () => {
   const trades: Trade[] = [
     trade({ id: 1, side: "买入", quantity: 100, tradeDate: "2026-07-10" }),

@@ -93,6 +93,33 @@ function orderedTrades(trades: Trade[]) {
   });
 }
 
+/**
+ * 计算一笔卖出的已实现盈亏（单位：万分之一元）。
+ *
+ * 关键点：当卖出数量超过当前持仓时，成交数量会被截断为 soldQuantity，
+ * 此时手续费也必须按「实际结算数量 / 申报数量」等比例摊销。否则会出现
+ * 「收入按 20 股算、手续费按 100 股扣」的错配，系统性低估已实现盈亏。
+ *
+ * 本函数同时被 calculatePortfolio 与 calculateCycleRealized 使用，
+ * 避免同一套盈亏口径出现两份实现而各自漂移。
+ */
+function sellProfitTenThousandths(params: {
+  priceTenThousandths: number;
+  averageCostTenThousandths: number;
+  soldQuantity: number;
+  requestedQuantity: number;
+  feeCents: number;
+}): number {
+  const { priceTenThousandths, averageCostTenThousandths, soldQuantity, requestedQuantity, feeCents } = params;
+  const feeRatio = requestedQuantity > 0 ? soldQuantity / requestedQuantity : 1;
+  const proratedFeeTenThousandths = feeCents * 100 * feeRatio;
+  return (
+    priceTenThousandths * soldQuantity -
+    averageCostTenThousandths * soldQuantity -
+    proratedFeeTenThousandths
+  );
+}
+
 export function calculatePortfolio(trades: Trade[]): PortfolioSummary {
   const positions = new Map<string, Position>();
   let realizedMillis = 0;
@@ -133,10 +160,13 @@ export function calculatePortfolio(trades: Trade[]): PortfolioSummary {
       continue;
     }
 
-    const saleProfitTenThousandths =
-      priceTenThousandths * soldQuantity -
-      current.averageCostTenThousandths * soldQuantity -
-      trade.feeCents * 100;
+    const saleProfitTenThousandths = sellProfitTenThousandths({
+      priceTenThousandths,
+      averageCostTenThousandths: current.averageCostTenThousandths,
+      soldQuantity,
+      requestedQuantity: trade.quantity,
+      feeCents: trade.feeCents,
+    });
     realizedMillis += saleProfitTenThousandths / 10;
     if (saleProfitTenThousandths > 0) winningSells += 1;
     if (saleProfitTenThousandths < 0) losingSells += 1;
@@ -206,7 +236,13 @@ function calculateCycleRealized(cycleTrades: Trade[]): number {
 
     const soldQuantity = Math.min(trade.quantity, pos.quantity);
     if (soldQuantity <= 0) continue;
-    const profit = priceTenThousandths * soldQuantity - pos.avgTenThousandths * soldQuantity - trade.feeCents * 100;
+    const profit = sellProfitTenThousandths({
+      priceTenThousandths,
+      averageCostTenThousandths: pos.avgTenThousandths,
+      soldQuantity,
+      requestedQuantity: trade.quantity,
+      feeCents: trade.feeCents,
+    });
     realizedMillis += profit / 10;
     pos.quantity -= soldQuantity;
     positions.set(trade.symbol, pos);

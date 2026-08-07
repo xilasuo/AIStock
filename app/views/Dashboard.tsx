@@ -766,23 +766,16 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     return () => window.clearTimeout(timer);
   }, [alerts, portfolio.positions, watchlist, quoteStale, refreshQuote]);
 
-  const markAlertTriggered = useCallback(async (alert: AlertRule, current: number, target: number) => {
+  // 即时提醒仅做"前端展示闪烁 + 系统通知"，不再由客户端写 triggeredAt。
+  // 触发状态的权威标记统一由服务端负责（/api/cron/check-alerts 离线兜底推送 + 用户在提醒面板手动 acknowledge/disable），
+  // 避免客户端篡改 triggeredAt 以及 app 关闭时漏提醒的窗口漏洞。
+  const flashAlert = useCallback((alert: AlertRule, current: number, target: number) => {
     const message = `${alert.name}已触发${alert.type}提醒：当前${price(current)}，目标${price(target)}`;
     flash(message);
     if ("Notification" in window && Notification.permission === "granted") {
       new Notification("我的复盘助手", { body: message });
     }
-    try {
-      const result = await jsonRequest<{ alert: AlertRule }>("/api/alerts", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: alert.id, action: "trigger" }),
-      });
-      setAlerts((prev) => prev.map((a) => (a.id === result.alert.id ? { ...a, triggeredAt: result.alert.triggeredAt } : a)));
-    } catch {
-      /* 提示已发出；写入失败会在下次刷新时基于行情重新提醒 */
-    }
-  }, [flash, setAlerts]);
+  }, [flash]);
 
   const checkAlerts = useCallback(() => {
     for (const alert of alerts) {
@@ -793,9 +786,9 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       const triggered = alert.type === "止损" ? current <= target : current >= target;
       if (!triggered) continue;
       notified.current.add(alert.id);
-      void markAlertTriggered(alert, current, target);
+      flashAlert(alert, current, target);
     }
-  }, [alerts, quotes, markAlertTriggered]);
+  }, [alerts, quotes, flashAlert]);
 
   // 轻量行情轮询：交易时段 10s 刷新持仓/关注/提醒价格（走 /api/quote，不拉 K 线财务），
   // 同时检查止损/止盈是否触发。节奏由 planRefresh 动态决定：

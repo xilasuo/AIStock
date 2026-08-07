@@ -113,12 +113,17 @@ export async function PATCH(request: Request) {
     }
 
     const updates: Partial<typeof users.$inferInsert> = {};
+    // 安全敏感变更（改密 / 禁用 / 改角色）必须使该用户已签发的会话立即失效，
+    // 否则旧 token 在自然过期前（最长 30 天）仍然可用：改密踢不掉盗号者、
+    // 禁用形同虚设、降级后的超管仍能通过 requireSuperAdmin 提权。
+    let revokeSessions = false;
     if (body?.newPassword !== undefined) {
       const passwordError = validatePassword(body.newPassword);
       if (passwordError) return Response.json({ error: passwordError }, { status: 400 });
       const salt = generateSalt();
       updates.salt = salt;
       updates.passwordHash = await hashPassword(String(body.newPassword), salt);
+      revokeSessions = true;
     }
     if (body?.displayName !== undefined) {
       const displayName = String(body.displayName).trim();
@@ -133,6 +138,7 @@ export async function PATCH(request: Request) {
         return Response.json({ error: "不能禁用当前登录的超级管理员账户" }, { status: 400 });
       }
       updates.disabled = Boolean(body.disabled);
+      if (updates.disabled) revokeSessions = true;
     }
     if (body?.role !== undefined) {
       const role = body.role === "super_admin" ? "super_admin" : "user";
@@ -146,11 +152,15 @@ export async function PATCH(request: Request) {
           return Response.json({ error: "至少需保留一个启用的超级管理员" }, { status: 400 });
         }
       }
+      if (role !== target.role) revokeSessions = true;
       updates.role = role;
     }
 
     if (Object.keys(updates).length === 0) {
       return Response.json({ error: "没有可更新的字段" }, { status: 400 });
+    }
+    if (revokeSessions) {
+      updates.tokenVersion = (target.tokenVersion ?? 0) + 1;
     }
     await db.update(users).set(updates).where(eq(users.id, id));
     return Response.json({ ok: true });

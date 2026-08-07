@@ -62,7 +62,7 @@ export async function PATCH(request: Request) {
     if (!Number.isInteger(id) || id <= 0) {
       return Response.json({ error: "提醒编号不正确" }, { status: 400 });
     }
-    if (payload.action !== "disable" && payload.action !== "acknowledge" && payload.action !== "trigger" && payload.action !== "update") {
+    if (payload.action !== "disable" && payload.action !== "acknowledge" && payload.action !== "update") {
       return Response.json({ error: "提醒操作不正确" }, { status: 400 });
     }
     await ensureSchema();
@@ -71,8 +71,6 @@ export async function PATCH(request: Request) {
       values = { enabled: false };
     } else if (payload.action === "acknowledge") {
       values = { acknowledgedAt: shanghaiIso() };
-    } else if (payload.action === "trigger") {
-      values = { triggeredAt: shanghaiIso() };
     } else {
       const rawTargetPrice = Number(payload.targetPrice);
       const targetPriceMillis = toMillis(rawTargetPrice);

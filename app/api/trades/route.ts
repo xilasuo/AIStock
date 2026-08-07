@@ -435,9 +435,23 @@ export async function DELETE(request: Request) {
     if (!existing) {
       return Response.json({ error: "交易记录不存在" }, { status: 404 });
     }
+
+    // 删除一笔买入会让后续卖出变成「卖超」。此时 calculatePortfolio 会静默截断卖出
+    // 数量（Math.min），算出一个错误但不报错的已实现盈亏——账目错了却无人察觉。
+    // 与 POST / PATCH 一致，删除前先校验剩余记录是否自洽。
+    const remainingTrades = await db.select().from(tradeRecords)
+      .where(eq(tradeRecords.userId, user.id));
+    const invalidSell = findInvalidSell(remainingTrades.filter((trade) => trade.id !== id));
+    if (invalidSell) {
+      return Response.json({
+        error: `删除后将导致可卖数量不足：${invalidSell.symbol}可卖${invalidSell.availableQuantity}股，但已卖出${invalidSell.requestedQuantity}股。请先删除或修改对应的卖出记录。`,
+      }, { status: 400 });
+    }
+
     await db.delete(tradeRecords).where(and(eq(tradeRecords.id, id), eq(tradeRecords.userId, user.id)));
     return Response.json({ ok: true });
-  } catch {
+  } catch (error) {
+    console.error("[trades] 删除交易记录失败", error);
     return Response.json({ error: "交易记录删除失败" }, { status: 500 });
   }
 }

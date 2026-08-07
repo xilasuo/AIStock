@@ -11,7 +11,9 @@
     "engine": "node trading_agent/local_engine_server.js",
     "build": "vinext build",
     "start": "vinext start",
-    "test": "npm run build && tsx --test tests/*.test.ts",
+    "test": "tsx --test \"tests/**/*.test.ts\"",
+    "test:build": "npm run build && npm test",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint app db lib worker vite.config.ts next.config.ts --ignore-pattern dist --ignore-pattern .next"
   },
   "dependencies": {

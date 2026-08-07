@@ -48,7 +48,7 @@ RSI 30~50 区间给高分（0.8~1.0），>70 归零。bottom_reversal 预设已�
 ### 根因 3：云端配置静默覆盖，牛熊风控被关闭
 
 本地 `strategy_config.yaml` 的 `market.enable: true` 一直开着，但云端配置
-（服务器 120.48.87.170:9003，SHA `97d82c8b`）三档都是 `market_enable=false`，
+（云端服务器，SHA `97d82c8b`）三档都是 `market_enable=false`，
 按「云端 > 本地 YAML」优先级静默覆盖 → 牛熊判定永远 unknown、仓位恒 1.0。
 
 **修复**：云端配置需手动改（见清单第 1 项），本地无法代改（无服务器权限）。
