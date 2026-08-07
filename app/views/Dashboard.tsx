@@ -2567,7 +2567,10 @@ function StrategyCard({ analysis, position, portfolioInsights }: {
   position: Position | null;
   portfolioInsights: PortfolioInsights;
 }) {
-  const [strategy, setStrategy] = useState<{ content: string; mode: string } | null>(null);
+  const [strategy, setStrategy] = useState<{
+    content: string; mode: string;
+    ruleAction?: string | null; aiAction?: string | null; diff?: boolean | null;
+  } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -2603,13 +2606,24 @@ function StrategyCard({ analysis, position, portfolioInsights }: {
     ? (strategy.mode === "deepseek" || strategy.mode === "openai") ? "在线生成" : "规则兜底"
     : undefined;
 
+  const diffBadge = strategy?.diff === true ? (
+    <Badge tone="amber">{`AI→${strategy.aiAction ?? "?"} 规则→${strategy.ruleAction ?? "?"}`}</Badge>
+  ) : strategy?.diff === false ? (
+    <Badge tone="green">AI与规则一致</Badge>
+  ) : strategy?.aiAction === null ? (
+    <Badge tone="neutral">仅规则引擎</Badge>
+  ) : null;
+
   return (
     <section className="panel strategy-card">
       <SectionHeader
         eyebrow="操盘手视角 · 结合我的账户"
         title="当前交易策略"
         subtitle={strategy ? "基于你的持仓、账户资金与交易纪律生成" : "结合持仓成本与交易纪律，给出可执行建议"}
-        actions={modeLabel ? <Badge tone="accent">{modeLabel}</Badge> : undefined}
+        actions={<>
+          {modeLabel && <Badge tone="accent">{modeLabel}</Badge>}
+          {diffBadge}
+        </>}
       />
       {!strategy && !error && (
         <div className="strategy-empty">
@@ -4162,11 +4176,12 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onBuySymbol, onSaved, s
                     )}
                   </div>
                   <div className="watch-card-since">
-                    <span>加入关注以来</span>
-                    <strong className={sinceChange !== null && sinceChange < 0 ? "down" : sinceChange !== null && sinceChange > 0 ? "up" : ""}>
-                      {sinceChange === null ? "—" : `${sinceChange >= 0 ? "+" : ""}${sinceChange.toFixed(2)}%`}
-                      <small>· {watchedDays > 0 ? `${watchedDays}天` : "今日"}</small>
-                    </strong>
+                    {sinceChange !== null && (
+                      <span className={sinceChange >= 0 ? "up" : "down"}>
+                        {sinceChange >= 0 ? "+" : ""}{sinceChange.toFixed(2)}%
+                      </span>
+                    )}
+                    <small>加入 · {watchedDays > 0 ? `${watchedDays}天` : "今日"}</small>
                   </div>
                 </div>
 
@@ -4183,25 +4198,13 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onBuySymbol, onSaved, s
                     baseClose={baseClose}
                     change={sinceChange}
                     width={300}
-                    height={56}
+                    height={72}
                   />
                 ) : (
                   <div className="sparkline sparkline--empty" aria-hidden="true">
                     <span>走势数据收集中</span>
                   </div>
                 )}
-
-                <div className="watch-card-intraday">
-                  <span className="watch-card-intraday-label">当日分时</span>
-                  <MiniIntraday
-                    code={item.symbol}
-                    name={item.name}
-                    width={260}
-                    height={40}
-                    onAnalyze={(symbol) => onAnalyze(symbol)}
-                    onBuy={onBuySymbol ? (symbol) => onBuySymbol(symbol) : undefined}
-                  />
-                </div>
 
                 {editing === item.symbol ? (
                   <form className="watch-edit-form" onSubmit={(event) => void saveCondition(event, item.symbol)}>
@@ -4241,7 +4244,10 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onBuySymbol, onSaved, s
                   <>
                     <div className="watch-note">
                       <span className="watch-note-label"><MessageCircle size={13} />我的条件</span>
-                      <p>{item.conditionText?.trim() || "还没有写下条件——先想清楚再决定要不要行动。"}</p>
+                      {item.conditionText?.trim()
+                        ? <p>{item.conditionText.trim()}</p>
+                        : <p className="watch-note-empty">写下你等待的触发条件，看到信号再动手。</p>
+                      }
                     </div>
                     <div className="watch-card-actions">
                       <Button variant="primary" iconRight={<ArrowUp size={14} style={{ transform: "rotate(45deg)" }} />} onClick={() => onAnalyze(item.symbol)}>查看分析</Button>

@@ -2570,6 +2570,38 @@ svg { display: block; }
   padding: 20px 22px;
 }
 
+.strategy-header {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.strategy-mode {
+  color: var(--accent-ink);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  margin-left: auto;
+}
+.strategy-diff {
+  border-radius: 12px;
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+.strategy-diff--ok {
+  background: rgba(34,197,94,.12);
+  color: #16a34a;
+}
+.strategy-diff--warn {
+  background: rgba(245,158,11,.15);
+  color: #b45309;
+}
+.strategy-diff--fallback {
+  background: rgba(148,163,184,.12);
+  color: var(--text-muted);
+}
+
 .strategy-empty {
   align-items: center;
   display: flex;
@@ -3863,7 +3895,7 @@ svg { display: block; }
 .watch-cards {
   display: grid;
   gap: 16px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
 }
 
 .watch-card {
@@ -3882,6 +3914,7 @@ svg { display: block; }
 .watch-card-head {
   align-items: flex-start;
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   justify-content: space-between;
 }
@@ -3929,6 +3962,7 @@ svg { display: block; }
 .watch-card-subtitle {
   align-items: center;
   display: flex;
+  flex-basis: 100%;
   gap: 6px;
   margin: 2px 0 0;
   font-size: 11px;
@@ -4021,38 +4055,32 @@ svg { display: block; }
 }
 
 .watch-card-since {
-  text-align: right;
+  align-items: center;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 11px;
   flex: 0 0 auto;
 }
 
+.watch-card-since small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
 .watch-card-since span {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.watch-card-since strong {
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
   font-weight: 700;
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-  justify-content: flex-end;
+  font-variant-numeric: tabular-nums;
 }
 
-.watch-card-since strong small {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 500;
-}
+.watch-card-since span.up { color: var(--up); }
+.watch-card-since span.down { color: var(--down); }
 
 .sparkline {
   display: block;
   width: 100%;
-  height: 48px;
+  height: 72px;
   border-radius: 8px;
   background: var(--surface-soft);
   border: 1px solid var(--line);
@@ -4240,6 +4268,11 @@ svg { display: block; }
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.watch-note-empty {
+  color: var(--text-faint);
+  font-style: italic;
 }
 
 .watch-card-meta {
