@@ -2597,11 +2597,19 @@ function StrategyCard({ analysis, position, portfolioInsights }: {
     setError("");
     setStrategy(null);
     try {
-      const context = buildAnalysisContext(analysis, position, portfolioInsights);
+      // 先强制拉取最新行情快照（force:true），与大屏 StrategyModal 保持一致，
+      // 避免用页面进入时缓存的陈旧 analysis 计算持仓盈亏与策略。
+      const freshAnalysis = await jsonRequest<Analysis & { error?: string }>("/api/analyze", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ query: analysis.stock.code, explain: true, force: true }),
+      });
+      if (freshAnalysis.error) throw new Error(freshAnalysis.error);
+      const context = buildAnalysisContext(freshAnalysis, position, portfolioInsights);
       const result = await jsonRequest<Analysis>("/api/analyze", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ query: analysis.stock.code, strategy: true, explain: false, saveHistory: false, context }),
+        body: JSON.stringify({ query: freshAnalysis.stock.code, strategy: true, explain: false, saveHistory: false, context }),
       });
       setStrategy(result.strategy ?? null);
     } catch (reason) {
