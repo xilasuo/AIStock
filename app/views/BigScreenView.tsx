@@ -1119,6 +1119,7 @@ export function BigScreenView() {
                   right: 24,
                   zIndex: 50,
                   background: "var(--card)",
+                  color: TEXT,
                   border: "1px solid var(--border)",
                   borderRadius: 12,
                   padding: 16,
@@ -1126,11 +1127,11 @@ export function BigScreenView() {
                   boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
                 }}
               >
-                <div style={{ fontWeight: 600, marginBottom: 8 }}>麦蕊每日额度</div>
+                <div style={{ fontWeight: 600, marginBottom: 8, color: TEXT }}>麦蕊每日额度</div>
                 <div style={{ fontSize: 13, color: MUTED, marginBottom: 4 }}>
                   来源：{quota.source === "server" ? "服务端真实计数" : "本地估计（未连后端）"}
                 </div>
-                <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>
+                <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 4, color: TEXT }}>
                   {quota.used.toLocaleString()} / {quota.limit.toLocaleString()}
                 </div>
                 <div
@@ -1162,7 +1163,7 @@ export function BigScreenView() {
                 )}
                 <div style={{ display: "flex", gap: 8 }}>
                   <button
-                    className="btn"
+                    className="btn btn--primary"
                     style={{ flex: 1 }}
                     onClick={() => {
                       void resetQuotaCounter();
@@ -1171,7 +1172,7 @@ export function BigScreenView() {
                   >
                     重置计数
                   </button>
-                  <button className="btn-ghost" style={{ flex: 1 }} onClick={() => setQuotaPanelOpen(false)}>
+                  <button className="btn btn--ghost" style={{ flex: 1 }} onClick={() => setQuotaPanelOpen(false)}>
                     关闭
                   </button>
                 </div>
