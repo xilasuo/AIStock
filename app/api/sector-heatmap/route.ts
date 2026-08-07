@@ -9,6 +9,7 @@ export async function GET(request: Request) {
   const searchParams = new URL(request.url).searchParams;
   const date = searchParams.get("date")?.trim() ?? "";
   const limit = Number(searchParams.get("limit") ?? 10);
+  const live = searchParams.get("live") === "1";
   const validationError = validateSectorDate(date);
   if (validationError) {
     return Response.json({ error: validationError }, { status: 400 });
@@ -18,12 +19,18 @@ export async function GET(request: Request) {
   }
 
   try {
-    const heatmap = await getSectorHeatmap(date, limit);
+    const heatmap = await getSectorHeatmap(date, limit, live);
     const effective = heatmap.effectiveDate ?? date;
     const isToday = effective === shanghaiDate();
+    // 实盘模式用极短缓存，保证盘中热力图逐次刷新跳动；普通模式按是否当日给 5 分钟/6 小时。
+    const cacheControl = live
+      ? "private, max-age=30"
+      : isToday
+        ? "private, max-age=300"
+        : "private, max-age=21600";
     return Response.json(heatmap, {
       headers: {
-        "cache-control": isToday ? "private, max-age=300" : "private, max-age=21600",
+        "cache-control": cacheControl,
       },
     });
   } catch (error) {

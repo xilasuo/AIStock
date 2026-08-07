@@ -152,9 +152,38 @@ async function loadSectorMoves(date: string): Promise<{ moves: SectorMove[]; lat
   return { moves, latestDate };
 }
 
-export async function getSectorHeatmap(date: string, limit = 10): Promise<SectorHeatmap> {
+export async function getSectorHeatmap(date: string, limit = 10, live = false): Promise<SectorHeatmap> {
   const validationError = validateSectorDate(date);
   if (validationError) throw new Error(validationError);
+
+  // 实盘模式（交易时间内）：优先东方财富实时板块榜，让热力图盘中真正跳动。
+  // 实时榜为当前行情，不再回退到历史日 K，避免大屏板块长期静止不更新。
+  if (live) {
+    const em = await loadEastmoneySectorMoves(date);
+    if (em.length >= 5) {
+      return {
+        date,
+        sectors: rankSectorMoves(em, limit),
+        sampleSize: em.length,
+        basis: "eastmoney-board",
+        source: { name: "东方财富板块涨幅榜(实时)", url: "https://quote.eastmoney.com/center/boardlist.html", fetchedAt: shanghaiIso() },
+        effectiveDate: date,
+      };
+    }
+    // 实时榜失败则降级到主源当天数据（仍不回退历史，失败就失败，前端会保留旧值）。
+    const primary = await loadSectorMoves(date);
+    if (primary.moves.length >= 5) {
+      return {
+        date,
+        sectors: rankSectorMoves(primary.moves, limit),
+        sampleSize: primary.moves.length,
+        basis: "etf-proxy",
+        source: { name: "腾讯证券行业主题ETF行情", url: SOURCE_URL, fetchedAt: shanghaiIso() },
+        effectiveDate: date,
+      };
+    }
+    throw new Error("实时板块行情源暂时不可用");
+  }
 
   // 主源(腾讯行业ETF代理)按请求日期取数；同时记录可取到的最近交易日。
   const primary = await loadSectorMoves(date);

@@ -486,6 +486,21 @@ export function BigScreenView() {
       })
       .catch(() => undefined);
 
+    // 交易时间内请求实时模式(live=1)：优先东方财富实时板块榜，盘中真正跳动。
+    // 窗口外走最近 4 个自然日回退，取首个有数据的交易日展示历史板块表现。
+    if (isRealtimeWindow()) {
+      try {
+        const data = await jsonRequest<{ date: string; sectors: SectorMove[] }>(
+          `/api/sector-heatmap?date=${shanghaiDate()}&limit=10&live=1`,
+        );
+        if (data.sectors?.length) {
+          setSectors({ date: data.date, items: data.sectors });
+          return;
+        }
+      } catch {
+        // 实时源暂不可用：继续走下面的历史回退兜底
+      }
+    }
     for (const date of recentDates(4)) {
       try {
         const data = await jsonRequest<{ date: string; sectors: SectorMove[] }>(
