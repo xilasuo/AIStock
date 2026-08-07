@@ -11,7 +11,7 @@
  * 另提供周期切换（日K/周K/月K）与「仅最近 N 根」快捷按钮。
  * 数据来自 /api/kline/<code>.json?period=…（服务端直连东财取数）。
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createChart,
   ColorType,
@@ -124,16 +124,20 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
   const priceLinesRef = useRef<IPriceLine[]>([]);
   const lineSpecsRef = useRef<PriceLineEntry[]>([]);
   // 往前推第 20 日蜡烛的标记插件实例
-  const day20MarkersRef = useRef<ReturnType<typeof createSeriesMarkers<UTCTimestamp>> | null>(null);
+  const day20MarkersRef = useRef<ReturnType<typeof createSeriesMarkers<Time>> | null>(null);
   // 20MA 扣抵价水平线（lightweight-charts priceLine 实例）
   const deductLineRef = useRef<IPriceLine | null>(null);
-  // 20MA 扣抵价（bar[bars.length-20] 的收盘），用于图例显示与状态判断
-  const [deductPrice, setDeductPrice] = useState<number | null>(null);
   // 与 lineSpecsRef 镜像的 state：仅在 render 中消费图例数据时使用，避免在渲染期读取 ref。
   const [lineSpecs, setLineSpecs] = useState<PriceLineEntry[]>([]);
   const [period, setPeriod] = useState<KPeriod>("day");
   const [range, setRange] = useState<number>(120);
   const [bars, setBars] = useState<KlineBar[]>(initialBars ?? []);
+  // 20MA 扣抵价（bar[bars.length-20] 的收盘），用于图例显示与状态判断。
+  // 用 useMemo 推导而非 effect 内 setState，避免同步 setState 触发级联渲染与 lint 报错。
+  const deductPrice = useMemo<number | null>(() => {
+    const didx = bars.length - 20;
+    return didx >= 0 ? bars[didx].close : null;
+  }, [bars]);
   const [markers, setMarkers] = useState<Markers | null>(null);
   const [loading, setLoading] = useState(!initialBars);
   const [error, setError] = useState("");
@@ -425,10 +429,11 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
       if (!day20MarkersRef.current) {
         day20MarkersRef.current = createSeriesMarkers(candle, []);
       }
+      const markersPlugin = day20MarkersRef.current;
       const idx = bars.length - 1 - 20;
       if (idx >= 0) {
         const bar = bars[idx];
-        const marker: SeriesMarker<UTCTimestamp> = {
+        const marker: SeriesMarker<Time> = {
           time: toTimestamp(bar.date) as UTCTimestamp,
           position: "aboveBar",
           shape: "circle",
@@ -436,9 +441,9 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
           text: "第20日",
           size: 1,
         };
-        day20MarkersRef.current.setMarkers([marker]);
+        markersPlugin.setMarkers([marker]);
       } else {
-        day20MarkersRef.current.setMarkers([]);
+        markersPlugin.setMarkers([]);
       }
     } catch {
       /* 标记插件异常时降级，不阻断图表 */
@@ -446,17 +451,15 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
 
     // 20MA 扣抵价：20 日均线「明天」要扣掉的那个收盘价 = 最新一根往前数第 20 根（索引 bars.length-20）。
     // 当未来收盘价 > 扣抵价时 20MA 继续上行（扣抵向上=支撑），否则拐头（扣抵向下=压力）。
-    // 仅当数据 >=21 根时绘制；扣抵价本身即 bar 的收盘，与 K 线时间轴天然对齐。
+    // 仅当数据 >=20 根时绘制；扣抵价本身即 bar 的收盘，与 K 线时间轴天然对齐。
     try {
       if (deductLineRef.current) {
         candle.removePriceLine(deductLineRef.current);
         deductLineRef.current = null;
       }
-      const didx = bars.length - 20;
-      if (didx >= 0) {
-        const deduct = bars[didx].close;
+      if (deductPrice != null) {
         deductLineRef.current = candle.createPriceLine({
-          price: deduct,
+          price: deductPrice,
           color: "rgba(232,121,249,.55)",
           lineWidth: 1 as LineWidth,
           lineStyle: 2, // 虚线
@@ -464,14 +467,11 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
           axisLabelColor: "rgba(232,121,249,.95)",
           title: "扣抵",
         });
-        setDeductPrice(deduct);
-      } else {
-        setDeductPrice(null);
       }
     } catch {
       /* 扣抵线异常时降级，不阻断图表 */
     }
-  }, [bars, range]);
+  }, [bars, range, deductPrice]);
 
   /**
    * markers 变化时重建 5 条参考价格线（仅画水平线本体）。
