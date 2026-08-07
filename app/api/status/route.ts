@@ -1,6 +1,7 @@
 import { getAiConfig } from "../../../lib/ai/ai-config";
 import { requireApiUser } from "../../../lib/auth/auth";
 import { isMairuiEnabled, mairuiCircuit } from "../../../lib/market/mairui";
+import { readMairuiQuota } from "../mairui-quota/route";
 
 export async function GET() {
   const unauthorized = await requireApiUser();
@@ -14,6 +15,12 @@ export async function GET() {
     : mairuiEnabled
       ? "正常"
       : "未启用";
+  let mairuiQuota = null;
+  try {
+    mairuiQuota = await readMairuiQuota();
+  } catch {
+    // 读配额失败（如 DB 暂不可用）不影响 status 主流程
+  }
   return Response.json({
     deepseekConfigured: ai.configured,
     aiProvider: ai.provider,
@@ -24,6 +31,7 @@ export async function GET() {
       : "腾讯证券 / 东方财富 免费多源",
     mairuiEnabled,
     mairuiStatus,
+    mairuiQuota,
     reminderMode: "页面打开期间每5分钟检查",
   });
 }

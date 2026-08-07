@@ -63,6 +63,31 @@ export async function isMairuiEnabled(): Promise<boolean> {
   return (await getMairuiToken()).length > 0 && Date.now() >= disabledUntil;
 }
 
+// ── 麦蕊每日额度计数（真实消耗真值，落 D1，跨 isolate/多用户共享）─────────────
+// 每次真正向麦蕊发起 HTTP 请求前调用；落库失败（无 DB / 非 Worker 运行时）静默跳过，
+// 绝不影响行情主流程。读侧在 app/api/mairui-quota 汇总并返回降级阈值。
+const MAIRUI_DAILY_LIMIT = 10_000;
+const MAIRUI_SOFT_LIMIT = 8_000; // 超过则前端/大屏放慢刷新
+const MAIRUI_HARD_LIMIT = 9_500; // 超过则暂停前端主动刷新
+async function incMairuiQuota(n = 1): Promise<void> {
+  try {
+    const spec = "cloudflare:workers";
+    const mod = await import(/* @vite-ignore */ spec);
+    const db = (mod as { env?: { DB?: { prepare: (s: string) => { bind: (...a: unknown[]) => { run: () => Promise<unknown> } } } } }).env?.DB;
+    if (!db) return;
+    const date = new Date().toISOString().slice(0, 10);
+    await db
+      .prepare(
+        `INSERT INTO mairui_quota(date, used) VALUES(?, ?)
+         ON CONFLICT(date) DO UPDATE SET used = used + ?`,
+      )
+      .bind(date, n, n)
+      .run();
+  } catch {
+    /* 计数失败不影响主流程 */
+  }
+}
+
 function num(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
@@ -132,6 +157,7 @@ export async function getMairuiRealtime(code: string, force = false): Promise<Ma
   // 实时行情路径（licence 拼在末尾）。如与官方文档不符，改这一行即可。
   const url = `${MAIRUI_BASE}/hsstock/real/time/${code}/${token}`;
   try {
+    void incMairuiQuota(1);
     const res = await fetch(url, {
       headers: { "user-agent": "Mozilla/5.0 StockReviewAssistant/1.0" },
       signal: AbortSignal.timeout(6_000),
@@ -401,6 +427,7 @@ export async function getMairuiIndices(): Promise<MairuiIndex[] | null> {
 
   const listUrl = `${MAIRUI_BASE}/hsindex/list/${token}`;
   try {
+    void incMairuiQuota(1);
     const listRes = await fetch(listUrl, {
       headers: { "user-agent": "Mozilla/5.0 StockReviewAssistant/1.0" },
       signal: AbortSignal.timeout(8_000),
@@ -417,6 +444,7 @@ export async function getMairuiIndices(): Promise<MairuiIndex[] | null> {
       MAJOR_INDEX_CODES.map(async (meta) => {
         const url = `${MAIRUI_BASE}/hsindex/real/time/${meta.mairui}/${token}`;
         try {
+          void incMairuiQuota(1);
           const res = await fetch(url, {
             headers: { "user-agent": "Mozilla/5.0 StockReviewAssistant/1.0" },
             signal: AbortSignal.timeout(6_000),
@@ -515,6 +543,7 @@ export async function getMairuiIntraday(
 
   const url = `${MAIRUI_BASE}/hszbl/fsjy/${code}/${seg}/${token}`;
   try {
+    void incMairuiQuota(1);
     const res = await fetch(url, {
       headers: { "user-agent": "Mozilla/5.0 StockReviewAssistant/1.0" },
       signal: AbortSignal.timeout(8_000),
@@ -546,6 +575,7 @@ export async function getMairuiSectorMoves(): Promise<MairuiSector[] | null> {
 
   const url = `${MAIRUI_BASE}/hsbk/hy/${token}`;
   try {
+    void incMairuiQuota(1);
     const res = await fetch(url, {
       headers: { "user-agent": "Mozilla/5.0 StockReviewAssistant/1.0" },
       signal: AbortSignal.timeout(8_000),

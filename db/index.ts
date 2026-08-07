@@ -210,6 +210,12 @@ export async function ensureSchema() {
       )`),
       db.prepare("CREATE INDEX IF NOT EXISTS strategy_scan_created_idx ON strategy_scan(created_at)"),
       db.prepare("CREATE INDEX IF NOT EXISTS strategy_writeback_created_idx ON strategy_writeback(created_at)"),
+      // 麦蕊每日额度计数（真实消耗真值，跨 isolate/多用户共享）。每次向麦蕊发起 HTTP 请求
+      // 由 lib/market/mairui.ts 累加；跨日由应用层读时按日期重建（无独立清理任务）。
+      db.prepare(`CREATE TABLE IF NOT EXISTS mairui_quota (
+        date TEXT PRIMARY KEY NOT NULL,
+        used INTEGER NOT NULL DEFAULT 0
+      )`),
     ]);
     await addColumnIfMissing("trade_records", "price_millis", "price_millis INTEGER");
     await addColumnIfMissing("trade_records", "price_ten_thousandths", "price_ten_thousandths INTEGER");

@@ -100,6 +100,7 @@ import type { AssistantContext } from "../../lib/ai/assistant";
 import { splitAssistantSections, conclusionTone } from "../../lib/ai/assistant";
 import { formatDateTimeShanghai, shanghaiIso } from "../../lib/utils/time";
 import { readCache, writeCache, removeCache, removeCacheByPrefix, readKeyedCacheWithMeta, writeKeyedCache } from "../../lib/utils/client-cache";
+import { planRefresh, recordQuota, useMairuiQuota } from "../../lib/market/mairui-quota";
 
 type View = "home" | "watchlist" | "trades" | "settings" | "analytics" | "analysis" | "scan" | "writeback";
 type TradeMode = "buy" | "sell";
@@ -282,8 +283,6 @@ const nextId = () => {
 
 // 行情刷新 TTL：超过该时长即视为过期，进入轮询时会重新拉取（提到模块级，避免被当作 useCallback 依赖）。
 const QUOTE_TTL_MS = 5 * 60 * 1000;
-// 轻量行情轮询间隔：页面停留时每分钟刷新价格（走 /api/quote，不拉 K 线/财务）。
-const LIGHT_QUOTE_TTL_MS = 60 * 1000;
 
 // 视口断点：≤ breakpoint 视为移动端。用于区分「PC 浮窗」与「移动端全屏对话页」。
 // 客户端组件内初始化即用 matchMedia 取值，避免首帧闪烁；并在断点变化时实时更新。
@@ -441,6 +440,8 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   const [reviewCycleEndTradeId, setReviewCycleEndTradeId] = useState<number | null>(null);
   const [settingsSection, setSettingsSection] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [quotaPanelOpen, setQuotaPanelOpen] = useState(false);
+  const { quota, reset: resetQuotaCounter } = useMairuiQuota();
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [toast, setToast] = useState("");
@@ -700,11 +701,12 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     void fetchAnalysis(symbol, false).finally(() => pendingQuotes.current.delete(symbol));
   }, [fetchAnalysis]);
 
-  /** 判断某 symbol 的轻量行情（价格/涨跌幅）是否需要刷新（60 秒 TTL） */
+  /** 判断某 symbol 的轻量行情（价格/涨跌幅）是否需要刷新（TTL 随交易时段/额度动态变化） */
   const quoteLightStale = useCallback((symbol: string) => {
     const fetchedAt = quoteLightFetchedAt.current[symbol];
-    return !fetchedAt || Date.now() - fetchedAt > LIGHT_QUOTE_TTL_MS;
-  }, [LIGHT_QUOTE_TTL_MS]);
+    const ttl = planRefresh(new Date()).ttlMs;
+    return !fetchedAt || Date.now() - fetchedAt > ttl;
+  }, []);
 
   /** 轻量刷新：只取价格/涨跌幅（/api/quote），不拉 K 线/财务/公告，供 1 分钟轮询使用 */
   const refreshQuoteLight = useCallback(async (symbol: string) => {
@@ -795,27 +797,59 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     }
   }, [alerts, quotes, markAlertTriggered]);
 
+  // 轻量行情轮询：交易时段 10s 刷新持仓/关注/提醒价格（走 /api/quote，不拉 K 线财务），
+  // 同时检查止损/止盈是否触发。节奏由 planRefresh 动态决定：
+  //   - 非交易时段：暂停主动刷新（仅进入页面时刷一次）。
+  //   - 页面隐藏（切到后台标签页）：暂停，回来再恢复。
+  //   - 麦蕊每日额度软上限：拉长到 30s；硬上限：暂停。
+  // 每次真实发出的请求数记入麦蕊额度预算（前端估计值，用于降级保护）。
+  const hiddenRef = useRef(false);
   useEffect(() => {
-    const firstCheck = window.setTimeout(checkAlerts, 0);
-    // 周期轮询：对持仓/关注/提醒每分钟刷新一次价格（轻量 /api/quote，不拉 K 线财务），
-    // 同时检查止损/止盈是否触发。轮询间隔与 LIGHT_QUOTE_TTL_MS 一致，确保每次轮询
-    // 时轻量行情 TTL 已过期、价格必然刷新，提醒判断基于最新价。
-    const timer = window.setInterval(() => {
-      const symbols = new Set([
-        ...portfolio.positions.map((position) => position.symbol),
-        ...alerts.filter((item) => item.enabled).map((item) => item.symbol),
-        ...watchlist.map((item) => item.symbol),
-      ]);
-      for (const symbol of symbols) {
-        if (quoteLightStale(symbol)) void refreshQuoteLight(symbol);
-      }
-      checkAlerts();
-    }, LIGHT_QUOTE_TTL_MS);
-    return () => {
-      window.clearTimeout(firstCheck);
-      window.clearInterval(timer);
+    const onVisibility = () => {
+      hiddenRef.current = document.hidden;
     };
-  }, [alerts, checkAlerts, portfolio.positions, quoteLightStale, refreshQuoteLight, watchlist, LIGHT_QUOTE_TTL_MS]);
+    document.addEventListener("visibilitychange", onVisibility);
+    hiddenRef.current = document.hidden;
+
+    let timer: number | undefined;
+    let cancelled = false;
+
+    const tick = () => {
+      if (cancelled) return;
+      const symbols = Array.from(
+        new Set([
+          ...portfolio.positions.map((position) => position.symbol),
+          ...alerts.filter((item) => item.enabled).map((item) => item.symbol),
+          ...watchlist.map((item) => item.symbol),
+        ]),
+      );
+      // 先按 stale 估计本次消耗量并记账（refreshQuoteLight 内部还有 pending 去重，
+      // 这里以 stale 为准估计额度，偏保守但足够触发降级保护）。
+      const stale = symbols.filter((symbol) => quoteLightStale(symbol));
+      for (const symbol of stale) void refreshQuoteLight(symbol);
+      if (stale.length > 0) recordQuota(stale.length);
+      checkAlerts();
+      scheduleNext();
+    };
+
+    const scheduleNext = () => {
+      if (cancelled) return;
+      const plan = planRefresh(new Date(), { hidden: hiddenRef.current });
+      // delayMs 为 Infinity 表示应暂停：用较长定时器周期性重新评估，而非完全停摆。
+      const delay = plan.delayMs === Infinity ? 30_000 : plan.delayMs;
+      timer = window.setTimeout(tick, delay);
+    };
+
+    const firstCheck = window.setTimeout(checkAlerts, 0);
+    scheduleNext();
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(firstCheck);
+      if (timer) window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [alerts, checkAlerts, portfolio.positions, quoteLightStale, refreshQuoteLight, watchlist]);
 
   async function analyzeStock(event?: React.FormEvent, overrideQuery?: string) {
     event?.preventDefault();
@@ -1120,6 +1154,91 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 suggestions={topbarSuggestions}
               />
             </div>
+            <span
+              className="quota-pill"
+              onClick={() => setQuotaPanelOpen((v) => !v)}
+              title={quota.suspended ? "麦蕊今日额度将尽，已暂停主动刷新" : quota.degraded ? "麦蕊额度偏高，已自动放慢刷新" : "麦蕊每日额度消耗（点击查看）"}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: 12,
+                whiteSpace: "nowrap",
+                cursor: "pointer",
+                color: quota.suspended ? "var(--down)" : quota.degraded ? "#f5a623" : "var(--muted)",
+                border: `1px solid ${quota.suspended ? "rgba(255,107,107,0.4)" : quota.degraded ? "rgba(245,166,35,0.4)" : "var(--border)"}`,
+                borderRadius: 999,
+                padding: "4px 10px",
+              }}
+            >
+              麦蕊 {quota.used.toLocaleString()}/10000
+            </span>
+            {quotaPanelOpen && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: 48,
+                  right: 16,
+                  zIndex: 50,
+                  background: "var(--card)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 12,
+                  padding: 16,
+                  width: 260,
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+                }}
+              >
+                <div style={{ fontWeight: 600, marginBottom: 8 }}>麦蕊每日额度</div>
+                <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 4 }}>
+                  来源：{quota.source === "server" ? "服务端真实计数" : "本地估计（未连后端）"}
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>
+                  {quota.used.toLocaleString()} / {quota.limit.toLocaleString()}
+                </div>
+                <div
+                  style={{
+                    height: 8,
+                    borderRadius: 999,
+                    background: "var(--border)",
+                    overflow: "hidden",
+                    marginBottom: 12,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${Math.round(quota.ratio * 100)}%`,
+                      height: "100%",
+                      background: quota.suspended ? "var(--down)" : quota.degraded ? "#f5a623" : "var(--up)",
+                    }}
+                  />
+                </div>
+                {quota.suspended && (
+                  <div style={{ fontSize: 12, color: "var(--down)", marginBottom: 8 }}>
+                    额度将尽：前端已暂停主动刷新，仅手动/重进时拉取。
+                  </div>
+                )}
+                {quota.degraded && !quota.suspended && (
+                  <div style={{ fontSize: 12, color: "#f5a623", marginBottom: 8 }}>
+                    额度偏高：前端已自动放慢刷新节奏。
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    className="btn"
+                    style={{ flex: 1 }}
+                    onClick={() => {
+                      void resetQuotaCounter();
+                      setQuotaPanelOpen(false);
+                    }}
+                  >
+                    重置计数
+                  </button>
+                  <button className="btn-ghost" style={{ flex: 1 }} onClick={() => setQuotaPanelOpen(false)}>
+                    关闭
+                  </button>
+                </div>
+              </div>
+            )}
             <button className="account-button" onClick={() => setConfirming("logout")} title={`当前账号：${user.email}`}>
               <span className="avatar">{(user.displayName || "?").slice(0, 1).toUpperCase()}</span>
               <b>{user.displayName}</b>

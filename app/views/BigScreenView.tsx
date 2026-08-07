@@ -24,6 +24,7 @@ import { InteractiveKline } from "../components/InteractiveKline";
 import { StockSearch } from "../components/ui";
 import { StrategyModal } from "../components/StrategyModal";
 import { searchLocalStocks } from "../../lib/domain/stocks";
+import { recordQuota, useMairuiQuota } from "../../lib/market/mairui-quota";
 
 type Quote = { price: number; changePercent: number; fetchedAt: string };
 type MarketIndex = { code: string; name: string; price: number; changePercent: number; change: number };
@@ -400,6 +401,10 @@ export function BigScreenView() {
   const [error, setError] = useState("");
   const [refreshMs, setRefreshMs] = useState<number>(TRADING_OPEN_MS);
   const [lastLoadAt, setLastLoadAt] = useState<number | null>(null);
+  const { quota, reset: resetQuotaCounter } = useMairuiQuota();
+  const quotaRef = useRef(quota);
+  quotaRef.current = quota;
+  const [quotaPanelOpen, setQuotaPanelOpen] = useState(false);
   const [hover, setHover] = useState<{ data: DetailData; pos: { left: number; top: number }; side: "right" | "left" } | null>(null);
   const [curveIdx, setCurveIdx] = useState<number | null>(null);
   const [alerts, setAlerts] = useState<AlertRule[]>([]);
@@ -546,13 +551,20 @@ export function BigScreenView() {
       clearDataTimer();
       const tick = () => {
         if (cancelled) return;
+        // 麦蕊每日额度硬上限：暂停主动刷新（由边界定时器/手动恢复重新评估）。
+        if (quotaRef.current.suspended) {
+          clearDataTimer();
+          return;
+        }
         void loadData().finally(() => {
           if (cancelled) return;
           if (!isRealtimeWindow()) {
             clearDataTimer(); // 窗口外立即停止，禁止任何刷新
             return;
           }
-          dataTimer = window.setTimeout(tick, marketRefreshMs(new Date()));
+          recordQuota(1); // 大屏每轮数据拉取记 1 个批次（粗估，用于额度降级保护）
+          const next = document.hidden ? 15_000 : marketRefreshMs(new Date());
+          dataTimer = window.setTimeout(tick, next);
         });
       };
       tick();
@@ -997,6 +1009,89 @@ export function BigScreenView() {
               <span style={{ color: marketStateColor }}>大盘状态 {marketStateLabel}</span>
             )}
             <RealtimeClock refreshMs={refreshMs} lastLoadAt={lastLoadAt} />
+            <span
+              onClick={() => setQuotaPanelOpen((v) => !v)}
+              title={quota.suspended ? "麦蕊今日额度将尽，已暂停主动刷新" : quota.degraded ? "麦蕊额度偏高，已自动放慢刷新" : "麦蕊每日额度消耗（点击查看）"}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: 12,
+                cursor: "pointer",
+                color: quota.suspended ? "#ff6b6b" : quota.degraded ? "#f5a623" : MUTED,
+                border: `1px solid ${quota.suspended ? "rgba(255,107,107,0.4)" : quota.degraded ? "rgba(245,166,35,0.4)" : "var(--border)"}`,
+                borderRadius: 999,
+                padding: "2px 8px",
+              }}
+            >
+              麦蕊 {quota.used.toLocaleString()}/10000
+            </span>
+            {quotaPanelOpen && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: 56,
+                  right: 24,
+                  zIndex: 50,
+                  background: "var(--card)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 12,
+                  padding: 16,
+                  width: 260,
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+                }}
+              >
+                <div style={{ fontWeight: 600, marginBottom: 8 }}>麦蕊每日额度</div>
+                <div style={{ fontSize: 13, color: MUTED, marginBottom: 4 }}>
+                  来源：{quota.source === "server" ? "服务端真实计数" : "本地估计（未连后端）"}
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>
+                  {quota.used.toLocaleString()} / {quota.limit.toLocaleString()}
+                </div>
+                <div
+                  style={{
+                    height: 8,
+                    borderRadius: 999,
+                    background: "var(--border)",
+                    overflow: "hidden",
+                    marginBottom: 12,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${Math.round(quota.ratio * 100)}%`,
+                      height: "100%",
+                      background: quota.suspended ? "#ff6b6b" : quota.degraded ? "#f5a623" : "var(--up)",
+                    }}
+                  />
+                </div>
+                {quota.suspended && (
+                  <div style={{ fontSize: 12, color: "#ff6b6b", marginBottom: 8 }}>
+                    额度将尽：前端已暂停主动刷新，仅手动/重进时拉取。
+                  </div>
+                )}
+                {quota.degraded && !quota.suspended && (
+                  <div style={{ fontSize: 12, color: "#f5a623", marginBottom: 8 }}>
+                    额度偏高：前端已自动放慢刷新节奏。
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    className="btn"
+                    style={{ flex: 1 }}
+                    onClick={() => {
+                      void resetQuotaCounter();
+                      setQuotaPanelOpen(false);
+                    }}
+                  >
+                    重置计数
+                  </button>
+                  <button className="btn-ghost" style={{ flex: 1 }} onClick={() => setQuotaPanelOpen(false)}>
+                    关闭
+                  </button>
+                </div>
+              </div>
+            )}
             <button
               type="button"
               onClick={() => setAiOpen(true)}
