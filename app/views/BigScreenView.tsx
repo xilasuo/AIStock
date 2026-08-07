@@ -1358,6 +1358,11 @@ export function BigScreenView() {
                     : `${klinePick.name}（${klinePick.code}）· K线技术面板`}
                 </span>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  {!showAssetCurve && chart && (
+                    <span style={{ fontSize: 13, color: CHART, fontFamily: "var(--font-mono)" }}>
+                      {pct(((chart.latest - chart.first) / chart.first) * 100)}
+                    </span>
+                  )}
                   {!showAssetCurve && klinePick.code !== "000001" && (
                     <>
                       <button
