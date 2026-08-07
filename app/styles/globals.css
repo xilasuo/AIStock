@@ -2942,6 +2942,7 @@ svg { display: block; }
   align-items: center;
   display: inline-flex;
   gap: 6px;
+  flex-shrink: 0;
 }
 
 .sa-iconbtn {
@@ -6980,11 +6981,11 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
     width: 100%;
     z-index: 30;
   }
-  /* linker 在移动端固定到头部第一行左侧，标题/操作换行到第二行 */
-  .assistant-page .sa--page .sa-head {
-    align-items: center;
-    row-gap: 8px;
-  }
+  /* linker 在移动端固定到第二行全宽；标题 + 操作按钮(清空/返回)回到第一行右侧，确保始终可见可点 */
+  .sa-head { flex-wrap: wrap; }
+  .sa-head__title { order: 1; flex: 1 1 auto; min-width: 0; }
+  .sa-head__actions { order: 2; flex-shrink: 0; }
+  .sa-linker { order: 3; }
 }
 
 .sa-linker__group { display: flex; flex-direction: column; gap: 6px; }
