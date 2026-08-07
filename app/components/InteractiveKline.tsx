@@ -680,8 +680,6 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
 
   // 顶部提示：现价 + 周期切换 + 范围快捷按钮
   const latest = bars.length ? bars[bars.length - 1] : null;
-  const latestPct =
-    latest && bars.length >= 2 ? ((latest.close - bars[bars.length - 2].close) / bars[bars.length - 2].close) * 100 : null;
 
   // 图例数据：按价格从高到低，让顶部图例的自然顺序与价格轴自上而下的位置接近。
   const legendItems: Array<{ key: MarkerKey; label: string; price: number; color: string; baseWidth: LineWidth }> = lineSpecs
@@ -696,9 +694,8 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
           <span style={{ fontWeight: 600, color: "var(--text)", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 120 }}>{name}</span>
           <span style={{ fontFamily: "var(--font-mono)", color: "var(--muted)", fontSize: 11 }}>{code}</span>
           {latest && (
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 500, color: "var(--up)" }}>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 500, color: "var(--text)" }}>
               {latest.close.toFixed(2)}
-              {latestPct != null && <span style={{ fontSize: 11, marginLeft: 4 }}>({latestPct >= 0 ? "+" : ""}{latestPct.toFixed(2)}%)</span>}
             </span>
           )}
         </div>
