@@ -1013,7 +1013,7 @@ export function BigScreenView() {
               ← 主页
             </button>
             <div>
-              <div style={{ fontSize: 24, fontWeight: 500 }}>我的仓位与盈亏</div>
+              <div style={{ fontSize: 24, fontWeight: 500 }}>股市数据大屏</div>
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 14, fontFamily: "var(--font-mono)", fontSize: 13, color: MUTED }}>
@@ -1230,6 +1230,7 @@ export function BigScreenView() {
               <div style={{ fontSize: 11, color: MUTED, marginBottom: 6, flexShrink: 0 }}>大盘指数</div>
               <div style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingRight: 4 }}>
                 {activeIndices.length === 0 && <div style={{ fontSize: 12, color: MUTED }}>暂无指数数据</div>}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 10px" }}>
                 {activeIndices.map((index) => {
                   const active = isActiveKlineCode(index.code);
                   return (
@@ -1255,22 +1256,24 @@ export function BigScreenView() {
                       style={{
                         display: "flex",
                         justifyContent: "space-between",
-                        fontSize: 13,
+                        fontSize: 12,
                         fontFamily: "var(--font-mono)",
-                        padding: "5px 0",
+                        padding: "4px 6px",
                         cursor: "pointer",
                         background: active ? "rgba(0,229,255,.08)" : "transparent",
                         borderRadius: 4,
+                        minWidth: 0,
                       }}
                     >
-                      <span style={{ color: TEXT }}>{index.name}</span>
-                      <span style={{ color: index.changePercent >= 0 ? UP : DOWN }}>
+                      <span style={{ color: TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{index.name}</span>
+                      <span style={{ color: index.changePercent >= 0 ? UP : DOWN, flexShrink: 0 }}>
                         <TickNum value={index.price} format={(v) => v.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} className="num" />{" "}
                         <TickNum value={index.changePercent} format={pct} className="num" />
                       </span>
                     </div>
                   );
                 })}
+                </div>
               </div>
             </div>
           </section>
@@ -1600,7 +1603,7 @@ export function BigScreenView() {
           </section>
 
           <section className="fade-up" style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0, animationDelay: "270ms" }}>
-            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 16px", flex: 3, minHeight: 0, overflow: "hidden" }}>
+            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 16px", flex: 7, minHeight: 0, overflow: "hidden" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
                 <span style={{ fontSize: 12, color: MUTED }}>策略选股榜</span>
                 <span style={{ fontSize: 10, color: MUTED, fontFamily: "var(--font-mono)" }}>
@@ -1668,7 +1671,7 @@ export function BigScreenView() {
               </div>
               {!sectors && <div style={{ fontSize: 12, color: MUTED }}>板块数据读取中…</div>}
               {sectors && (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, flex: 1, minHeight: 0, overflowY: "auto", paddingRight: 4 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, flex: 1, minHeight: 0, overflowY: "auto", paddingRight: 4 }}>
                   {sectors.items.map((sector) => {
                     // 板块热力可能来自麦蕊/东财板块榜，code 为空或东财板块代码无法直接拉 K 线；
                     // 统一按板块名解析到对应的 ETF 代码。解析不到则该板块无法查看 K 线（点击无跳转）。
