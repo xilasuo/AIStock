@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Star, Sparkles } from "lucide-react";
+import { Star, Sparkles, Home } from "lucide-react";
 import { calculatePortfolioInsights } from "../../lib/domain/portfolio-insights";
 import type { CapitalFlow, Trade } from "../../lib/domain/domain";
 import { formatDateTimeShanghai, shanghaiDate } from "../../lib/utils/time";
@@ -109,6 +109,7 @@ function RealtimeClock({ refreshMs, lastLoadAt }: { refreshMs: number; lastLoadA
 
   return (
     <>
+      <span>{timeText}</span>
       <span
         style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
         title={live ? "实时更新中（北京时间工作日 09:00–16:00）" : "非交易时段已锁定：仅在北京时间工作日 09:00–16:00 实时刷新（周末除外）"}
@@ -143,7 +144,6 @@ function RealtimeClock({ refreshMs, lastLoadAt }: { refreshMs: number; lastLoadA
         )}
       </span>
       <span style={{ color: sessionLabel === "开盘中" ? ACCENT : MUTED, fontSize: 12 }}>{sessionLabel}</span>
-      <span>{timeText}</span>
     </>
   );
 }
@@ -993,30 +993,33 @@ export function BigScreenView() {
       <div className="bs-stealth-hint">隐身模式 · 按 Esc 退出</div>
       <div style={{ width: "100%", padding: "18px 24px", display: "flex", flexDirection: "column", height: "100%" }}>
         <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 14, gap: 14 }}>
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <button
               type="button"
               onClick={() => router.push("/")}
-              className="interactive bs-panel"
+              className="interactive"
+              title="返回主页"
               style={{
-                background: "rgba(255,255,255,.04)",
-                border: "0.5px solid var(--border)",
-                color: TEXT,
-                borderRadius: 999,
-                padding: "6px 14px",
-                fontSize: 12.5,
-                fontFamily: "var(--font-sans)",
+                background: "transparent",
+                border: "none",
+                color: "var(--accent, #00e5ff)",
+                borderRadius: 6,
+                padding: "6px",
                 cursor: "pointer",
                 flexShrink: 0,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                lineHeight: 1,
               }}
             >
-              ← 主页
+              <Home size={18} />
             </button>
             <div>
               <div style={{ fontSize: 24, fontWeight: 500 }}>股市数据大屏</div>
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 14, fontFamily: "var(--font-mono)", fontSize: 13, color: MUTED }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, fontFamily: "var(--font-mono)", fontSize: 13, color: MUTED, marginLeft: "auto" }}>
             {scan?.marketState?.state && (
               <span style={{ color: marketStateColor }}>大盘状态 {marketStateLabel}</span>
             )}
@@ -1033,7 +1036,7 @@ export function BigScreenView() {
                 color: quota.suspended ? "#ff6b6b" : quota.degraded ? "#f5a623" : MUTED,
                 border: `1px solid ${quota.suspended ? "rgba(255,107,107,0.4)" : quota.degraded ? "rgba(245,166,35,0.4)" : "var(--border)"}`,
                 borderRadius: 999,
-                padding: "2px 8px",
+                padding: "4px 12px",
               }}
             >
               麦蕊 {quota.used.toLocaleString()}/10000

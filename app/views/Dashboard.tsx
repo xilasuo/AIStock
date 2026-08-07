@@ -1129,24 +1129,6 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
             <span className="privacy-pill"><ShieldCheck size={14} />私有个人空间</span>
           </div>
           <div className="top-actions">
-            <div className="topbar-search">
-              <StockSearch
-                compact
-                placeholder="代码 / 名称 / 拼音"
-                value={query}
-                onChange={setQuery}
-                onSubmit={(q) => {
-                  navigate("analysis");
-                  void analyzeStock(undefined, q);
-                }}
-                onSelect={(symbol) => {
-                  navigate("analysis");
-                  void analyzeStock(undefined, symbol);
-                }}
-                loading={analyzing}
-                suggestions={topbarSuggestions}
-              />
-            </div>
             <span
               className="quota-pill"
               onClick={() => setQuotaPanelOpen((v) => !v)}

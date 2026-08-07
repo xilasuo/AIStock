@@ -169,10 +169,10 @@ export async function fetchQuota(): Promise<QuotaView> {
  * 返回最新视图 + 手动刷新 + 重置（重置需服务端 super_admin 权限，本地估计一并清零）。
  */
 export function useMairuiQuota(pollMs = 30_000) {
+  // 初始值统一用 used=0（SSR 与首次 CSR 一致），避免 hydration mismatch；
+  // 真实额度由下方 useEffect 在挂载后从 localStorage / 后端异步读取并更新。
   const [view, setView] = React.useState<QuotaView>(
-    typeof window === "undefined"
-      ? { used: 0, limit: DAILY_LIMIT, degraded: false, suspended: false, ratio: 0, source: "local" }
-      : cachedView ?? { ...quotaStatus(), source: "local" },
+    { used: 0, limit: DAILY_LIMIT, degraded: false, suspended: false, ratio: 0, source: "local" },
   );
 
   const refresh = React.useCallback(async () => {
@@ -198,6 +198,9 @@ export function useMairuiQuota(pollMs = 30_000) {
   }, []);
 
   React.useEffect(() => {
+    // 挂载后立即从 localStorage 读取真实额度（避免 SSR 0 的短暂闪烁），再异步拉后端。
+    const local = quotaStatus();
+    setView({ ...local, source: "local" });
     void refresh();
     const t = window.setInterval(refresh, pollMs);
     return () => window.clearInterval(t);

@@ -548,6 +548,25 @@ svg { display: block; }
 
 .account-button > svg { color: var(--muted); }
 
+/* 主页 topbar 内统一风格：与麦蕊胶囊同高同圆角 */
+.top-actions .account-button {
+  min-height: 30px;
+  padding: 2px 10px 2px 4px;
+  border-radius: 999px;
+  gap: 6px;
+}
+.top-actions .account-button > span {
+  width: 22px;
+  height: 22px;
+  font-size: 11px;
+}
+/* topbar 内按钮（记录买入等）也统一为胶囊风格 */
+.top-actions .btn {
+  min-height: 30px;
+  border-radius: 999px;
+  padding: 0 14px;
+}
+
 .page-content {
   margin: 0 auto;
   max-width: 1440px;
@@ -5610,6 +5629,7 @@ svg { display: block; }
   .mobile-brand { display: block; font-size: var(--fs-lg); font-weight: 600; }
   .top-actions { gap: 6px; }
   .account-button { background: transparent; border: 0; padding: 4px; }
+  .top-actions .quota-pill { display: none; }
   .account-button b,
   .account-button > svg { display: none; }
   .page-content { padding: 22px 18px 96px; }
