@@ -414,6 +414,8 @@ export function BigScreenView() {
   // 隐身模式（老板键）：与 Dashboard 共用偏好，亮屏/暗屏一键切换
   const [stealth, setStealth] = useState(false);
   const prefsRef = useRef<Record<string, unknown> | null>(null);
+  // 交易偏好（含 maxLossPercent/maxConcentrationPercent 等），用于风险预警按用户设置判断。
+  const [prefs, setPrefs] = useState<{ maxLossPercent?: number; maxConcentrationPercent?: number; maxPositionPercent?: number; enforceStopLoss?: boolean; stealthMode?: boolean } | null>(null);
 
   // 客户端挂载门控：BigScreenView 含实时时钟/行情/持仓等大量随渲染时刻变化的文本，
   // SSR 阶段（服务器时刻）与客户端水合（浏览器时刻）极易产生文本不一致，
@@ -638,6 +640,13 @@ export function BigScreenView() {
       .then((prefs) => {
         if (cancelled) return;
         prefsRef.current = prefs;
+        setPrefs({
+          maxLossPercent: typeof prefs.maxLossPercent === "number" ? prefs.maxLossPercent : undefined,
+          maxConcentrationPercent: typeof prefs.maxConcentrationPercent === "number" ? prefs.maxConcentrationPercent : undefined,
+          maxPositionPercent: typeof prefs.maxPositionPercent === "number" ? prefs.maxPositionPercent : undefined,
+          enforceStopLoss: typeof prefs.enforceStopLoss === "boolean" ? prefs.enforceStopLoss : undefined,
+          stealthMode: !!prefs.stealthMode,
+        });
         const on = !!prefs.stealthMode;
         setStealth(on);
         document.documentElement.classList.toggle("stealth", on);
@@ -835,32 +844,93 @@ export function BigScreenView() {
   type RiskAlert = { level: "high" | "warn"; label: string; detail: string };
   const riskAlerts = useMemo<RiskAlert[]>(() => {
     const alerts: RiskAlert[] = [];
-    let maxAlloc = 0;
-    let maxAllocName = "";
+    // 用户设置的风险参数（来自 /api/preferences）
+    const maxLossPct = prefs?.maxLossPercent ?? 3; // 买入价亏损止损线 %
+    const maxConcPct = prefs?.maxConcentrationPercent ?? 30; // 单股仓位上限 %
+    const maxPosPct = prefs?.maxPositionPercent ?? 70; // 总仓位上限 %
+    const takeProfitPct = 8; // 止盈参考线（盈利达 8% 提示止盈）
+
+    // 1) 止损 / 逼近止损：买入后亏损达 maxLossPct% → 清仓离场
     for (const p of positions) {
-      if (p.allocationPercent != null && p.allocationPercent > maxAlloc) {
-        maxAlloc = p.allocationPercent;
-        maxAllocName = p.name;
+      const ret = p.returnPercent;
+      if (ret != null && ret <= -maxLossPct + 1) {
+        const triggered = ret <= -maxLossPct; // 达止损线
+        const severe = Math.abs(ret) >= maxLossPct + 2; // 超 2pp
+        alerts.push({
+          level: severe ? "high" : triggered ? "high" : "warn",
+          label: severe ? "止损" : triggered ? "止损" : "逼近止损",
+          detail: `${p.name} 已亏 ${pct(ret)}，止损线 -${maxLossPct}%，${prefs?.enforceStopLoss ? "立即清仓离场" : "考虑清仓离场"}`,
+        });
       }
     }
-    if (maxAlloc >= 40) alerts.push({ level: "high", label: "持仓集中", detail: `${maxAllocName} 占 ${maxAlloc.toFixed(0)}%` });
-    else if (maxAlloc >= 30) alerts.push({ level: "warn", label: "持仓偏集中", detail: `${maxAllocName} 占 ${maxAlloc.toFixed(0)}%` });
+
+    // 2) 止盈：盈利达 takeProfitPct% → 考虑减仓锁定利润
+    for (const p of positions) {
+      const ret = p.returnPercent;
+      if (ret != null && ret >= takeProfitPct) {
+        alerts.push({
+          level: "warn",
+          label: "止盈",
+          detail: `${p.name} 已赚 ${pct(ret)}，考虑减仓锁定利润`,
+        });
+      }
+    }
+
+    // 3) 减仓：单股仓位超 maxConcPct% → 考虑减仓分散
+    for (const p of positions) {
+      if (p.allocationPercent != null && p.allocationPercent >= maxConcPct) {
+        const severe = p.allocationPercent >= maxConcPct + 10;
+        alerts.push({
+          level: severe ? "high" : "warn",
+          label: "减仓",
+          detail: `${p.name} 占 ${p.allocationPercent.toFixed(0)}%，超上限 ${maxConcPct}%，考虑减仓分散`,
+        });
+      }
+    }
+
+    // 4) 加仓：盈利中、仓位未超限、总仓位有空间 → 机会信号
+    const totalPos = insights.totalPositionPercent ?? 0;
+    for (const p of positions) {
+      const ret = p.returnPercent;
+      const alloc = p.allocationPercent ?? 0;
+      if (
+        ret != null && ret > 0 && ret < takeProfitPct && // 盈利但未到止盈
+        alloc < maxConcPct && // 单股未超限
+        totalPos < maxPosPct // 总仓位有空间
+      ) {
+        alerts.push({
+          level: "warn",
+          label: "加仓",
+          detail: `${p.name} 盈 ${pct(ret)}、仓位 ${alloc.toFixed(0)}%，趋势良好可考虑加仓`,
+        });
+      }
+    }
+
+    // 5) 开新仓：总仓位 < maxPosPct% 且 现金充足 → 机会信号
+    const total = insights.totalAssetsCents ?? 0;
+    const cash = insights.cashCents ?? 0;
+    if (totalPos < maxPosPct && total > 0 && cash / total >= 0.1) {
+      alerts.push({
+        level: "warn",
+        label: "开新仓",
+        detail: `总仓位 ${totalPos.toFixed(0)}%（上限 ${maxPosPct}%），现金 ${(cash / total * 100).toFixed(0)}%，可开新仓`,
+      });
+    }
+
+    // 6) 补充：今日大跌（关注是否触发止损）
     for (const p of positions) {
       const cp = quotes[p.symbol]?.changePercent;
       if (cp != null && cp <= -5) {
-        alerts.push({ level: cp <= -8 ? "high" : "warn", label: "今日大跌", detail: `${p.name} ${pct(cp)}` });
+        alerts.push({ level: cp <= -8 ? "high" : "warn", label: "今日大跌", detail: `${p.name} ${pct(cp)}，关注是否触发止损` });
       }
     }
-    const total = insights.totalAssetsCents ?? 0;
-    const cash = insights.cashCents ?? 0;
-    if (total > 0 && cash / total < 0.1) {
-      alerts.push({ level: "warn", label: "现金偏低", detail: `现金 ${(cash / total *100).toFixed(0)}%` });
-    }
+
+    // 7) 补充：账户浮亏
     if ((insights.totalProfitCents ?? 0) < 0) {
-      alerts.push({ level: "warn", label: "账户浮亏", detail: pct(insights.totalProfitPercent) });
+      alerts.push({ level: "warn", label: "账户浮亏", detail: `整体 ${pct(insights.totalProfitPercent)}，检视持仓止损纪律` });
     }
-    return alerts.slice(0, 6);
-  }, [positions, quotes, insights]);
+    return alerts.slice(0, 8);
+  }, [positions, quotes, insights, prefs]);
 
   // 跑马灯：自选 + 持仓行情串联，复制一份实现无缝滚动
   const marqueeSymbols = useMemo(() => {
