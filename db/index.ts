@@ -249,12 +249,12 @@ export async function ensureSchema() {
     // 1.5) 单例配置表（账户设置 / 风险偏好）按 user_id 建立唯一索引，
     // 支撑 account/preferences 路由的 onConflictDoUpdate（UPSERT）。
     // 先去重（保留每用户最小 id 的一行），避免老库存在重复行导致建索引失败。
+    // 逐条 run（非 batch）：与建索引同理，D1 中 ADD COLUMN 后同 batch 内语句可能因
+    // schema 缓存看不到刚加的 user_id 列而报 no such column。
     for (const table of ["account_settings", "trading_preferences"]) {
-      await db.batch([
-        db.prepare(
-          `DELETE FROM ${table} WHERE id NOT IN (SELECT MIN(id) FROM ${table} GROUP BY user_id)`,
-        ),
-      ]);
+      await db.prepare(
+        `DELETE FROM ${table} WHERE id NOT IN (SELECT MIN(id) FROM ${table} GROUP BY user_id)`,
+      ).run();
     }
 
     // 1.6) 选股前置条件配置表按用户隔离：加可空 user_id 列。
@@ -276,60 +276,36 @@ export async function ensureSchema() {
     // 供 optimizer 计算「哪些因子在用户认可的信号里更重要」，反向调整权重。
     await addColumnIfMissing("strategy_feedback", "factors", "factors TEXT NOT NULL DEFAULT ''");
 
-    await db.batch([
-      db.prepare(
-        `CREATE UNIQUE INDEX IF NOT EXISTS account_settings_user_idx ON account_settings(user_id)`,
-      ),
-      db.prepare(
-        `CREATE UNIQUE INDEX IF NOT EXISTS trading_preferences_user_idx ON trading_preferences(user_id)`,
-      ),
+    // 逐个建索引（不放入 db.batch）：D1 中 ALTER TABLE ADD COLUMN 后，同一 batch 内
+    // 的 CREATE INDEX 可能因 schema 缓存看不到刚加的列而报 no such column。逐条 run()
+    // 每条都会重新解析 schema，保证 ADD COLUMN 后的索引创建稳健幂等。
+    const incrementalIndexes = [
       // 按 user_id 过滤是绝大多数业务查询的主路径；原 symbol 索引错配实际访问模式，
       // 这里补建 user_id 复合索引，避免全表扫描（P0 性能优化）。
-      db.prepare(
-        `CREATE INDEX IF NOT EXISTS trade_records_user_idx ON trade_records(user_id, trade_date)`,
-      ),
-      db.prepare(
-        `CREATE INDEX IF NOT EXISTS watch_items_user_idx ON watch_items(user_id)`,
-      ),
-      db.prepare(
-        `CREATE INDEX IF NOT EXISTS alert_rules_user_idx ON alert_rules(user_id)`,
-      ),
-      db.prepare(
-        `CREATE INDEX IF NOT EXISTS reviews_user_idx ON reviews(user_id)`,
-      ),
-      db.prepare(
-        `CREATE INDEX IF NOT EXISTS analysis_reports_user_idx ON analysis_reports(user_id, symbol)`,
-      ),
-      db.prepare(
-        `CREATE INDEX IF NOT EXISTS announcement_notes_user_idx ON announcement_notes(user_id, symbol)`,
-      ),
-      db.prepare(
-        `CREATE INDEX IF NOT EXISTS capital_flows_user_idx ON capital_flows(user_id)`,
-      ),
-      db.prepare(
-        `CREATE INDEX IF NOT EXISTS strategy_feedback_user_idx ON strategy_feedback(user_id)`,
-      ),
-      db.prepare(
-        `CREATE INDEX IF NOT EXISTS watch_details_user_idx ON watch_details(user_id, symbol)`,
-      ),
+      `CREATE UNIQUE INDEX IF NOT EXISTS account_settings_user_idx ON account_settings(user_id)`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS trading_preferences_user_idx ON trading_preferences(user_id)`,
+      `CREATE INDEX IF NOT EXISTS trade_records_user_idx ON trade_records(user_id, trade_date)`,
+      `CREATE INDEX IF NOT EXISTS watch_items_user_idx ON watch_items(user_id)`,
+      `CREATE INDEX IF NOT EXISTS alert_rules_user_idx ON alert_rules(user_id)`,
+      `CREATE INDEX IF NOT EXISTS reviews_user_idx ON reviews(user_id)`,
+      `CREATE INDEX IF NOT EXISTS analysis_reports_user_idx ON analysis_reports(user_id, symbol)`,
+      `CREATE INDEX IF NOT EXISTS announcement_notes_user_idx ON announcement_notes(user_id, symbol)`,
+      `CREATE INDEX IF NOT EXISTS capital_flows_user_idx ON capital_flows(user_id)`,
+      `CREATE INDEX IF NOT EXISTS strategy_feedback_user_idx ON strategy_feedback(user_id)`,
+      `CREATE INDEX IF NOT EXISTS watch_details_user_idx ON watch_details(user_id, symbol)`,
       // 选股前置配置读取主路径：WHERE user_id = ? ORDER BY updated_at DESC。
       // 原表零索引，读配置全表扫描；补 (user_id, updated_at) 复合索引正好匹配访问模式。
-      db.prepare(
-        `CREATE INDEX IF NOT EXISTS strategy_config_user_idx ON strategy_config(user_id, updated_at)`,
-      ),
+      `CREATE INDEX IF NOT EXISTS strategy_config_user_idx ON strategy_config(user_id, updated_at)`,
       // 每次冷启动 ensureSchema 都要 SELECT ... WHERE role = 'super_admin'；补 role 索引。
-      db.prepare(
-        `CREATE INDEX IF NOT EXISTS users_role_idx ON users(role)`,
-      ),
+      `CREATE INDEX IF NOT EXISTS users_role_idx ON users(role)`,
       // 扫描/回写结果按「用户 + 时间倒序」分页，原仅有 created_at 单列索引；
       // 补 (user_id, created_at) 复合索引以命中真实查询顺序。
-      db.prepare(
-        `CREATE INDEX IF NOT EXISTS strategy_scan_user_idx ON strategy_scan(user_id, created_at)`,
-      ),
-      db.prepare(
-        `CREATE INDEX IF NOT EXISTS strategy_writeback_user_idx ON strategy_writeback(user_id, created_at)`,
-      ),
-    ]);
+      `CREATE INDEX IF NOT EXISTS strategy_scan_user_idx ON strategy_scan(user_id, created_at)`,
+      `CREATE INDEX IF NOT EXISTS strategy_writeback_user_idx ON strategy_writeback(user_id, created_at)`,
+    ];
+    for (const sql of incrementalIndexes) {
+      await db.prepare(sql).run();
+    }
 
     // 2) watch_details 老表（单列 symbol 主键）迁移到复合主键 (symbol, user_id)
     const wdInfo = await db.prepare(`PRAGMA table_info(watch_details)`).all();
