@@ -369,7 +369,14 @@ async function getFundamentals(symbol: string): Promise<FundamentalsResult> {
   const url = `https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${symbol}?symbol=${symbol}&type=${types}&period1=${start}&period2=${now}`;
 
   try {
-    const data = await fetchJson<{ timeseries?: { result?: FundamentalSeries[] } }>(url);
+    // Yahoo 为境外源，国内网络普遍不可达。用本地短超时（3.5s）包裹，
+    // 避免拖慢整个分析主流程（Promise.all 会等最慢的源）。
+    const data = await Promise.race<{ timeseries?: { result?: FundamentalSeries[] } }>([
+      fetchJson<{ timeseries?: { result?: FundamentalSeries[] } }>(url),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Yahoo 财务源超时")), 3_500),
+      ),
+    ]);
     const rows: Record<string, FundamentalPoint[]> = {};
 
     for (const series of data.timeseries?.result ?? []) {

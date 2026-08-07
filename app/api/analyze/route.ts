@@ -265,6 +265,26 @@ export async function POST(request: Request) {
       return Response.json({ error: "请输入有效的股票代码或名称" }, { status: 400 });
     }
 
+    // 生成策略且前端已带上一次分析得到的 context 时，直接复用该上下文生成策略，
+    // 跳过 analyzeStockData 的整条远程行情链路（避免重复拉取、双重等待）。
+    if (payload.strategy && isValidContext(payload.context)) {
+      const result: Record<string, unknown> = {};
+      try {
+        let prefs = DEFAULT_PREFERENCES;
+        try {
+          await ensureSchema();
+          prefs = await fetchPreferences(getDb(), user.id);
+        } catch {
+          // 偏好缺失时退回默认纪律
+        }
+        const strategy = await generateStrategy(payload.context as AssistantContext, prefs);
+        Object.assign(result, { strategy: { content: strategy.content, mode: strategy.mode } });
+      } catch {
+        Object.assign(result, { strategyWarning: "操盘策略暂时无法生成（AI 未配置或服务异常），其余分析不受影响。" });
+      }
+      return Response.json(result);
+    }
+
     // force=true 时绕过行情缓存，强制重新拉取最新价（"重新分析"按钮）
     const facts = await analyzeStockData(query, payload.force === true);
     const analysis = payload.explain === false || facts.stock.instrumentType === "etf"

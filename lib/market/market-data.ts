@@ -453,7 +453,14 @@ async function eastmoneyFundamentals(code: string): Promise<EmFundamentals> {
   const url = `https://datacenter.eastmoney.com/securities/api/data/v1/get?reportName=RPT_F10_FIN_MAININDICATOR&columns=SECUCODE,SECURITY_CODE,REPORT_DATE,GROSS_PROFIT_RATIO,NETPROFIT_RATIO,ROE,OPERATE_CASH_FLOW,INDUSTRY_NAME&filter=(SECURITY_CODE%3D%22${secu}%22)&pageSize=5&sortColumns=REPORT_DATE&sortTypes=-1&source=HSF10&client=PC`;
   const empty: EmFundamentals = { grossMargin: null, profitMargin: null, roe: null, operatingCashflow: null, sector: null };
   try {
-    const res = await fetch(url, { headers: { "user-agent": UA }, signal: AbortSignal.timeout(TIMEOUT) });
+    // 该接口（RPT_F10_FIN_MAININDICATOR）实测已下线，恒返回空，却每次都要等完整超时。
+    // 用本地短超时（3s）包裹，超时即放弃返回缺省，避免拖慢整条 profile 链路。
+    const res = await Promise.race<Response>([
+      fetch(url, { headers: { "user-agent": UA }, signal: AbortSignal.timeout(TIMEOUT) }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("emFundamentals 超时")), 3_000),
+      ),
+    ]);
     if (!res.ok) return empty;
     const data = await res.json() as {
       data?: { result?: { data?: Array<Record<string, unknown>> } };
