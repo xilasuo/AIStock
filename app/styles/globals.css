@@ -412,6 +412,25 @@ svg { display: block; }
   padding: 2px;
 }
 
+/* 数据大屏顶部搜索框：复用紧凑高度，但不改动宽度（外层由内联样式控制 320px） */
+.bigscreen-search .stock-search.compact {
+  background: var(--surface-soft);
+  border-color: var(--line);
+  box-shadow: none;
+  padding: 2px;
+  width: 100%;
+}
+.bigscreen-search .stock-search.compact input {
+  font-size: var(--fs-sm);
+  padding: 5px 0;
+}
+.bigscreen-search .stock-search.compact .search-icon {
+  margin: 0 6px 0 4px;
+}
+.bigscreen-search .stock-search.compact button[type="submit"] {
+  display: none;
+}
+
 .topbar-search .stock-search.compact:focus-within {
   border-color: var(--accent);
   background: var(--surface);

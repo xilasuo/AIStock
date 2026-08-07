@@ -1130,7 +1130,7 @@ export function BigScreenView() {
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, marginBottom: 12, alignItems: "center", width: "100%" }}>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
             {riskAlerts.length === 0 ? (
             <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(45,212,191,.10)", border: "0.5px solid rgba(45,212,191,.35)", color: "#9ff0e2", borderRadius: 10, padding: "7px 14px", fontSize: 12.5 }}>
@@ -1163,7 +1163,7 @@ export function BigScreenView() {
             })
           )}
           </div>
-          <div style={{ width: 320, minWidth: 200, flex: "0 1 auto" }}>
+          <div className="bigscreen-search" style={{ width: 310, display: "flex", alignItems: "center", height: 30 }}>
             <StockSearch
               compact
               hideSubmitButton
@@ -1230,7 +1230,6 @@ export function BigScreenView() {
               <div style={{ fontSize: 11, color: MUTED, marginBottom: 6, flexShrink: 0 }}>大盘指数</div>
               <div style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingRight: 4 }}>
                 {activeIndices.length === 0 && <div style={{ fontSize: 12, color: MUTED }}>暂无指数数据</div>}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 10px" }}>
                 {activeIndices.map((index) => {
                   const active = isActiveKlineCode(index.code);
                   return (
@@ -1256,13 +1255,12 @@ export function BigScreenView() {
                       style={{
                         display: "flex",
                         justifyContent: "space-between",
-                        fontSize: 12,
+                        fontSize: 13,
                         fontFamily: "var(--font-mono)",
-                        padding: "4px 6px",
+                        padding: "5px 0",
                         cursor: "pointer",
                         background: active ? "rgba(0,229,255,.08)" : "transparent",
                         borderRadius: 4,
-                        minWidth: 0,
                       }}
                     >
                       <span style={{ color: TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{index.name}</span>
@@ -1273,7 +1271,6 @@ export function BigScreenView() {
                     </div>
                   );
                 })}
-                </div>
               </div>
             </div>
           </section>
@@ -1603,7 +1600,7 @@ export function BigScreenView() {
           </section>
 
           <section className="fade-up" style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0, animationDelay: "270ms" }}>
-            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 16px", flex: 7, minHeight: 0, overflow: "hidden" }}>
+            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 16px", flex: 6, minHeight: 0, overflow: "hidden" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
                 <span style={{ fontSize: 12, color: MUTED }}>策略选股榜</span>
                 <span style={{ fontSize: 10, color: MUTED, fontFamily: "var(--font-mono)" }}>
@@ -1664,7 +1661,7 @@ export function BigScreenView() {
                 );
               })}
             </div>
-            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 16px", flex: 2, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 16px", flex: 5, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8, flexShrink: 0 }}>
                 <span style={{ fontSize: 12, color: MUTED }}>板块热力</span>
                 <span style={{ fontSize: 10, color: MUTED, fontFamily: "var(--font-mono)" }}>{sectors?.date ?? "加载中"}</span>
