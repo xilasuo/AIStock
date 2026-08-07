@@ -43,6 +43,7 @@ export type KlineBar = {
   high: number;
   low: number;
   vol: number;
+  amount?: number;
 };
 
 /**
@@ -867,9 +868,20 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
                   <span>高 {crosshair.bar.high.toFixed(2)}</span>
                   <span>低 {crosshair.bar.low.toFixed(2)}</span>
                   <span>收 {crosshair.bar.close.toFixed(2)}</span>
-                  {crosshair.bar.vol != null && (
-                      <span style={{ gridColumn: "1 / -1" }}>量 {(crosshair.bar.vol / 100).toLocaleString("zh-CN", { maximumFractionDigits: 0 })} 手</span>
-                  )}
+                  {crosshair.bar.vol != null && (() => {
+                    const realAmt = crosshair.bar.amount;
+                    const estAmt = ((crosshair.bar.vol * (crosshair.bar.open + crosshair.bar.close)) / 2) / 1e8;
+                    const amtYi = (realAmt != null && !Number.isNaN(realAmt) ? realAmt / 1e8 : estAmt);
+                    const isEstimated = !(realAmt != null && !Number.isNaN(realAmt));
+                    return (
+                      <>
+                        <span style={{ gridColumn: "1 / -1" }}>量 {(crosshair.bar.vol / 100).toLocaleString("zh-CN", { maximumFractionDigits: 0 })} 手</span>
+                        <span style={{ gridColumn: "1 / -1" }}>
+                          额 {amtYi.toLocaleString("zh-CN", { maximumFractionDigits: 2 })} 亿元{isEstimated ? "（约）" : ""}
+                        </span>
+                      </>
+                    );
+                  })()}
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 8px", marginTop: 2, paddingTop: 3, borderTop: "0.5px solid rgba(148,163,184,.15)", fontSize: 10, color: "var(--text)" }}>
                   {crosshair.ma.map((m) => (

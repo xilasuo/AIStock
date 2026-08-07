@@ -18,6 +18,8 @@ export type KBar = {
   low: number;
   close: number;
   vol: number;
+  // 成交额（元），东财来源提供；新浪兜底来源无此字段时为 undefined。
+  amount?: number;
 };
 
 export type Markers = {
@@ -102,7 +104,7 @@ export async function fetchKline(
     try {
       const url =
         `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${emSecid(code)}${code}` +
-        `&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56` +
+        `&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57` +
         `&klt=${klt}&fqt=1&end=20500101&lmt=${limit}`;
       const res = await fetch(url, {
         headers: { "User-Agent": UA, Referer: "https://quote.eastmoney.com/" },
@@ -120,6 +122,7 @@ export async function fetchKline(
             high: Number(p[3]),
             low: Number(p[4]),
             vol: Number(p[5]),
+            amount: Number(p[6]),
           };
         });
       }
@@ -159,27 +162,28 @@ export async function fetchKline(
   try {
     const url =
       `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${emSecid(code)}${code}` +
-      `&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56` +
-      `&klt=${KLT[period]}&fqt=1&end=20500101&lmt=${limit}`;
-    const res = await fetch(url, {
-      headers: { "User-Agent": UA, Referer: "https://quote.eastmoney.com/" },
-      signal: AbortSignal.timeout(8000),
-    });
-    const j = (await res.json()) as { data?: { klines?: string[] } };
-    const kls = j.data?.klines;
-    if (kls && kls.length) {
-      return kls.map((line) => {
-        const p = line.split(",");
-        return {
-          date: p[0],
-          open: Number(p[1]),
-          close: Number(p[2]),
-          high: Number(p[3]),
-          low: Number(p[4]),
-          vol: Number(p[5]),
-        };
+      `&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57` +
+        `&klt=${KLT[period]}&fqt=1&end=20500101&lmt=${limit}`;
+      const res = await fetch(url, {
+        headers: { "User-Agent": UA, Referer: "https://quote.eastmoney.com/" },
+        signal: AbortSignal.timeout(8000),
       });
-    }
+      const j = (await res.json()) as { data?: { klines?: string[] } };
+      const kls = j.data?.klines;
+      if (kls && kls.length) {
+        return kls.map((line) => {
+          const p = line.split(",");
+          return {
+            date: p[0],
+            open: Number(p[1]),
+            close: Number(p[2]),
+            high: Number(p[3]),
+            low: Number(p[4]),
+            vol: Number(p[5]),
+            amount: Number(p[6]),
+          };
+        });
+      }
   } catch {
     /* 东财失败 -> 新浪兜底 */
   }

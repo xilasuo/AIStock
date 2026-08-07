@@ -422,12 +422,12 @@ export function BigScreenView() {
   useEffect(() => setMounted(true), []);
 
   // 大屏中央主图：交互式 K 线选中股票（前端拉取本地渲染，支持缩放/平移/周期切换）
-  const [klinePick, setKlinePick] = useState<{ code: string; name: string } | null>(null);
+  // 默认进入大屏直接展示上证指数（000001）K 线，而非资产收益曲线。
+  const [klinePick, setKlinePick] = useState<{ code: string; name: string }>({ code: "000001", name: "上证指数" });
+  // 是否临时切换显示资产收益曲线（默认 false：显示 K 线主图）。
+  const [showAssetCurve, setShowAssetCurve] = useState(false);
   const openKline = (code: string, name: string) => {
     setKlinePick((prev) => (prev?.code === code ? prev : { code, name }));
-  };
-  const closeKline = () => {
-    setKlinePick(null);
   };
   const isActiveKlineCode = (code: string) => klinePick?.code === code;
 
@@ -1259,17 +1259,17 @@ export function BigScreenView() {
             <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "12px 14px", display: "flex", flexDirection: "column", flex: 7, minHeight: 0, position: "relative" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                 <span style={{ fontSize: 12, color: MUTED }}>
-                  {klinePick
-                    ? `${klinePick.name}（${klinePick.code}）· K线技术面板`
-                    : "资产走势 · 近 60 个节点（最新价估算）"}
+                  {showAssetCurve
+                    ? "资产走势 · 近 60 个节点（最新价估算）"
+                    : `${klinePick.name}（${klinePick.code}）· K线技术面板`}
                 </span>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  {!klinePick && chart && (
+                  {!showAssetCurve && chart && (
                     <span style={{ fontSize: 13, color: CHART, fontFamily: "var(--font-mono)" }}>
                       {pct(((chart.latest - chart.first) / chart.first) * 100)}
                     </span>
                   )}
-                  {klinePick && (
+                  {!showAssetCurve && klinePick.code !== "000001" && (
                     <>
                       <button
                         type="button"
@@ -1315,34 +1315,51 @@ export function BigScreenView() {
                         <Sparkles size={13} />
                         生成策略
                       </button>
-                      <button
-                        type="button"
-                        onClick={closeKline}
-                        className="interactive bs-panel"
-                        style={{
-                          background: "rgba(0,229,255,.10)",
-                          border: "0.5px solid rgba(0,229,255,.4)",
-                          color: ACCENT,
-                          borderRadius: 999,
-                          padding: "3px 12px",
-                          fontSize: 11.5,
-                          fontFamily: "var(--font-sans)",
-                          cursor: "pointer",
-                        }}
-                        title="返回大屏主图"
-                      >
-                        ← 返回资产走势
-                      </button>
+                      {showAssetCurve ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowAssetCurve(false)}
+                          className="interactive bs-panel"
+                          style={{
+                            background: "rgba(0,229,255,.10)",
+                            border: "0.5px solid rgba(0,229,255,.4)",
+                            color: ACCENT,
+                            borderRadius: 999,
+                            padding: "3px 12px",
+                            fontSize: 11.5,
+                            fontFamily: "var(--font-sans)",
+                            cursor: "pointer",
+                          }}
+                          title="返回大盘 K 线"
+                        >
+                          ← 返回大盘
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setShowAssetCurve(true)}
+                          className="interactive bs-panel"
+                          style={{
+                            background: "rgba(0,229,255,.10)",
+                            border: "0.5px solid rgba(0,229,255,.4)",
+                            color: ACCENT,
+                            borderRadius: 999,
+                            padding: "3px 12px",
+                            fontSize: 11.5,
+                            fontFamily: "var(--font-sans)",
+                            cursor: "pointer",
+                          }}
+                          title="查看我的资产收益曲线"
+                        >
+                          我的收益
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
               </div>
-              {klinePick ? (
-                <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", width: "100%" }}>
-                  {/* 交互式 K 线：滚轮缩放 + 拖拽平移 + 日/周/月周期切换 + 仅最近 N 根 */}
-                  <InteractiveKline code={klinePick.code} name={klinePick.name} fillParent />
-                </div>
-              ) : chart ? (
+              {showAssetCurve ? (
+                chart ? (
                 <svg
                   viewBox={`0 0 ${CHART_W} ${CHART_H}`}
                   width="100%"
@@ -1386,9 +1403,15 @@ export function BigScreenView() {
                     </g>
                   )}
                 </svg>
-              ) : (
+                ) : (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flex: 1, color: MUTED, fontSize: 13 }}>
                   记录交易并设置初始资金后，这里会生成净值曲线
+                </div>
+                )
+              ) : (
+                <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", width: "100%" }}>
+                  {/* 交互式 K 线：滚轮缩放 + 拖拽平移 + 日/周/月周期切换 + 仅最近 N 根 */}
+                  <InteractiveKline code={klinePick.code} name={klinePick.name} fillParent />
                 </div>
               )}
               {chart && (
