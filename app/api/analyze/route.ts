@@ -7,6 +7,7 @@ import { DEFAULT_PREFERENCES, fetchPreferences } from "../../../lib/utils/prefer
 import { tradeModePrompt } from "../../../lib/utils/trade-mode";
 import { isValidContext, type AssistantContext } from "../../../lib/ai/assistant";
 import { generateStrategy } from "../../../lib/ai/trading-strategy";
+import { saveStrategySuggestion } from "../../../lib/strategy-suggestions";
 import { shanghaiIso } from "../../../lib/utils/time";
 
 type DeepSeekResponse = {
@@ -278,7 +279,15 @@ export async function POST(request: Request) {
           // 偏好缺失时退回默认纪律
         }
         const strategy = await generateStrategy(payload.context as AssistantContext, prefs);
-        Object.assign(result, { strategy: { content: strategy.content, mode: strategy.mode } });
+        Object.assign(result, { strategy });
+        // 自动入库建议追踪
+        try {
+          const ctx = payload.context as AssistantContext;
+          await saveStrategySuggestion({
+            userId: user.id, symbol: ctx.stock.code, name: ctx.stock.name,
+            price: ctx.quote.price, result: strategy, context: payload.context,
+          });
+        } catch { /* 入库失败不影响主流程 */ }
       } catch {
         Object.assign(result, { strategyWarning: "操盘策略暂时无法生成（AI 未配置或服务异常），其余分析不受影响。" });
       }
@@ -305,7 +314,14 @@ export async function POST(request: Request) {
             // 偏好缺失时退回默认纪律
           }
           const strategy = await generateStrategy(payload.context as AssistantContext, prefs);
-          Object.assign(result, { strategy: { content: strategy.content, mode: strategy.mode } });
+          Object.assign(result, { strategy });
+          // 自动入库建议追踪
+          try {
+            await saveStrategySuggestion({
+              userId: user.id, symbol: facts.stock.code, name: facts.stock.name,
+              price: facts.quote.price, result: strategy, context: payload.context,
+            });
+          } catch { /* 入库失败不影响主流程 */ }
         } catch {
           Object.assign(result, { strategyWarning: "操盘策略暂时无法生成（AI 未配置或服务异常），其余分析不受影响。" });
         }

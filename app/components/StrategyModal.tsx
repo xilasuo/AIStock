@@ -51,6 +51,13 @@ type Analysis = {
   source: { name: string; fetchedAt: string; url?: string };
 };
 
+function cqClass(score: number): string {
+  if (score >= 90) return "q-excellent";
+  if (score >= 70) return "q-good";
+  if (score >= 50) return "q-fair";
+  return "q-poor";
+}
+
 export type StrategyModalProps = {
   code: string;
   name: string;
@@ -133,7 +140,12 @@ export function StrategyModal({
   portfolioInsights,
   onClose,
 }: StrategyModalProps) {
-  const [strategy, setStrategy] = useState<{ content: string; mode: string } | null>(null);
+  const [strategy, setStrategy] = useState<{
+    content: string; mode: string;
+    ruleAction?: string | null; aiAction?: string | null; diff?: boolean | null;
+    validationWarnings?: string[];
+    contextQuality?: { overall: number };
+  } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -158,7 +170,7 @@ export function StrategyModal({
 
         const context = buildContextFromAnalysis(analysis, position, portfolioInsights);
         const result = await jsonRequest<{
-          strategy?: { content: string; mode: string };
+          strategy?: { content: string; mode: string; ruleAction?: string | null; aiAction?: string | null; diff?: boolean | null; validationWarnings?: string[]; contextQuality?: { overall: number; dimensions?: Array<{ label: string; score: number; detail: string }> } };
           strategyWarning?: string;
           error?: string;
         }>("/api/analyze", {
@@ -228,9 +240,34 @@ export function StrategyModal({
               <div className="strategy-header">
                 <Target size={18} />
                 <span>操盘策略</span>
-                <span className="strategy-mode">{strategy.mode === "deepseek" ? "AI 生成" : "规则生成"}</span>
+                <span className="strategy-mode">{strategy.mode === "deepseek" || strategy.mode === "openai" ? "AI 生成" : "规则生成"}</span>
+                {strategy.diff === true && (
+                  <span className="strategy-diff strategy-diff--warn">{`AI→${strategy.aiAction ?? "?"} 规则→${strategy.ruleAction ?? "?"}`}</span>
+                )}
+                {strategy.diff === false && (
+                  <span className="strategy-diff strategy-diff--ok">AI与规则一致</span>
+                )}
+                {strategy.aiAction === null && strategy.mode === "automatic" && (
+                  <span className="strategy-diff strategy-diff--fallback">仅规则引擎</span>
+                )}
+                {strategy.contextQuality && (
+                  <span className={`quality-badge ${cqClass(strategy.contextQuality.overall)}`}
+                    title={`上下文质量: ${strategy.contextQuality.overall}/100`}>
+                    数据{strategy.contextQuality.overall}
+                  </span>
+                )}
               </div>
               <StrategyBlocks content={strategy.content} />
+              {strategy.validationWarnings && strategy.validationWarnings.length > 0 && (
+                <div className="strategy-validation-warnings">
+                  {strategy.validationWarnings.map((w, i) => (
+                    <div key={i} className="strategy-validation-warning">
+                      <AlertCircle size={14} />
+                      <span>{w}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

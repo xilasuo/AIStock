@@ -20,6 +20,7 @@ import { MarkdownMessage } from "../components/MarkdownMessage";
 import { StrategyBlocks } from "../components/StrategyBlocks";
 import { StrategyScanView, type StrategyScanResponse } from "./StrategyScanView";
 import { WritebackView } from "./WritebackView";
+import SuggestionTrackingView from "./SuggestionTrackingView";
 import { UsersAdmin } from "../components/UsersAdmin";
 import { TickNum } from "../components/TickNum";
 import {
@@ -62,6 +63,7 @@ import {
   RotateCw,
   Zap,
   Monitor,
+  Target,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -102,9 +104,9 @@ import { formatDateTimeShanghai, shanghaiIso } from "../../lib/utils/time";
 import { readCache, writeCache, removeCache, removeCacheByPrefix, readKeyedCacheWithMeta, writeKeyedCache } from "../../lib/utils/client-cache";
 import { planRefresh, recordQuota, useMairuiQuota } from "../../lib/market/mairui-quota";
 
-type View = "home" | "watchlist" | "trades" | "settings" | "analytics" | "analysis" | "scan" | "writeback";
+type View = "home" | "watchlist" | "trades" | "settings" | "analytics" | "analysis" | "scan" | "writeback" | "suggestions";
 type TradeMode = "buy" | "sell";
-const VALID_VIEWS: View[] = ["home", "analysis", "watchlist", "trades", "settings", "analytics", "scan", "writeback"];
+const VALID_VIEWS: View[] = ["home", "analysis", "watchlist", "trades", "settings", "analytics", "scan", "writeback", "suggestions"];
 
 type WatchItem = {
   id: number;
@@ -326,6 +328,7 @@ const navItems: Array<{ id: View; label: string; icon: LucideIcon }> = [
   { id: "settings", label: "系统设置", icon: SettingsIcon },
   { id: "scan", label: "策略扫描", icon: ScanLine },
   { id: "writeback", label: "回写结果", icon: Upload },
+  { id: "suggestions", label: "建议追踪", icon: Target },
 ];
 
 // 买入理由：按「基本面/技术面/消息面/情绪行为」分组，便于复盘时区分「按规则买」和「情绪买」
@@ -1351,6 +1354,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
               </div>
             )}
             {view === "writeback" && <div className="page-content inner-page"><WritebackView onNavigate={navigate} /></div>}
+            {view === "suggestions" && <div className="page-content inner-page"><SuggestionTrackingView /></div>}
           </>
         )}
       </main>
@@ -2570,6 +2574,7 @@ function StrategyCard({ analysis, position, portfolioInsights }: {
   const [strategy, setStrategy] = useState<{
     content: string; mode: string;
     ruleAction?: string | null; aiAction?: string | null; diff?: boolean | null;
+    validationWarnings?: string[];
   } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -2660,6 +2665,16 @@ function StrategyCard({ analysis, position, portfolioInsights }: {
       {!loading && !error && strategy && (
         <div className="strategy-content">
           <StrategyBlocks content={strategy.content} />
+          {strategy.validationWarnings && strategy.validationWarnings.length > 0 && (
+            <div className="strategy-validation-warnings">
+              {strategy.validationWarnings.map((w, i) => (
+                <div key={i} className="strategy-validation-warning">
+                  <ShieldAlert size={14} />
+                  <span>{w}</span>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="strategy-footer">
             <p className="strategy-disclaimer">
               <ShieldCheck size={14} />
@@ -5529,6 +5544,51 @@ function ReviewModal({ cycle, onClose, onSaved }: {
   const [planError, setPlanError] = useState(false);
   const planFieldsetRef = useRef<HTMLFieldSetElement>(null);
 
+  // 关联策略建议
+  const [suggestions, setSuggestions] = useState<Array<{
+    id: number; action: string | null; source: string; priceAtTime: number | null;
+    contextQualityScore: number | null; createdAt: string;
+  }>>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [selectedSuggestionId, setSelectedSuggestionId] = useState<number | null>(null);
+
+  // 获取这只股票最近的策略建议
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setSuggestionsLoading(true);
+      try {
+        const res = await fetch(`/api/strategy-suggestions?symbol=${encodeURIComponent(cycle.symbol)}&limit=5`);
+        if (!res.ok) return;
+        const json = await res.json() as { code: number; data: Array<Record<string, unknown>> };
+        if (!cancelled) {
+          setSuggestions((json.data || []).map((s) => ({
+            id: s.id as number, action: s.action as string | null, source: s.source as string,
+            priceAtTime: s.priceAtTime as number | null, contextQualityScore: s.contextQualityScore as number | null,
+            createdAt: s.createdAt as string,
+          })));
+        }
+      } catch { /* ignore */ }
+      if (!cancelled) setSuggestionsLoading(false);
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [cycle.symbol]);
+
+  // 建议相关辅助函数
+  const actionLabel = (a: string | null) => {
+    const map: Record<string, string> = { buy: "开新仓", add: "加仓", hold: "持有", reduce: "减持", clear: "清仓", watch: "观察", skip: "观望" };
+    return a && map[a] ? map[a] : (a || "—");
+  };
+  const sourceBadge = (s: string) => ({ ai: "🤖", rule: "📏", hybrid: "🔀" })[s] || "📏";
+  const cqLevel = (score: number) => score >= 90 ? "excellent" : score >= 70 ? "good" : score >= 50 ? "fair" : "poor";
+  const formatTimeShort = (v: string | undefined) => {
+    if (!v) return "—";
+    const m = v.match(/(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
+    if (m) return `${m[1]}-${m[2]} ${m[3]}:${m[4]}`;
+    return v.slice(0, 16);
+  };
+
   // 根据「有没有按计划执行」自动预填改进建议（用户已手写则不覆盖），减少空想负担
   function applyLessonSuggestion(plan: "yes" | "no") {
     if (lesson.trim()) return;
@@ -5592,6 +5652,7 @@ function ReviewModal({ cycle, onClose, onSaved }: {
           lesson: data.get("lesson"),
           deviationReason,
           tags,
+          strategySuggestionId: selectedSuggestionId,
         }),
       });
       await onSaved();
@@ -5689,6 +5750,32 @@ function ReviewModal({ cycle, onClose, onSaved }: {
               ))}
             </div>
           </Field>
+          {suggestions.length > 0 && (
+            <fieldset className="review-suggestion-fieldset">
+              <legend>关联策略建议 <small>（可选）将该复盘与之前的 AI/规则建议关联，方便事后评估建议准确率</small></legend>
+              <div className="suggestion-list-inline">
+                {suggestions.map((s) => (
+                  <button
+                    type="button"
+                    key={s.id}
+                    className={`suggestion-chip${selectedSuggestionId === s.id ? " selected" : ""}`}
+                    onClick={() => setSelectedSuggestionId(selectedSuggestionId === s.id ? null : s.id)}
+                  >
+                    <span className="chip-action">{actionLabel(s.action)}</span>
+                    <span className="chip-source">{sourceBadge(s.source)}</span>
+                    <span className="chip-time">{formatTimeShort(s.createdAt)}</span>
+                    {s.contextQualityScore != null && (
+                      <span className={`chip-cq q-${cqLevel(s.contextQualityScore)}`}>{s.contextQualityScore}分</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+              {selectedSuggestionId && (
+                <button type="button" className="clear-link" onClick={() => setSelectedSuggestionId(null)}>取消关联</button>
+              )}
+            </fieldset>
+          )}
+          {suggestionsLoading && <p className="form-message">加载策略建议中…</p>}
           {message && <p className="form-message" role="alert">{message}</p>}
           <div className="modal-actions"><Button variant="ghost" onClick={onClose}>取消</Button><Button variant="primary" type="submit" disabled={saving}>{saving ? "正在保存…" : "保存复盘"}</Button></div>
         </form>

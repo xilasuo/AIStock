@@ -121,6 +121,8 @@ export const reviews = sqliteTable("reviews", {
   resultCents: integer("result_cents").notNull().default(0),
   tags: text("tags").notNull().default("[]"),
   deviationReason: text("deviation_reason").notNull().default(""),
+  /** 关联的策略建议 ID（可选），复盘时可追溯到当时 AI/规则给出的建议 */
+  strategySuggestionId: integer("strategy_suggestion_id"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
   // 与 ensureSchema 运行时索引逐字一致。
@@ -249,4 +251,42 @@ export const strategyConfig = sqliteTable("strategy_config", {
 }, (table) => ({
   // 读配置主路径：WHERE user_id = ? ORDER BY updated_at DESC。
   userIdx: index("strategy_config_user_idx").on(table.userId, table.updatedAt),
+}));
+
+// 策略建议追踪表：记录每次 AI/规则引擎生成的策略建议，支持用户事后标注结果
+// (正确/错误/不确定)，用于统计 AI 准确率与优化迭代。
+export const strategySuggestions = sqliteTable("strategy_suggestions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id").notNull().default(0),
+  symbol: text("symbol").notNull(),
+  name: text("name").notNull().default(""),
+  /** 最终采纳的动作结论（规则引擎优先，AI 不可用时回退规则） */
+  action: text("action", { enum: ["开新仓", "加仓", "持有", "减仓", "清仓", "观望"] }),
+  /** 来源：ai=LLM输出, rule=规则引擎兜底, hybrid=AI+规则一致 */
+  source: text("source").notNull().default("rule"),
+  aiAction: text("ai_action"),
+  ruleAction: text("rule_action"),
+  /** 0=AI与规则一致, 1=AI与规则分歧, NULL=仅规则引擎 */
+  diff: integer("diff"),
+  /** 生成建议时的股价 */
+  priceAtTime: real("price_at_time"),
+  /** 生成时 context 快照（JSON 字符串） */
+  contextJson: text("context_json"),
+  /** 用户标注结果：pending=待验证, correct=正确, wrong=错误, uncertain=不确定 */
+  outcome: text("outcome", { enum: ["pending", "correct", "wrong", "uncertain"] }).notNull().default("pending"),
+  outcomeNote: text("outcome_note").notNull().default(""),
+  /** 标注时的股价 */
+  outcomePrice: real("outcome_price"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  /** 用户标注结果的时间 */
+  outcomeAt: text("outcome_at"),
+  /** AI 输出数字回验警告（JSON 数组字符串），如 ["[幻觉] 止损价≥现价", ...] */
+  validationWarnings: text("validation_warnings").notNull().default(""),
+  /** 上下文数据质量总分 0-100 */
+  contextQualityScore: integer("context_quality_score"),
+}, (table) => ({
+  // 主查询：用户 + 时间倒序（最近建议列表）
+  userIdx: index("strategy_suggestions_user_idx").on(table.userId, table.createdAt),
+  // 按标注状态过滤（待验证列表）
+  outcomeIdx: index("strategy_suggestions_outcome_idx").on(table.userId, table.outcome),
 }));

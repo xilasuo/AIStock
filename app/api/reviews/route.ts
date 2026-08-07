@@ -50,6 +50,12 @@ export async function POST(request: Request) {
     const followedPlan = payload.followedPlan === true;
     const deviationReason = String(payload.deviationReason ?? "").trim();
     const cycleEndTradeId = Number(payload.cycleEndTradeId);
+    // 可选关联策略建议 ID
+    let strategySuggestionId: number | null = null;
+    if (payload.strategySuggestionId !== undefined && payload.strategySuggestionId !== null) {
+      const sid = Number(payload.strategySuggestionId);
+      if (Number.isInteger(sid) && sid > 0) strategySuggestionId = sid;
+    }
     const tags = parseReviewTags(payload.tags);
     if (!isStockCode(symbol) || !name || !buyReason || !sellReason || !lesson) {
       return Response.json({ error: "请完整填写复盘内容" }, { status: 400 });
@@ -88,6 +94,7 @@ export async function POST(request: Request) {
       tags: JSON.stringify(tags),
       deviationReason,
       resultCents: cycle.realizedCents,
+      strategySuggestionId,
       createdAt: shanghaiIso(),
     }).returning();
     return Response.json({ review: { ...review, tags } }, { status: 201 });
