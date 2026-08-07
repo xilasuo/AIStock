@@ -1315,6 +1315,21 @@ svg { display: block; }
 
 .sector-heatmap-state.error span { color: var(--muted); font-size: var(--fs-xs); }
 
+.sector-heatmap-state.info {
+  background: color-mix(in srgb, var(--accent-ink) 12%, var(--surface-soft));
+  border: 1px solid color-mix(in srgb, var(--accent-ink) 22%, transparent);
+  border-radius: 9px;
+  color: var(--accent-ink);
+  flex-direction: row;
+  gap: 7px;
+  justify-content: flex-start;
+  min-height: 0;
+  padding: 9px 12px;
+  text-align: left;
+}
+
+.sector-heatmap-state.info span { color: var(--muted); font-size: var(--fs-xs); }
+
 .sector-heatmap-foot {
   align-items: center;
   color: var(--muted);

@@ -69,14 +69,21 @@ export async function POST(request: Request) {
     }
     // 防御性清理：若此前 DELETE 的 db.batch 部分失败，watchDetails 可能残留孤儿行
     await db.delete(watchDetails).where(and(eq(watchDetails.symbol, symbol), eq(watchDetails.userId, user.id)));
-    const [itemRows] = await db.batch([
-      db.insert(watchItems).values({ userId: user.id, symbol, name, note, createdAt: shanghaiIso() }).returning(),
-      db.insert(watchDetails).values({ userId: user.id, symbol, conditionText, status: "研究中" }),
-    ]);
-    const item = itemRows[0];
+    // 不使用 db.batch：D1 的 batch 对 RETURNING 支持不稳定，且写入非原子会留孤儿行。
+    // 改用顺序 await，先写主表取回自增 id，再写明细，逻辑等价且更稳。
+    const [item] = await db.insert(watchItems).values({
+      userId: user.id,
+      symbol,
+      name,
+      note,
+      createdAt: shanghaiIso(),
+    }).returning();
+    await db.insert(watchDetails).values({ userId: user.id, symbol, conditionText, status: "研究中" });
     return Response.json({ item: { ...item, conditionText, status: "研究中", lastReviewedAt: null } }, { status: 201 });
-  } catch {
-    return Response.json({ error: "加入关注失败" }, { status: 500 });
+  } catch (error) {
+    console.error("[watchlist POST] 加入关注失败", error);
+    const detail = error instanceof Error ? error.message : String(error);
+    return Response.json({ error: "加入关注失败", detail }, { status: 500 });
   }
 }
 

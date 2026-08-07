@@ -29,6 +29,7 @@ import {
   Bell,
   Bot,
   CalendarDays,
+  CalendarClock,
   ChevronRight,
   ChevronDown,
   TrendingUp,
@@ -2043,6 +2044,12 @@ function SectorHeatmap() {
       )}
       {!loading && data && (
         <>
+          {data.note && (
+            <div className="sector-heatmap-state info" role="status">
+              <CalendarClock size={14} />
+              <span>{data.note}</span>
+            </div>
+          )}
           <div className="sector-heatmap-grid">
             {data.sectors.map((sector, index) => {
               const direction = sector.changePercent > 0 ? "up-sector" : sector.changePercent < 0 ? "down-sector" : "flat-sector";

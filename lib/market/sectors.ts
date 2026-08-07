@@ -23,6 +23,10 @@ export type SectorHeatmap = {
     url: string;
     fetchedAt: string;
   };
+  /** 实际使用的交易日。与请求日期不同时说明发生了回退（盘前/非交易日）。 */
+  effectiveDate?: string;
+  /** 回退说明；为空表示数据就是请求当日产出的。 */
+  note?: string;
 };
 
 type IndustryProxy = {
@@ -107,7 +111,10 @@ export function rankSectorMoves(moves: SectorMove[], limit = 10) {
     .slice(0, limit);
 }
 
-async function loadSectorMove(proxy: IndustryProxy, date: string) {
+async function loadSectorMove(
+  proxy: IndustryProxy,
+  date: string,
+): Promise<{ move: SectorMove | null; maxDate: string | null }> {
   try {
     const response = await fetch(
       `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${proxy.symbol},day,,,800,qfq`,
@@ -116,38 +123,62 @@ async function loadSectorMove(proxy: IndustryProxy, date: string) {
         signal: AbortSignal.timeout(8_000),
       },
     );
-    if (!response.ok) return null;
+    if (!response.ok) return { move: null, maxDate: null };
     const payload = await response.json() as TencentKlineResponse;
     const rows = payload.data?.[proxy.symbol]?.qfqday ?? payload.data?.[proxy.symbol]?.day ?? [];
-    return parseEtfKlines(proxy, rows, date);
+    let maxDate: string | null = null;
+    for (const row of rows) {
+      const d = row[0];
+      if (typeof d === "string" && (!maxDate || d > maxDate)) maxDate = d;
+    }
+    return { move: parseEtfKlines(proxy, rows, date), maxDate };
   } catch {
-    return null;
+    return { move: null, maxDate: null };
   }
 }
 
-async function loadSectorMoves(date: string) {
+async function loadSectorMoves(date: string): Promise<{ moves: SectorMove[]; latestDate: string | null }> {
   const moves: SectorMove[] = [];
+  let latestDate: string | null = null;
   for (let index = 0; index < INDUSTRY_PROXIES.length; index += 4) {
     const batch = await Promise.all(
       INDUSTRY_PROXIES.slice(index, index + 4).map((proxy) => loadSectorMove(proxy, date)),
     );
-    moves.push(...batch.filter((move): move is SectorMove => move !== null));
+    for (const result of batch) {
+      if (result.move) moves.push(result.move);
+      if (result.maxDate && (!latestDate || result.maxDate > latestDate)) latestDate = result.maxDate;
+    }
   }
-  return moves;
+  return { moves, latestDate };
 }
 
 export async function getSectorHeatmap(date: string, limit = 10): Promise<SectorHeatmap> {
   const validationError = validateSectorDate(date);
   if (validationError) throw new Error(validationError);
 
-  // 三级兜底：腾讯ETF代理(主) → 东财板块榜(二级) → 麦蕊板块批量接口(三级)
-  // 任一级成功且板块数足够即通过；全失败才抛错。
-  let moves = await loadSectorMoves(date);
+  // 主源(腾讯行业ETF代理)按请求日期取数；同时记录可取到的最近交易日。
+  const primary = await loadSectorMoves(date);
+  let moves = primary.moves;
+  const latestDate = primary.latestDate;
   let basis: SectorHeatmap["basis"] = "etf-proxy";
   let source = { name: "腾讯证券行业主题ETF行情", url: SOURCE_URL, fetchedAt: shanghaiIso() };
+  let effectiveDate = date;
+  let note: string | undefined;
 
+  // 主源对请求日期无数据（盘前/盘中未收盘/非交易日/周末）→ 回退到最近有数据的真实交易日，
+  // 清晰标注，避免返回 503 或把旧数据伪装成当日数据。
+  if (moves.length < 5 && latestDate && latestDate < date) {
+    effectiveDate = latestDate;
+    const retry = await loadSectorMoves(effectiveDate);
+    if (retry.moves.length >= 5) {
+      moves = retry.moves;
+      note = `「${date}」行情尚未产生，已展示最近交易日 ${effectiveDate} 的板块表现`;
+    }
+  }
+
+  // 二级兜底：东方财富板块涨幅榜（实时/最近收盘，不保证与历史 date 完全一致）。
   if (moves.length < 5) {
-    const em = await loadEastmoneySectorMoves(date, limit);
+    const em = await loadEastmoneySectorMoves(date);
     if (em.length >= 5) {
       moves = em;
       basis = "eastmoney-board";
@@ -155,8 +186,9 @@ export async function getSectorHeatmap(date: string, limit = 10): Promise<Sector
     }
   }
 
+  // 三级兜底：麦蕊行业板块批量接口（需配置 key）。
   if (moves.length < 5) {
-    const mr = await loadMairuiSectorMoves(date, limit);
+    const mr = await loadMairuiSectorMoves(date);
     if (mr.length >= 5) {
       moves = mr;
       basis = "mairui-board";
@@ -169,17 +201,19 @@ export async function getSectorHeatmap(date: string, limit = 10): Promise<Sector
   }
 
   return {
-    date,
+    date: effectiveDate,
     sectors: rankSectorMoves(moves, limit),
     sampleSize: moves.length,
     basis,
     source,
+    effectiveDate,
+    note,
   };
 }
 
 // 二级数据源：东方财富板块涨幅榜（行业 + 概念）。一次性批量拉取，零额度成本。
 // 注：东财板块榜为实时/最近收盘数据，不保证与历史 date 完全一致；大屏主看当天，回退可接受。
-async function loadEastmoneySectorMoves(date: string, limit: number): Promise<SectorMove[]> {
+async function loadEastmoneySectorMoves(date: string): Promise<SectorMove[]> {
   try {
     const fsList = ["m:90+t:2", "m:90+t:3"]; // 行业板块 + 概念板块
     const lists: Array<{ f12?: string; f14?: string; f3?: number }> = [];
@@ -217,7 +251,7 @@ async function loadEastmoneySectorMoves(date: string, limit: number): Promise<Se
 }
 
 // 三级数据源适配：麦蕊行业板块批量接口（一次调用）。字段仅 name + changePercent，其余补占位。
-async function loadMairuiSectorMoves(date: string, limit: number): Promise<SectorMove[]> {
+async function loadMairuiSectorMoves(date: string): Promise<SectorMove[]> {
   try {
     const rows = await getMairuiSectorMoves();
     if (!rows || rows.length === 0) return [];

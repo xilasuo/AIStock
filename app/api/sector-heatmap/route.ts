@@ -19,7 +19,8 @@ export async function GET(request: Request) {
 
   try {
     const heatmap = await getSectorHeatmap(date, limit);
-    const isToday = date === shanghaiDate();
+    const effective = heatmap.effectiveDate ?? date;
+    const isToday = effective === shanghaiDate();
     return Response.json(heatmap, {
       headers: {
         "cache-control": isToday ? "private, max-age=300" : "private, max-age=21600",

@@ -64,10 +64,12 @@ export async function ensureSchema() {
       )`),
       db.prepare(`CREATE TABLE IF NOT EXISTS watch_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-        symbol TEXT NOT NULL UNIQUE,
+        user_id INTEGER NOT NULL DEFAULT 0,
+        symbol TEXT NOT NULL,
         name TEXT NOT NULL,
         note TEXT NOT NULL DEFAULT '',
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, symbol)
       )`),
       db.prepare(`CREATE TABLE IF NOT EXISTS watch_details (
         symbol TEXT NOT NULL,
@@ -311,6 +313,44 @@ export async function ensureSchema() {
           SELECT symbol, 0, condition_text, status, last_reviewed_at, updated_at, condition_metric, condition_direction, condition_value FROM watch_details`),
         db.prepare(`DROP TABLE watch_details`),
         db.prepare(`ALTER TABLE watch_details_new RENAME TO watch_details`),
+      ]);
+    }
+
+    // 2.5) watch_items 老表（symbol 单列 UNIQUE）迁移到复合唯一 (user_id, symbol)。
+    // 早期建表为 symbol 单列 UNIQUE，与全站「(user_id, x) 复合唯一」的多用户隔离设计冲突：
+    // 不同用户无法关注同一标的，非拥有者插入会触发全局 UNIQUE 约束导致 500。
+    // 检测旧单列唯一索引（sqlite_autoindex_*）后整体重建为复合唯一。
+    // 旧单列唯一只覆盖 symbol；复合唯一覆盖 (user_id, symbol)。
+    // 仅靠索引名无法区分二者（重建后仍是 sqlite_autoindex_watch_items_1），故检查其列。
+    let wiNeedsRebuild = false;
+    try {
+      const wiList = await db.prepare(`PRAGMA index_list(watch_items)`).all();
+      const wiAutoIdx = (wiList.results as Array<{ origin?: string; name?: string }>)
+        .find((r) => r.origin === "u" && /autoindex_watch_items/.test(r.name ?? ""));
+      if (wiAutoIdx?.name) {
+        const wiIdxInfo = await db.prepare(`PRAGMA index_info(${wiAutoIdx.name})`).all();
+        const wiCols = (wiIdxInfo.results as Array<{ name?: string }>).map((c) => c.name).filter(Boolean);
+        wiNeedsRebuild = !(wiCols.includes("user_id") && wiCols.includes("symbol"));
+      }
+    } catch {
+      // PRAGMA 不可用时保守跳过重建，避免破坏现有表导致更大故障。
+    }
+    if (wiNeedsRebuild) {
+      await db.batch([
+        db.prepare(`CREATE TABLE watch_items_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+          user_id INTEGER NOT NULL DEFAULT 0,
+          symbol TEXT NOT NULL,
+          name TEXT NOT NULL,
+          note TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(user_id, symbol)
+        )`),
+        db.prepare(`INSERT INTO watch_items_new (id, user_id, symbol, name, note, created_at)
+          SELECT id, user_id, symbol, name, note, created_at FROM watch_items`),
+        db.prepare(`DROP TABLE watch_items`),
+        db.prepare(`ALTER TABLE watch_items_new RENAME TO watch_items`),
+        db.prepare(`CREATE INDEX IF NOT EXISTS watch_items_user_idx ON watch_items(user_id)`),
       ]);
     }
 
