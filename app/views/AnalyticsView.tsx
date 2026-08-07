@@ -98,6 +98,9 @@ export function AnalyticsView({
     } catch (error) {
       console.error("导出图片失败", error);
     } finally {
+      // html-to-image 导出过程可能给容器加 transform/filter 临时样式，
+      // 若未清理干净会破坏 position:fixed 元素（如全局 AI 助手 FAB）的定位
+      cleanupExportStyles();
       setExporting(false);
     }
   }
@@ -125,8 +128,19 @@ export function AnalyticsView({
     } catch (error) {
       console.error("导出 PDF 失败", error);
     } finally {
+      cleanupExportStyles();
       setExporting(false);
     }
+  }
+
+  /** 清理 html-to-image 导出过程中可能残留在容器上的 inline 样式，避免破坏 fixed 定位元素 */
+  function cleanupExportStyles() {
+    const el = viewRef.current;
+    if (!el) return;
+    el.style.removeProperty("transform");
+    el.style.removeProperty("filter");
+    el.style.removeProperty("will-change");
+    el.style.removeProperty("-webkit-transform");
   }
 
   return (
