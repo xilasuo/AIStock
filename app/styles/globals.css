@@ -6898,7 +6898,7 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
 }
 .assistant-page .sa--page .sa-head {
   border-bottom: 1px solid var(--line);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   padding: 10px 14px;
 }
 .assistant-page .sa--page .sa-msgs {
@@ -6920,7 +6920,7 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
 
 /* —— 头部股票关联下拉 —— */
 .sa-linker {
-  margin-left: auto;
+  flex-shrink: 0;
   position: relative;
 }
 
@@ -6961,31 +6961,28 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
   top: calc(100% + 6px);
   z-index: 10;
 }
-/* 移动端：linker 下拉做成全宽抽屉，避免被屏幕边缘裁剪 */
+/* 移动端：linker 与标题、操作按钮保持在同一行，标题可自动截断 */
 @media (max-width: 768px) {
   .sa-linker {
-    flex: 0 0 auto;
-    /* 让 linker 单独成行显示，避免被 title/actions 挤到边缘 */
+    flex-shrink: 0;
     margin-left: 0;
-    width: 100%;
+    width: auto;
   }
   .sa-linker__pop {
     border-radius: 10px;
     box-shadow: 0 6px 22px rgba(0, 0, 0, .12);
     left: 0;
     max-height: 60vh;
-    min-width: 0;
+    min-width: 220px;
     overflow-y: auto;
     right: auto;
     top: calc(100% + 6px);
-    width: 100%;
+    width: auto;
     z-index: 30;
   }
-  /* linker 在移动端固定到第二行全宽；标题 + 操作按钮(清空/返回)回到第一行右侧，确保始终可见可点 */
-  .sa-head { flex-wrap: wrap; }
-  .sa-head__title { order: 1; flex: 1 1 auto; min-width: 0; }
-  .sa-head__actions { order: 2; flex-shrink: 0; }
-  .sa-linker { order: 3; }
+  .sa-head { flex-wrap: nowrap; }
+  .sa-head__title { flex: 1 1 auto; min-width: 0; order: 0; }
+  .sa-head__actions { flex-shrink: 0; order: 0; }
 }
 
 .sa-linker__group { display: flex; flex-direction: column; gap: 6px; }

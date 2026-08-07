@@ -6,10 +6,10 @@
 
 ## 主要功能
 
-- 账号体系（Cookie session，多用户 + 超级管理员）：登录页为独立的 `app/login/page.tsx`，主应用 `app/page.tsx` 在服务端校验登录后才渲染 `Dashboard`。首次启动时用 `APP_USERNAME`/`APP_PASSWORD` 自动 seed 一个超级管理员，管理员可在「设置 → 用户」中增删用户、设置角色（`super_admin`/`user`）与禁用账号，数据接口均按登录会话鉴权
+- 账号体系（Cookie session，多用户 + 超级管理员）：密码仅存 PBKDF2 哈希 + 随机 salt，绝不存明文。登录页为独立的 `app/login/page.tsx`，主应用 `app/page.tsx` 在服务端校验登录后才渲染 `Dashboard`。首次启动时用 `APP_USERNAME`/`APP_PASSWORD` 自动 seed 一个超级管理员，管理员可在「设置 → 用户」中增删用户、设置角色（`super_admin`/`user`）、禁用账号；普通用户不能自助注册。所有业务数据均按 `user_id` 隔离归属当前登录用户，数据接口均按登录会话鉴权
 - 行情、财务与题材信息多源整理：配置麦蕊智数 token 后，实时行情、PE/PB、营收/利润/负债率、ROE、行业/简介等**优先取麦蕊**（原生 A 股源、国内稳定）；未配置则自动回退腾讯 / 东方财富 / Yahoo 免费多源，缺失字段以技术面为主分析
-- DeepSeek 或任意 OpenAI 兼容模型解释（也支持 Ollama / OpenRouter / GitHub Models 等免费源）
-- 关注股票、买卖记录、持仓与盈亏计算
+- DeepSeek 或任意 OpenAI 兼容模型解释（也支持 Ollama / OpenRouter / GitHub Models 等免费源；AI 配置集中在 `lib/ai/ai-config.ts` 的 `getAiConfig()`，支持 `AI_PROVIDER`=deepseek|openai，未设 `AI_API_KEY` 时回退 `DEEPSEEK_API_KEY`，密钥为空则进入「自动解释」模式）
+- 关注股票、买卖记录、持仓与盈亏计算（买入/卖出自动按券商佣金费率估算手续费，卖出另计印花税 0.05%；支持单笔最低佣金与「免五」设置）
 - 止盈止损提醒（前端轮询 + 可选 Cloudflare Cron 每 15 分钟主动推送通知）
 - 公告摘要（支持上传 PDF / 链接，自动解析文本）
 - 交易复盘（记录是否按计划、偏离原因、情绪、评分、备注）
@@ -154,16 +154,16 @@ git pull origin main
 
 ## API 路由
 
-所有 `/api/*` 路由均受 `lib/auth.ts` 的 `requireApiUser` 保护（Cron 与策略推送除外，使用各自的 token）。
+所有 `/api/*` 路由均受 `lib/auth/auth.ts` 的 `requireApiUser` 保护（Cron 与策略推送除外，使用各自的 token）。鉴权函数包括：`requireApiUser`（返回 401 Response 或 null）、`requireSuperAdmin`（仅超级管理员，否则 403）、`requireApiUserOrPushToken`（读取类接口支持登录会话或 `x-push-token`/`Bearer` 任一通过）、`getCurrentUser`/`getAuthenticatedUser`。
 
 | 路由 | 方法 | 说明 |
 |------|------|------|
-| `/api/auth/login` `/api/auth/logout` | POST | 登录 / 登出（Cookie session） |
+| `/api/auth/login` `/api/auth/logout` | POST / GET | 登录（formData）/ 登出（Cookie session） |
 | `/api/me` | GET | 当前登录用户信息（含 `role`） |
-| `/api/users` | GET / POST | 用户管理（超级管理员）：列出全部用户 / 新建用户（可指定 `super_admin` 或 `user` 角色） |
+| `/api/users` | GET / POST / PATCH / DELETE | 用户管理（超级管理员）：列出 / 新建（指定 `super_admin` 或 `user` 角色）/ 修改 / 删除用户 |
 | `/api/trades` | GET / POST | 交易记录（POST 买入带 `maxLoss` 时自动建止损提醒） |
 | `/api/watchlist` | GET / POST / PATCH / DELETE | 关注股票 |
-| `/api/alerts` | GET / POST / PATCH | 提醒规则（`PATCH action`: `disable`/`acknowledge`/`trigger`） |
+| `/api/alerts` | GET / POST / PATCH / DELETE | 提醒规则（`PATCH action`: `disable`/`acknowledge`/`trigger`） |
 | `/api/reviews` | GET / POST | 交易复盘 |
 | `/api/account` | GET / PUT | 账户（初始资金 / 资金流水；`PUT action`: `initialCapital`/`create_flow`/`delete_flow`） |
 | `/api/import` | POST | 仅接受 `{csv}` 原始文本，服务端解析券商导出 |
@@ -173,13 +173,16 @@ git pull origin main
 | `/api/announcements` | GET / POST / DELETE | 公告（`POST` 用 FormData：symbol/name/title/file/sourceUrl，支持 PDF 解析） |
 | `/api/assistant` | POST | 对话式复盘助手（支持上下文：持仓 + 当前股票分析） |
 | `/api/market` | GET | 板块行情（`type=concepts`）与个股主力资金流（`type=fundflow&symbol=`） |
+| `/api/quote` | POST | 轻量实时行情刷新（传入 `{symbols: string[]}`，单批最多 20 只，仅返回价格与涨跌幅），供前端轮询持仓/关注/提醒 |
+| `/api/kline/[code]` | GET | 单只股票 K 线数据 |
 | `/api/indices` `/api/sector-heatmap` | GET | 指数与板块热力图 |
-| `/api/preferences` | GET / PUT | 用户偏好设置 |
+| `/api/preferences` | GET / PUT | 用户偏好设置（交易风格、风险偏好、佣金费率、止损纪律等，见 `tradingPreferences` 表） |
 | `/api/strategy-scan` | GET / POST | 策略扫描结果读取（GET）/ 本地 trading_agent 推送（POST，需 `x-push-token`） |
-| `/api/strategy-scan/config` | GET / POST | 读取 / 保存选股默认配置（与 `strategy_config.yaml` 共用，前端「策略扫描」面板初始化表单） |
+| `/api/strategy-scan/config` | GET / POST | 读取 / 保存选股默认配置（与 `strategy_config.yaml` 共用，前端「策略扫描」面板初始化表单；支持盘前/盘中/盘后分档） |
 | `/api/strategy-scan/run` | POST | 按前端传入的配置覆盖参数重新跑引擎（调用 `trading_agent/run_hub.py`），支持本地 / 守护进程 / 云端沙箱三种运行环境 |
 | `/api/writeback-signals` | GET / POST | 回写信号读取（GET）/ 本地 trading_agent 推送（POST，需 `x-push-token`） |
 | `/api/feedback` | GET / POST | 策略反馈闭环：用户在前端对信号给出有效/无效评价（按用户隔离），用于优化策略权重 |
+| `/api/feedback/optimize` | POST | 根据当前用户历史反馈（含因子明细）温和倾斜因子权重并写回云端 `strategy_config`（支持 `profile`: `pre_market`/`intraday`/`post_market`；样本不足 3 条不调整） |
 | `/api/cron/check-alerts` | POST | 定时器入口：拉取实时价判断是否触发提醒并推送（需 `Authorization: Bearer <CRON_SECRET>`） |
 | `/api/status` | GET | 运行状态 |
 
@@ -225,10 +228,15 @@ npm run engine                  # 实际执行 node trading_agent/local_engine_s
   │
   ├─ main.py / run_hub.py ──选股/信号──► POST /api/strategy-scan ──► 前端「策略扫描」视图
   │
-  └─ run_hub.py ──候选回写──► POST /api/writeback-signals ──► 前端「回写结果」视图
+  ├─ run_hub.py ──候选回写──► POST /api/writeback-signals ──► 前端「回写结果」视图
+  │
+  └─ 用户在「策略扫描」页标记有效/无效 ──► POST /api/feedback ──► 因子权重
+        │                                                       （按用户隔离）
+        └─ 点「用反馈优化权重」──► POST /api/feedback/optimize ──► 写回云端 strategy_config
+              （下次 run_hub 拉取配置自动应用新权重，无需改 Python 引擎）
 ```
 
-该模块通常在**本地 PC** 运行，跑完选股/信号/回测后，将结果 POST 到云端的对应接口（带 `x-push-token`，值等于云端的 `STRATEGY_PUSH_TOKEN`）。结果为历史数据分析/回测/模拟，不构成投资建议，不做真实下单。
+该模块通常在**本地 PC** 运行，跑完选股/信号/回测后，将结果 POST 到云端的对应接口（带 `x-push-token`，值等于云端的 `STRATEGY_PUSH_TOKEN`）。结果为历史数据分析/回测/模拟，不构成投资建议。**回写默认 `dry_run=True`** 安全，真实下单需显式 `enable_writeback` 且 `dry_run=False`（需接入带下单能力的连接器）。
 
 ### 可选数据源扩展
 
@@ -246,7 +254,7 @@ npm run engine                  # 实际执行 node trading_agent/local_engine_s
 - 视图状态机 `view ∈ home | analysis | watchlist | trades | settings | analytics | strategyScan | writeback`；分析页由 `app/AnalyticsView.tsx` 渲染，回写结果页由 `app/WritebackView.tsx` 渲染。`settings` 含 `account`/`alerts`/`users` 等分区，用户管理（`UsersAdmin`）仅超级管理员可见。
 - 全局浮窗 AI 助手 `FloatingAssistantLauncher`：右下角浮动按钮，展开后支持绑定股票分析、组合持仓查询，选股下拉框自动合并关注列表与最近分析历史。
 - 对话式复盘助手 `SmartAssistant`：分析页内嵌使用，调用 `/api/assistant`，支持分析上下文自动注入。
-- 组件库统一封装在 `app/components.tsx`，样式由 `app/globals.css` 的语义化 class + CSS 变量驱动。
+- 组件库统一封装在 `app/components.tsx`，样式由 `app/globals.css` 的语义化 class + CSS 变量驱动；已引入 Tailwind v4（`@tailwindcss/postcss`）。
 - 图表使用 `lightweight-charts`；分析页导出 PDF 用 `html-to-image` + `jspdf`（动态 import）。
 - 金额统一以整数存储（`priceMillis` ×1000 为主，旧数据可能仅 `priceCents` ×100），前端避免散落浮点金额计算，格式化集中在 `lib/format.ts`。
 
