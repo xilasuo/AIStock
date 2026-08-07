@@ -1130,7 +1130,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
           </div>
           <div className="top-actions">
             <span
-              className="quota-pill"
+              className="quota-pill topbar-quota"
               onClick={() => setQuotaPanelOpen((v) => !v)}
               title={quota.suspended ? "麦蕊今日额度将尽，已暂停主动刷新" : quota.degraded ? "麦蕊额度偏高，已自动放慢刷新" : "麦蕊每日额度消耗（点击查看）"}
               style={{

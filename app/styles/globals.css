@@ -5630,6 +5630,7 @@ svg { display: block; }
   .top-actions { gap: 6px; }
   .account-button { background: transparent; border: 0; padding: 4px; }
   .top-actions .quota-pill { display: none; }
+  .topbar-quota { display: none !important; }
   .account-button b,
   .account-button > svg { display: none; }
   .page-content { padding: 22px 18px 96px; }
