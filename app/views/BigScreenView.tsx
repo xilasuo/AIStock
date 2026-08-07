@@ -1086,7 +1086,7 @@ export function BigScreenView() {
               <Home size={18} />
             </button>
             <div>
-              <div style={{ fontSize: 24, fontWeight: 500 }}>股市数据大屏</div>
+              <div style={{ fontSize: 24, fontWeight: 500 }}>行情数据大屏</div>
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 14, fontFamily: "var(--font-mono)", fontSize: 13, color: MUTED, marginLeft: "auto" }}>
