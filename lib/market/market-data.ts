@@ -4,12 +4,16 @@
  * 设计目标：把"从哪取数"收敛到一处，对外只暴露 getRealtime / getKlines /
  * getProfile 等稳定接口；内部按优先级依次尝试多个【免费公开】数据源，任一成功即返回。
  *
- * 可用数据源（国内网络稳定可达者优先）：
- *   1) 腾讯证券 qt.gtimg.cn —— 主源（个股实时、PE/PB、指数；push2 被掐后的可靠替代）
- *   2) 东方财富 emweb / datacenter —— 财务主指标(ROE/毛利/净利)、行业/简介（域可达）
- *   3) 新浪财经 —— 实时行情后备；新浪财报三表（免费、零 key）兜底营收同比/利润同比/资产负债率
- *   4) 东方财富 push2 / push2his —— 兜底（部分网络环境被掐，TLS 建连后 HTTP 超时）
- *   5) 麦蕊（可选增强层，仅配置 token）—— ROE/净利/行业/简介等基本面深度字段；营收/利润/负债率麦蕊优先，缺失时由新浪三表免费兜底
+ * 数据源优先级（麦蕊优先，免费公开源兜底）：
+ *   1) 麦蕊智数（配置 MAIRUI_TOKEN 时）—— 原生 A 股实时行情 / PE·PB / 指数 / 板块，优先采用；
+ *      启用时若失败（额度耗尽 / 网络错 / 字段缺失 / 熔断）一律静默降级回免费源，不影响主流程。
+ *   2) 腾讯证券 qt.gtimg.cn —— 个股实时、PE/PB、指数（国内网络稳定可达，push2 被掐后的可靠替代）
+ *   3) 东方财富 emweb / datacenter —— 财务主指标(ROE/毛利/净利)、行业/简介（域可达）
+ *   4) 新浪财经 —— 实时行情后备；新浪财报三表（免费、零 key）兜底营收同比/利润同比/资产负债率
+ *   5) 东方财富 push2 / push2his —— 兜底（部分网络环境被掐，TLS 建连后 HTTP 超时）
+ *
+ * 说明：麦蕊历史日K线 / 个股资金流端点暂未在官方文档公开确认，故 K线仍优先腾讯→东财、
+ * 资金流仍用东财；待端点确认后可直接提升为麦蕊优先（此处已预留注释）。
  *
  * 关于描述中另两家数据源在「本项目实际运行时」的可行性：
  *   - AKShare（_em 分支）：它本身不是数据源，只是抓取东方财富/新浪/交易所官网的公开网页接口。
@@ -26,10 +30,9 @@ const TIMEOUT = 10_000;
 const REALTIME_CACHE_MS = 15_000;
 const realtimeCache = new Map<string, { expiresAt: number; value: Promise<RealtimeQuote | null> | RealtimeQuote | null }>();
 
-// 麦蕊（商业付费 API）作为「可选增强层」：仅当配置了 MAIRUI_TOKEN 时启用，
-// 作为实时行情 / 基本面的更高优先级源；无 token 时自动走下方免费多级降级链。
-// 启用时若失败（额度耗尽 / 网络错 / 字段缺失）一律静默降级回免费源，不影响主流程。
-import { getMairuiRealtime, getMairuiFundamentals, isMairuiEnabled } from "./mairui";
+// 麦蕊（商业付费 API）作为「优先数据源」：仅当配置了 MAIRUI_TOKEN 且未熔断时启用，
+// 作为实时行情 / 基本面 / 指数 / 板块的更高优先级源；无 token 时自动走下方免费多级降级链。
+import { getMairuiRealtime, getMairuiFundamentals, getMairuiSectorMoves, isMairuiEnabled } from "./mairui";
 
 // ---------------------------------------------------------------------------
 // 基础工具
@@ -135,6 +138,8 @@ export type FundFlow = {
 export type ConceptBoard = {
   code: string;
   name: string;
+  // 麦蕊优先源会附带板块涨跌幅；东财降级源仅返回代码+名称（changePercent 为 null）。
+  changePercent?: number | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -673,7 +678,7 @@ export async function getProfile(code: string, force = false): Promise<StockProf
       ? tencent.profileError ?? em.profileError ?? null
       : null;
   return {
-    name: tencent.name ?? em.name ?? null,
+    name: mairuiRealtime?.name ?? tencent.name ?? em.name ?? null,
     marketCap: em.marketCap ?? null,
     pe,
     pb,
@@ -701,13 +706,22 @@ export async function getProfile(code: string, force = false): Promise<StockProf
 // ---------------------------------------------------------------------------
 
 /** 概念板块列表（等效于 AKShare stock_board_concept_name_em，底层即东方财富公开接口）。 */
+// 概念板块列表：麦蕊优先（带板块涨跌幅，原生 A 股板块），失败降级东财 push2。
+// 注：东财 push2 在部分网络环境被掐，麦蕊优先可显著提升大屏板块热图的可用率。
 export async function conceptBoards(): Promise<ConceptBoard[]> {
+  if (await isMairuiEnabled()) {
+    const mairuiBoards = await getMairuiSectorMoves();
+    if (mairuiBoards && mairuiBoards.length > 0) {
+      return mairuiBoards.map((b) => ({ code: b.name, name: b.name, changePercent: b.changePercent }));
+    }
+  }
+
   const url = `https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=500&fs=m:90+t:3&fields=f12,f14`;
   const data = await fetchJson<{ data?: { diff?: Array<{ f12?: string; f14?: string }> } }>(url);
   const diff = data.data?.diff ?? [];
   return diff
     .filter((d) => d.f12 && d.f14)
-    .map((d) => ({ code: d.f12 as string, name: d.f14 as string }));
+    .map((d) => ({ code: d.f12 as string, name: d.f14 as string, changePercent: null }));
 }
 
 /** 个股主力资金净流入（等效于 AKShare stock_individual_fund_flow，底层即东方财富公开接口）。 */

@@ -1,6 +1,6 @@
 import { isIsoDate } from "../domain/domain";
 import { shanghaiIso } from "../utils/time";
-import { getMairuiSectorMoves } from "./mairui";
+import { getMairuiSectorMoves, isMairuiEnabled } from "./mairui";
 
 export type SectorMove = {
   code: string;
@@ -156,9 +156,24 @@ export async function getSectorHeatmap(date: string, limit = 10, live = false): 
   const validationError = validateSectorDate(date);
   if (validationError) throw new Error(validationError);
 
-  // 实盘模式（交易时间内）：优先东方财富实时板块榜，让热力图盘中真正跳动。
+  // 实盘模式（交易时间内）：麦蕊优先（原生 A 股板块实时榜），失败降级东财/腾讯，让热力图盘中真正跳动。
   // 实时榜为当前行情，不再回退到历史日 K，避免大屏板块长期静止不更新。
   if (live) {
+    // 一级：麦蕊行业/概念板块实时榜（配置 token 且未熔断时）。
+    if (await isMairuiEnabled()) {
+      const mr = await loadMairuiSectorMoves(date);
+      if (mr.length >= 5) {
+        return {
+          date,
+          sectors: rankSectorMoves(mr, limit),
+          sampleSize: mr.length,
+          basis: "mairui-board",
+          source: { name: "麦蕊智数行业板块(实时优先)", url: "https://www.mairuiapi.com/", fetchedAt: shanghaiIso() },
+          effectiveDate: date,
+        };
+      }
+    }
+    // 二级：东方财富实时板块榜。
     const em = await loadEastmoneySectorMoves(date);
     if (em.length >= 5) {
       return {
@@ -170,7 +185,7 @@ export async function getSectorHeatmap(date: string, limit = 10, live = false): 
         effectiveDate: date,
       };
     }
-    // 实时榜失败则降级到主源当天数据（仍不回退历史，失败就失败，前端会保留旧值）。
+    // 三级：主源当天数据（仍不回退历史，失败就失败，前端会保留旧值）。
     const primary = await loadSectorMoves(date);
     if (primary.moves.length >= 5) {
       return {
@@ -185,14 +200,31 @@ export async function getSectorHeatmap(date: string, limit = 10, live = false): 
     throw new Error("实时板块行情源暂时不可用");
   }
 
-  // 主源(腾讯行业ETF代理)按请求日期取数；同时记录可取到的最近交易日。
-  const primary = await loadSectorMoves(date);
-  let moves = primary.moves;
-  const latestDate = primary.latestDate;
-  let basis: SectorHeatmap["basis"] = "etf-proxy";
-  let source = { name: "腾讯证券行业主题ETF行情", url: SOURCE_URL, fetchedAt: shanghaiIso() };
+  // 一级数据源：麦蕊行业/概念板块（配置 token 且未熔断时优先）。
+  let moves: SectorMove[] = [];
+  let latestDate: string | null = null;
+  let basis: SectorHeatmap["basis"] = "mairui-board";
+  let source = { name: "麦蕊智数行业板块", url: "https://www.mairuiapi.com/", fetchedAt: shanghaiIso() };
   let effectiveDate = date;
   let note: string | undefined;
+
+  if (await isMairuiEnabled()) {
+    const mr = await loadMairuiSectorMoves(date);
+    if (mr.length >= 5) {
+      moves = mr;
+    }
+  }
+
+  // 二级数据源：腾讯行业 ETF 代理（按请求日期取数；同时记录可取到的最近交易日）。
+  if (moves.length < 5) {
+    const primary = await loadSectorMoves(date);
+    latestDate = primary.latestDate;
+    if (primary.moves.length >= 5) {
+      moves = primary.moves;
+      basis = "etf-proxy";
+      source = { name: "腾讯证券行业主题ETF行情", url: SOURCE_URL, fetchedAt: shanghaiIso() };
+    }
+  }
 
   // 主源对请求日期无数据（盘前/盘中未收盘/非交易日/周末）→ 回退到最近有数据的真实交易日，
   // 清晰标注，避免返回 503 或把旧数据伪装成当日数据。
@@ -201,27 +233,19 @@ export async function getSectorHeatmap(date: string, limit = 10, live = false): 
     const retry = await loadSectorMoves(effectiveDate);
     if (retry.moves.length >= 5) {
       moves = retry.moves;
+      basis = "etf-proxy";
+      source = { name: "腾讯证券行业主题ETF行情", url: SOURCE_URL, fetchedAt: shanghaiIso() };
       note = `「${date}」行情尚未产生，已展示最近交易日 ${effectiveDate} 的板块表现`;
     }
   }
 
-  // 二级兜底：东方财富板块涨幅榜（实时/最近收盘，不保证与历史 date 完全一致）。
+  // 三级兜底：东方财富板块涨幅榜（实时/最近收盘，不保证与历史 date 完全一致）。
   if (moves.length < 5) {
     const em = await loadEastmoneySectorMoves(date);
     if (em.length >= 5) {
       moves = em;
       basis = "eastmoney-board";
       source = { name: "东方财富板块涨幅榜", url: "https://quote.eastmoney.com/center/boardlist.html", fetchedAt: shanghaiIso() };
-    }
-  }
-
-  // 三级兜底：麦蕊行业板块批量接口（需配置 key）。
-  if (moves.length < 5) {
-    const mr = await loadMairuiSectorMoves(date);
-    if (mr.length >= 5) {
-      moves = mr;
-      basis = "mairui-board";
-      source = { name: "麦蕊智数行业板块", url: "https://www.mairuiapi.com/", fetchedAt: shanghaiIso() };
     }
   }
 

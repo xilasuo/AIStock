@@ -1,7 +1,9 @@
 // 主要大盘指数实时行情。
-// 主源：腾讯证券 qt.gtimg.cn（国内网络稳定可达，与个股行情同源）。
+// 优先源：麦蕊智数（/hsindex，原生 A 股指数，配置 MAIRUI_TOKEN 时启用）。
+// 降级源：腾讯证券 qt.gtimg.cn（国内网络稳定可达，与个股行情同源）。
 // 注：东方财富 push2 在部分网络环境下被掐（TLS 建连后 HTTP 超时），故不再作为主源。
 import { shanghaiIso } from "../utils/time";
+import { getMairuiIndices, isMairuiEnabled } from "./mairui";
 
 export type IndexQuote = {
   code: string;
@@ -33,6 +35,21 @@ const numOrNull = (v: string): number | null => {
 };
 
 export async function getIndexQuotes(): Promise<IndicesData> {
+  // 优先麦蕊：配置 token 且未熔断时优先使用，失败再降级腾讯。
+  if (await isMairuiEnabled()) {
+    const mairuiIndices = await getMairuiIndices();
+    if (mairuiIndices && mairuiIndices.length > 0) {
+      return {
+        indices: mairuiIndices,
+        source: {
+          name: "麦蕊智数(优先) + 腾讯证券兜底",
+          url: "https://www.mairuiapi.com/",
+          fetchedAt: shanghaiIso(),
+        },
+      };
+    }
+  }
+
   const symbols = MAJOR_INDICES.map((item) => item.tencent).join(",");
   const url = `https://qt.gtimg.cn/q=${symbols}`;
   const response = await fetch(url, {

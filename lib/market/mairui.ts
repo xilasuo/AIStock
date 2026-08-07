@@ -373,6 +373,89 @@ export async function getMairuiFundamentals(code: string, force = false): Promis
 
 export type MairuiSector = { name: string; changePercent: number };
 
+// ---------------------------------------------------------------------------
+// 主要大盘指数实时行情（优先数据源）。
+// 麦蕊沪深指数端点：/hsindex/list/{token} 拿指数列表(dm=代码.市场, mc=名称)，
+// 再并发 /hsindex/real/time/{dm}/{token} 拿实时。返回字段已用官方文档核对：
+//   p = 最新价、yc = 昨收、pc = 涨跌幅(%)、ud = 涨跌额。
+// 未配置 token / 熔断期 / 解析失败一律返回 null，由调用方回退腾讯，不影响主流程。
+// ---------------------------------------------------------------------------
+
+export type MairuiIndex = { code: string; name: string; price: number; changePercent: number; change: number };
+
+// 主要大盘指数 -> 麦蕊代码（带 .SH / .SZ 后缀，与 /hsindex/real/time 路径一致）
+const MAJOR_INDEX_CODES: Array<{ mairui: string; code: string; name: string }> = [
+  { mairui: "000001.SH", code: "000001", name: "上证指数" },
+  { mairui: "399001.SZ", code: "399001", name: "深证成指" },
+  { mairui: "399006.SZ", code: "399006", name: "创业板指" },
+  { mairui: "000300.SH", code: "000300", name: "沪深300" },
+  { mairui: "000688.SH", code: "000688", name: "科创50" },
+  { mairui: "000016.SH", code: "000016", name: "上证50" },
+  { mairui: "899050.BJ", code: "899050", name: "北证50" },
+];
+
+export async function getMairuiIndices(): Promise<MairuiIndex[] | null> {
+  const token = await getMairuiToken();
+  if (!token) return null;
+  if (Date.now() < disabledUntil) return null;
+
+  const listUrl = `${MAIRUI_BASE}/hsindex/list/${token}`;
+  try {
+    const listRes = await fetch(listUrl, {
+      headers: { "user-agent": "Mozilla/5.0 StockReviewAssistant/1.0" },
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (listRes.status === 401 || listRes.status === 403) {
+      tripCircuit();
+      return null;
+    }
+    if (!listRes.ok) return null;
+    // 列表仅用于校验 token 是否有效；实际指数代码用本地常量，避免依赖列表返回顺序。
+    await listRes.json().catch(() => null);
+
+    const results = await Promise.all(
+      MAJOR_INDEX_CODES.map(async (meta) => {
+        const url = `${MAIRUI_BASE}/hsindex/real/time/${meta.mairui}/${token}`;
+        try {
+          const res = await fetch(url, {
+            headers: { "user-agent": "Mozilla/5.0 StockReviewAssistant/1.0" },
+            signal: AbortSignal.timeout(6_000),
+          });
+          if (res.status === 401 || res.status === 403) {
+            tripCircuit();
+            return null;
+          }
+          if (!res.ok) return null;
+          const row = (await res.json()) as Record<string, unknown>;
+          const price = num(row.p) ?? num(row.price);
+          const previousClose = num(row.yc) ?? num(row.preClose);
+          let changePercent = num(row.pc) ?? num(row.changePercent);
+          if (changePercent === null && price !== null && previousClose && previousClose > 0) {
+            changePercent = ((price - previousClose) / previousClose) * 100;
+          }
+          const change = num(row.ud) ?? num(row.change);
+          if (price === null || price <= 0) return null;
+          return {
+            code: meta.code,
+            name: meta.name,
+            price,
+            changePercent: changePercent ?? 0,
+            change: change ?? 0,
+          } as MairuiIndex;
+        } catch {
+          return null;
+        }
+      })
+    );
+    const indices = results.filter((r): r is MairuiIndex => r !== null);
+    if (indices.length === 0) return null;
+    resetCircuit();
+    return indices;
+  } catch {
+    return null;
+  }
+}
+
 export async function getMairuiSectorMoves(): Promise<MairuiSector[] | null> {
   const token = await getMairuiToken();
   if (!token) return null;
