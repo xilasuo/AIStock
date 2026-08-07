@@ -30,12 +30,18 @@ services:
     restart: unless-stopped
 
     # 资源限制（Ubuntu 24 默认 cgroup v2，自动生效）
+    # 放宽 512M -> 1.5G 的依据：workerd 需常驻解析约 5.9MB 的 attached modules，
+    # 空载实测已占 364M（512M 的 71%），/api/analyze 密集调用时余量过小。
+    # 宿主共 3.8G 且已用 914M swap，故不取 2G，留约 1.1G 给系统。
+    # 注意：这是余量加固，并非某次故障的定位结论。曾出现过一次容器重启
+    # （502 / ERR_INCOMPLETE_CHUNKED_ENCODING），但 OOMKilled=false、
+    # ExitCode=0、wrangler 日志无报错、dmesg 无 OOM 记录，未能证实与内存有关。
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 1536M
         reservations:
-          memory: 256M
+          memory: 384M
 
     # 健康检查
     healthcheck:
