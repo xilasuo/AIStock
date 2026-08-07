@@ -4057,6 +4057,124 @@ svg { display: block; }
   letter-spacing: 0.04em;
 }
 
+/* 关注卡片 / 交易表里的「当日分时」迷你走势 */
+.watch-card-intraday {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+.watch-card-intraday-label {
+  color: var(--text-faint);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+.mini-intraday {
+  color: var(--muted);
+  display: inline-flex;
+  flex: 1;
+  min-width: 0;
+}
+.mini-intraday svg { display: block; width: 100%; height: auto; }
+.mini-intraday--up { color: var(--up); }
+.mini-intraday--down { color: var(--down); }
+.mini-intraday--loading,
+.mini-intraday--empty {
+  height: 14px;
+  border-radius: 4px;
+  background: var(--surface-soft);
+}
+
+.trade-stock-cell {
+  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.trade-stock-cell .mini-intraday { flex: none; margin-top: 2px; }
+
+.mini-intraday--clickable { cursor: pointer; transition: opacity 0.15s; }
+.mini-intraday--clickable:hover { opacity: 0.82; }
+
+/* 点击放大弹窗（分时大图） */
+.mini-intraday-modal {
+  align-items: center;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 24px;
+  position: fixed;
+  z-index: 1000;
+}
+.mini-intraday-modal__panel {
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  max-width: 920px;
+  width: 100%;
+}
+.mini-intraday-modal__head {
+  align-items: center;
+  border-bottom: 1px solid var(--border-soft);
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 16px;
+}
+.mini-intraday-modal__title { color: var(--text); font-size: 15px; font-weight: 600; }
+.mini-intraday-modal__title small { color: var(--text-faint); font-weight: 400; margin-left: 4px; }
+.mini-intraday-modal__close {
+  background: transparent;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  height: 28px;
+  width: 28px;
+}
+.mini-intraday-modal__close:hover { color: var(--text); }
+.mini-intraday-modal__chart {
+  height: 480px;
+  padding: 12px 8px 8px;
+}
+.mini-intraday-modal__actions {
+  align-items: center;
+  border-top: 1px solid var(--border-soft);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 16px;
+}
+.mini-intraday-modal__btn {
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: 9px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 8px 16px;
+  transition: background 0.15s, border-color 0.15s;
+}
+.mini-intraday-modal__btn:hover:not(:disabled) { border-color: var(--accent); }
+.mini-intraday-modal__btn:disabled { cursor: default; opacity: 0.7; }
+.mini-intraday-modal__btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.mini-intraday-modal__btn--primary:hover:not(:disabled) { filter: brightness(1.08); }
+.mini-intraday-modal__flash {
+  color: var(--muted);
+  font-size: 12px;
+  margin-left: auto;
+}
+
 .watch-note {
   background: var(--surface-soft);
   border-radius: 8px;

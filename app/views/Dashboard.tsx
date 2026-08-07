@@ -13,6 +13,7 @@ import React, {
 import { useSearchParams, usePathname } from "next/navigation";
 import { SectionHeader, Badge, Stat, Button, IconButton, Field, Input, Select, Textarea, Banner, Hint, LoadingState, ConfirmDialog, StockSearch, type StockSuggestionGroup, type StockSuggestion } from "../components/ui";
 import { Sparkline } from "../components/charts";
+import { MiniIntraday } from "../components/MiniIntraday";
 import { AnalyticsView } from "./AnalyticsView";
 import { ImportPanel } from "./ImportPanel";
 import { MarkdownMessage } from "../components/MarkdownMessage";
@@ -67,8 +68,10 @@ import {
   aggregateMarketHistory,
   buildTradeCycles,
   calculatePortfolio,
+  isIntradayPeriod,
   localIsoDate,
   type CapitalFlow,
+  type ChartPeriod,
   type MarketBar,
   type MarketPeriod,
   type Trade,
@@ -847,6 +850,19 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     await fetchAnalysis(symbol, true);
   }
 
+  // 从任意列表（关注/交易/分时弹窗）快捷「记录买入」：
+  // 先拉该股票的分析，保证买入弹窗里的现价与技术面建议（支撑位 / 1R / 2R）对应正确的股票，
+  // 再打开买入弹窗（currentTradeStock 在 buy 模式下取 analysis.stock）。
+  async function startBuy(symbol: string) {
+    const target = symbol.trim();
+    if (!target) return;
+    setQuery(target);
+    if (analysis?.stock.code !== target) {
+      await fetchAnalysis(target, true);
+    }
+    setTradeMode("buy");
+  }
+
   async function addWatch(stock = analysis?.stock) {
     if (!stock) {
       flash("请先分析一只股票");
@@ -1176,6 +1192,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 quotes={quotes}
                 onSearch={() => navigate("analysis")}
                 onAnalyze={(symbol) => void analyzeAndOpen(symbol)}
+                onBuySymbol={(symbol) => void startBuy(symbol)}
                 onSaved={() => void loadData()}
                 strategyScan={strategyScan}
               />
@@ -1193,6 +1210,8 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 onReview={setReviewCycleEndTradeId}
                 onEditTrade={(trade) => setEditingTrade(trade)}
                 onDeleteTrade={(id) => void deleteTrade(id)}
+                onAnalyze={(symbol) => void analyzeAndOpen(symbol)}
+                onBuySymbol={(symbol) => void startBuy(symbol)}
               />
             )}
             {view === "settings" && (
@@ -3367,14 +3386,47 @@ function FloatingAssistantLauncher(
 }
 
 function MarketChart({ analysis }: { analysis: Analysis }) {
-  const [period, setPeriod] = useState<MarketPeriod>("day");
+  const [period, setPeriod] = useState<ChartPeriod>("day");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [pointerPrice, setPointerPrice] = useState<number | null>(null);
   const [chartActive, setChartActive] = useState(false);
-  const rows = useMemo(
-    () => aggregateMarketHistory(analysis.history, period).slice(-60),
-    [analysis.history, period],
-  );
+  // 分时（5m/15m/30m/60m/dn）数据来自服务端 /api/kline，与日周月（analysis.history）分离。
+  const [intradayBars, setIntradayBars] = useState<MarketBar[] | null>(null);
+  const [intradayLoading, setIntradayLoading] = useState(false);
+
+  const code = analysis.stock.code;
+  // 日/周/月：直接用 analysis.history 聚合；分时：从服务端拉取。
+  const rows = useMemo(() => {
+    if (isIntradayPeriod(period)) return intradayBars ?? [];
+    return aggregateMarketHistory(analysis.history, period).slice(-60);
+  }, [analysis.history, period, intradayBars]);
+
+  // 周期切换为分时档位时，单独拉取分钟级 K 线（麦蕊优先，东财兜底）。
+  useEffect(() => {
+    if (!isIntradayPeriod(period)) {
+      setIntradayBars(null);
+      return;
+    }
+    let cancelled = false;
+    setIntradayLoading(true);
+    fetch(`/api/kline/${code}.json?period=${period}`)
+      .then((res) => res.json() as Promise<{ ok?: boolean; bars?: MarketBar[] }>)
+      .then((data) => {
+        if (cancelled) return;
+        // 分时接口不返回均线，补齐 ma 字段为 null，避免绘制时 NaN。
+        const bars = data.ok && data.bars ? data.bars.map((b) => ({ ...b, ma5: null, ma20: null, ma60: null })) : [];
+        setIntradayBars(bars);
+      })
+      .catch(() => {
+        if (!cancelled) setIntradayBars([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIntradayLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [period, code]);
   const width = 900;
   const priceHeight = 190;
   const volumeTop = 215;
@@ -3416,7 +3468,12 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
   const crosshairY = crosshairPrice === null ? null : y(crosshairPrice);
   const crosshairLabel = crosshairPrice === null ? "" : price(crosshairPrice);
   const priceLabelWidth = Math.max(62, crosshairLabel.length * 7 + 14);
-  const periodLabel = period === "day" ? "日K" : period === "week" ? "周K" : "月K";
+  const periodLabel =
+    period === "day" ? "日K"
+      : period === "week" ? "周K"
+        : period === "month" ? "月K"
+          : period === "dn" ? "分时"
+            : period.toUpperCase();
   const latestRow = rows.at(-1);
   const showExtremes = chartActive || selectedIndex !== null;
 
@@ -3455,7 +3512,7 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
     setSelectedIndex(Math.max(0, Math.min(rows.length - 1, current + (event.key === "ArrowLeft" ? -1 : 1))));
   }
 
-  function changePeriod(nextPeriod: MarketPeriod) {
+  function changePeriod(nextPeriod: ChartPeriod) {
     setPeriod(nextPeriod);
     setSelectedIndex(null);
     setPointerPrice(null);
@@ -3469,7 +3526,7 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
         actions={
           <div className="chart-heading-actions">
             <div className="chart-period-tabs" aria-label="K线周期">
-              {(["day", "week", "month"] as MarketPeriod[]).map((item) => (
+              {(["day", "week", "month", "60m", "30m", "15m", "5m", "dn"] as ChartPeriod[]).map((item) => (
                 <button
                   type="button"
                   key={item}
@@ -3477,11 +3534,16 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
                   aria-pressed={period === item}
                   onClick={() => changePeriod(item)}
                 >
-                  {item === "day" ? "日K" : item === "week" ? "周K" : "月K"}
+                  {item === "day" ? "日K" : item === "week" ? "周K" : item === "month" ? "月K"
+                    : item === "dn" ? "分时" : item.toUpperCase()}
                 </button>
               ))}
             </div>
-            <div className="chart-legend"><span className="ma5">MA5</span><span className="ma20">MA20</span><span className="ma60">MA60</span></div>
+            <div className="chart-legend">
+              {isIntradayPeriod(period)
+                ? <span className="intraday-tag">分时（麦蕊优先）</span>
+                : <><span className="ma5">MA5</span><span className="ma20">MA20</span><span className="ma60">MA60</span></>}
+            </div>
           </div>
         }
       />
@@ -3838,11 +3900,13 @@ const watchStatusMap: Record<"研究中" | "等待条件" | "已买入" | "暂�
   "暂停": { tone: "neutral", icon: NotebookPen, label: "暂停" },
 };
 
-function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved, strategyScan }: {
+function Watchlist({ items, quotes, onSearch, onAnalyze, onBuySymbol, onSaved, strategyScan }: {
   items: WatchItem[];
   quotes: Record<string, QuoteEntry>;
   onSearch: () => void;
   onAnalyze: (symbol: string) => void;
+  /** 点击分时弹窗「记录买入」时触发：先分析该股票再打开买入弹窗 */
+  onBuySymbol?: (symbol: string) => void;
   onSaved: () => void;
   strategyScan?: StrategyScanResponse | null;
 }) {
@@ -4027,6 +4091,18 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved, strategyScan }
                   </div>
                 )}
 
+                <div className="watch-card-intraday">
+                  <span className="watch-card-intraday-label">当日分时</span>
+                  <MiniIntraday
+                    code={item.symbol}
+                    name={item.name}
+                    width={260}
+                    height={40}
+                    onAnalyze={(symbol) => onAnalyze(symbol)}
+                    onBuy={onBuySymbol ? (symbol) => onBuySymbol(symbol) : undefined}
+                  />
+                </div>
+
                 {editing === item.symbol ? (
                   <form className="watch-edit-form" onSubmit={(event) => void saveCondition(event, item.symbol)}>
                     <Field label="观察状态">
@@ -4094,7 +4170,7 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved, strategyScan }
   );
 }
 
-function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, quotes, onBuy, onSell, onReview, onEditTrade, onDeleteTrade }: {
+function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, quotes, onBuy, onSell, onReview, onEditTrade, onDeleteTrade, onAnalyze, onBuySymbol }: {
   trades: Trade[];
   reviews: Review[];
   /** 用于在买入行内展示该股票当前的止损/止盈目标价 */
@@ -4108,6 +4184,10 @@ function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, qu
   onReview: (cycleEndTradeId: number) => void;
   onEditTrade: (trade: Trade) => void;
   onDeleteTrade: (id: number) => void;
+  /** 点击分时弹窗「查看分析」时触发，传入股票代码。 */
+  onAnalyze?: (symbol: string) => void;
+  /** 点击分时弹窗「记录买入」时触发：先分析该股票再打开买入弹窗 */
+  onBuySymbol?: (symbol: string) => void;
 }) {
   const portfolio = useMemo(() => calculatePortfolio(trades), [trades]);
   const cycles = useMemo(() => buildTradeCycles(trades), [trades]);
@@ -4436,8 +4516,16 @@ function Trades({ trades, reviews, alerts, capitalFlows, initialCapitalCents, qu
               <div className="trade-row" key={trade.id}>
                 <span className="trade-index">{(safePage - 1) * pageSize + idx + 1}</span>
                 <span><b>{trade.tradeDate}</b><small>{trade.quantity}股</small></span>
-                <span>
+                <span className="trade-stock-cell">
                   <b>{trade.name}</b><small>{trade.symbol}</small>
+                  <MiniIntraday
+                    code={trade.symbol}
+                    name={trade.name}
+                    width={132}
+                    height={28}
+                    onAnalyze={onAnalyze ? (symbol) => onAnalyze(symbol) : undefined}
+                    onBuy={onBuySymbol ? (symbol) => onBuySymbol(symbol) : undefined}
+                  />
                   {trade.side === "买入" && (() => {
                     const stop = alerts.find((al) => al.symbol === trade.symbol && al.type === "止损" && !al.acknowledgedAt);
                     const take1 = alerts.find((al) => al.symbol === trade.symbol && al.type === "止盈一" && !al.acknowledgedAt);

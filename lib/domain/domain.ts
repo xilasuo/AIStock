@@ -65,6 +65,14 @@ export type CapitalFlow = {
 };
 
 export type MarketPeriod = "day" | "week" | "month";
+/** 分时（分钟K线）周期档位，与 /api/kline?period= 一致。 */
+export type IntradayPeriod = "5m" | "15m" | "30m" | "60m" | "dn";
+/** 图表周期联合类型（日/周/月 + 分时）。 */
+export type ChartPeriod = MarketPeriod | IntradayPeriod;
+/** 判断是否为分时周期。 */
+export function isIntradayPeriod(p: ChartPeriod): p is IntradayPeriod {
+  return p === "5m" || p === "15m" || p === "30m" || p === "60m" || p === "dn";
+}
 
 export type MarketBar = {
   date: string;

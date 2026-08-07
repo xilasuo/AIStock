@@ -1154,7 +1154,7 @@ export function BigScreenView() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                 <span style={{ fontSize: 12, color: MUTED }}>
                   {klinePick
-                    ? `${klinePick.name}（${klinePick.code}）· 日K 技术面板`
+                    ? `${klinePick.name}（${klinePick.code}）· K线技术面板`
                     : "资产走势 · 近 60 个节点（最新价估算）"}
                 </span>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

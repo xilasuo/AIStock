@@ -30,7 +30,11 @@ import {
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
-import type { KPeriod, Markers } from "../../lib/kline";
+// 注意：isIntraday 是运行时函数，必须用值导入。
+// 若混进 `import type`，整行会在编译期被擦除，调用处会抛 ReferenceError，
+// 进而中断本次 commit 的后续 effect（周期切换的取数 effect 收不到执行）。
+import { isIntraday } from "../../lib/kline";
+import type { KPeriod, KIntradayPeriod, Markers } from "../../lib/kline";
 
 export type KlineBar = {
   date: string;
@@ -59,10 +63,15 @@ type PriceLineEntry = {
  */
 export type MarkerKey = "top" | "breakout" | "price" | "retest" | "support";
 
-const PERIODS: { key: KPeriod; label: string }[] = [
+const PERIODS: { key: KPeriod | KIntradayPeriod; label: string }[] = [
   { key: "day", label: "日K" },
   { key: "week", label: "周K" },
   { key: "month", label: "月K" },
+  { key: "60m", label: "60分" },
+  { key: "30m", label: "30分" },
+  { key: "15m", label: "15分" },
+  { key: "5m", label: "5分" },
+  { key: "dn", label: "分时" },
 ];
 
 const RANGE_OPTS = [
@@ -88,6 +97,12 @@ function cssVar(name: string, fallback: string): string {
 }
 
 function toTimestamp(date: string): number {
+  // 分钟级分时形如 "2026-08-07 14:30" 或 "2026-08-07 14:30:00"；按本地时间解析避免错位
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(date)) {
+    const normalized = date.replace(" ", "T") + (date.length <= 16 ? ":00" : "");
+    const parsedLocal = Date.parse(normalized);
+    if (Number.isFinite(parsedLocal)) return Math.floor(parsedLocal / 1000);
+  }
   // 东财日/周K返回 "YYYY-MM-DD"，月K可能返回 "YYYY-MM"；统一补全为月初第1日再按 UTC 解析，避免时区偏移跨日错位
   const normalized = /^\d{4}-\d{2}$/.test(date) ? `${date}-01` : date;
   const parsed = Date.parse(`${normalized}T00:00:00Z`);
@@ -129,7 +144,7 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
   const deductLineRef = useRef<IPriceLine | null>(null);
   // 与 lineSpecsRef 镜像的 state：仅在 render 中消费图例数据时使用，避免在渲染期读取 ref。
   const [lineSpecs, setLineSpecs] = useState<PriceLineEntry[]>([]);
-  const [period, setPeriod] = useState<KPeriod>("day");
+  const [period, setPeriod] = useState<KPeriod | KIntradayPeriod>("day");
   const [range, setRange] = useState<number>(120);
   const [bars, setBars] = useState<KlineBar[]>(initialBars ?? []);
   // 20MA 扣抵价（bar[bars.length-20] 的收盘），用于图例显示与状态判断。
@@ -198,6 +213,19 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
     setLegendPos({ left: originLeft, top: originTop });
     setDragging(true);
   };
+
+  // 分时周期需要显示时间轴（时分），日/周/月仅显示日期。周期切换时同步更新 timeScale。
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const intraday = isIntraday(period);
+    chart.applyOptions({
+      timeScale: {
+        timeVisible: intraday,
+        secondsVisible: false,
+      },
+    });
+  }, [period]);
 
   // 拉取指定周期 K 线数据 + markers（reloadKey 变化也会重新拉取，用于重试）
   useEffect(() => {
@@ -276,14 +304,18 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
           const yyyy = d.getFullYear();
           const M = d.getMonth() + 1;
           const dd = String(d.getDate()).padStart(2, "0");
+          const HH = String(d.getHours()).padStart(2, "0");
+          const mm = String(d.getMinutes()).padStart(2, "0");
+          // 分时模式（timeVisible 生效时）用 HH:mm 标注时间轴
+          if (tickMarkType === TickMarkType.Time || tickMarkType === TickMarkType.TimeWithSeconds) {
+            return `${HH}:${mm}`;
+          }
           switch (tickMarkType) {
             case TickMarkType.Year:
               return `${yyyy}年`;
             case TickMarkType.Month:
               return `${yyyy}年${M}月`;
             case TickMarkType.DayOfMonth:
-            case TickMarkType.Time:
-            case TickMarkType.TimeWithSeconds:
               return `${M}月${dd}日`;
             default:
               return `${M}月${dd}日`;

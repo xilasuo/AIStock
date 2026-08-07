@@ -456,6 +456,89 @@ export async function getMairuiIndices(): Promise<MairuiIndex[] | null> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 历史分时（分钟K线）增强层。
+// 麦蕊官方端点：/hszbl/fsjy/{code}/{period}/{token}
+//   period 取值：dn=当日分时、1m/5m/15m/30m/60m 等（与官方分钟K线枚举一致）。
+// 返回结构（官方文档样例）为数组，每行含：
+//   d = 时间(YYYY-MM-DD HH:mm:ss)、o = 开、h = 高、l = 低、c = 收、v = 成交量、a = 成交额。
+// 字段命名未完全公开，对常见中英文候选键做容错提取；
+// 任何解析失败均返回 null，由调用方回退到东财 push2his 分钟K线，不影响主流程。
+// ---------------------------------------------------------------------------
+
+export type MairuiIntradayBar = {
+  time: string; // 时间戳（原始字符串，已做裁剪）
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  vol: number;
+};
+
+// 麦蕊分钟K线周期 -> 官方 period 段（dn=当天分时）。
+const INTRADAY_PERIOD: Record<string, string> = {
+  "1m": "1m",
+  "5m": "5m",
+  "15m": "15m",
+  "30m": "30m",
+  "60m": "60m",
+  dn: "dn",
+};
+
+function parseTime(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  return s.length ? s : null;
+}
+
+function parseIntradayRow(row: Record<string, unknown>): MairuiIntradayBar | null {
+  const time = parseTime(row.d ?? row.date ?? row.t ?? row.time ?? row.datetime);
+  const open = num(row.o ?? row.open ?? row.kp ?? row.开盘);
+  const high = num(row.h ?? row.high ?? row.zg ?? row.最高);
+  const low = num(row.l ?? row.low ?? row.zd ?? row.最低);
+  const close = num(row.c ?? row.close ?? row.sp ?? row.收盘);
+  const vol = num(row.v ?? row.vol ?? row.volume ?? row.cjl ?? row.成交量) ?? 0;
+  if (!time || open === null || high === null || low === null || close === null) return null;
+  // 基本合理性：高>=低，且价格为正
+  if (low <= 0 || high < low) return null;
+  return { time, open, high, low, close, vol };
+}
+
+export async function getMairuiIntraday(
+  code: string,
+  period: "1m" | "5m" | "15m" | "30m" | "60m" | "dn" = "dn",
+): Promise<MairuiIntradayBar[] | null> {
+  const token = await getMairuiToken();
+  if (!token) return null;
+  if (Date.now() < disabledUntil) return null;
+  const seg = INTRADAY_PERIOD[period] ?? "dn";
+
+  const url = `${MAIRUI_BASE}/hszbl/fsjy/${code}/${seg}/${token}`;
+  try {
+    const res = await fetch(url, {
+      headers: { "user-agent": "Mozilla/5.0 StockReviewAssistant/1.0" },
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (res.status === 401 || res.status === 403) {
+      tripCircuit();
+      return null;
+    }
+    if (!res.ok) return null;
+    const rows = (await res.json()) as unknown;
+    if (!Array.isArray(rows)) return null;
+    const bars: MairuiIntradayBar[] = [];
+    for (const item of rows) {
+      const bar = parseIntradayRow((item ?? {}) as Record<string, unknown>);
+      if (bar) bars.push(bar);
+    }
+    // 麦蕊分时本身已是时间序，保险起见按时间升序排列
+    bars.sort((a, b) => a.time.localeCompare(b.time));
+    return bars.length ? bars : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getMairuiSectorMoves(): Promise<MairuiSector[] | null> {
   const token = await getMairuiToken();
   if (!token) return null;

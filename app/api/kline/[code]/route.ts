@@ -13,7 +13,7 @@
  * 因响应含用户态校验，缓存头一律为 private，禁止 CDN / 共享缓存留存。
  */
 import { requireApiUserOrPushToken, getAuthenticatedUser } from "../../../../lib/auth/auth";
-import { fetchKline, fetchName, detectMarkers, renderKlineSvg, type Markers, type KPeriod } from "../../../../lib/kline";
+import { fetchKline, fetchName, detectMarkers, renderKlineSvg, type Markers, type KPeriod, type KIntradayPeriod, isIntraday } from "../../../../lib/kline";
 
 const CACHE_TTL = 60;
 const memCache = new Map<string, { ts: number; svg: string; mk: Markers }>();
@@ -44,13 +44,13 @@ function takeRateToken(key: string): boolean {
   return true;
 }
 
-function peekCache(code: string, period: KPeriod): { svg: string; mk: Markers } | null {
+function peekCache(code: string, period: KPeriod | KIntradayPeriod): { svg: string; mk: Markers } | null {
   const hit = memCache.get(`${code}:${period}`);
   if (hit && Date.now() - hit.ts < CACHE_TTL * 1000) return { svg: hit.svg, mk: hit.mk };
   return null;
 }
 
-async function build(code: string, period: KPeriod): Promise<{ svg: string; mk: Markers }> {
+async function build(code: string, period: KPeriod | KIntradayPeriod): Promise<{ svg: string; mk: Markers }> {
   const key = `${code}:${period}`;
   const now = Date.now();
   const hit = peekCache(code, period);
@@ -96,8 +96,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ code: st
   }
   const url = new URL(req.url);
   const periodParam = url.searchParams.get("period");
-  const period: KPeriod =
-    periodParam === "week" ? "week" : periodParam === "month" ? "month" : "day";
+  const period: KPeriod | KIntradayPeriod =
+    periodParam && isIntraday(periodParam)
+      ? (periodParam as KIntradayPeriod)
+      : periodParam === "week"
+        ? "week"
+        : periodParam === "month"
+          ? "month"
+          : "day";
 
   // 限流键：优先按用户隔离，令牌调用方（无会话）归入共享桶。
   const viewer = await getAuthenticatedUser();
@@ -124,6 +130,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ code: st
       });
     }
     // SVG 端点：命中内存缓存不产生上游流量，直接返回，不计入限流。
+    // 注：分时（分钟K线）暂不走 SVG 标注缓存，直接回源渲染。
     const cached = peekCache(clean, period);
     if (cached) return sendSvg(cached.svg);
     if (!takeRateToken(rateKey)) {

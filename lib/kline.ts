@@ -9,6 +9,8 @@
  * 由 app/api/kline/[code]/route.ts 调用；前端 <img src="/api/kline/600367.svg"> 直接展示。
  */
 
+import { getMairuiIntraday } from "./market/mairui";
+
 export type KBar = {
   date: string;
   open: number;
@@ -59,7 +61,101 @@ function sinaPrefix(code: string): string {
 export type KPeriod = "day" | "week" | "month";
 const KLT: Record<KPeriod, number> = { day: 101, week: 102, month: 103 };
 
-export async function fetchKline(code: string, limit = 220, period: KPeriod = "day"): Promise<KBar[]> {
+/** 分时（分钟K线）周期：1m/5m/15m/30m/60m，以及 dn=当日分时。 */
+export type KIntradayPeriod = "1m" | "5m" | "15m" | "30m" | "60m" | "dn";
+// 东财 push2his 的 klt 编码（分钟级）
+const INTRADAY_KLT: Record<Exclude<KIntradayPeriod, "dn">, number> = {
+  "1m": 1,
+  "5m": 5,
+  "15m": 15,
+  "30m": 30,
+  "60m": 60,
+};
+
+export function isIntraday(p: string): p is KIntradayPeriod {
+  return p === "1m" || p === "5m" || p === "15m" || p === "30m" || p === "60m" || p === "dn";
+}
+
+export async function fetchKline(
+  code: string,
+  limit = 220,
+  period: KPeriod | KIntradayPeriod = "day",
+): Promise<KBar[]> {
+  // ---- 分钟级分时：麦蕊优先，东财 push2his 兜底 ----
+  if (isIntraday(period)) {
+    const mr = await getMairuiIntraday(code, period).catch(() => null);
+    if (mr && mr.length) {
+      return mr.map((b) => ({
+        date: b.time,
+        open: b.open,
+        close: b.close,
+        high: b.high,
+        low: b.low,
+        vol: b.vol,
+      }));
+    }
+    // 麦蕊未配置 / 失败 / 解析为空：回退到公开分钟K线。
+    // dn（当日分时）按 5 分钟粒度近似——新浪不支持 scale=1（返回 null），
+    // 5 分钟已能刻画日内走势；此前 dn 直接回退日K，会把 220 天日线当"分时"展示，
+    // 视觉上完全看不出来，属于误导性降级。
+    const klt = period === "dn" ? 5 : INTRADAY_KLT[period];
+    try {
+      const url =
+        `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${emSecid(code)}${code}` +
+        `&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56` +
+        `&klt=${klt}&fqt=1&end=20500101&lmt=${limit}`;
+      const res = await fetch(url, {
+        headers: { "User-Agent": UA, Referer: "https://quote.eastmoney.com/" },
+        signal: AbortSignal.timeout(8000),
+      });
+      const j = (await res.json()) as { data?: { klines?: string[] } };
+      const kls = j.data?.klines;
+      if (kls && kls.length) {
+        return kls.map((line) => {
+          const p = line.split(",");
+          return {
+            date: p[0],
+            open: Number(p[1]),
+            close: Number(p[2]),
+            high: Number(p[3]),
+            low: Number(p[4]),
+            vol: Number(p[5]),
+          };
+        });
+      }
+    } catch {
+      /* 东财失败 -> 继续走新浪分钟级兜底 */
+    }
+    // 新浪分钟级兜底：scale 直接就是分钟数（5/15/30/60），
+    // 返回的 day 字段形如 "2026-08-06 15:00:00"，符合分时时间轴解析要求。
+    // 缺此兜底时，东财一旦不可达（如 UND_ERR_SOCKET）分时档位会全部空白。
+    try {
+      const url =
+        `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/` +
+        `CN_MarketData.getKLineData?symbol=${sinaPrefix(code)}${code}&scale=${klt}&ma=no&datalen=${limit}`;
+      const res = await fetch(url, {
+        headers: { "User-Agent": UA, Referer: "https://finance.sina.com.cn/" },
+        signal: AbortSignal.timeout(8000),
+      });
+      const raw = (await res.json()) as Array<{
+        day: string; open: string; high: string; low: string; close: string; volume: string;
+      }>;
+      if (Array.isArray(raw) && raw.length) {
+        return raw.map((b) => ({
+          date: b.day,
+          open: Number(b.open),
+          close: Number(b.close),
+          high: Number(b.high),
+          low: Number(b.low),
+          vol: Number(b.volume),
+        }));
+      }
+    } catch {
+      /* 新浪也失败 -> 返回空，由调用方处理 */
+    }
+    return [];
+  }
+
   try {
     const url =
       `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${emSecid(code)}${code}` +
@@ -87,9 +183,12 @@ export async function fetchKline(code: string, limit = 220, period: KPeriod = "d
   } catch {
     /* 东财失败 -> 新浪兜底 */
   }
+  // 新浪 scale 单位为分钟：日=240，周=1200(5×240)，月=7200(30×240)。
+  // 此前写死 240，导致东财失败走兜底时周K/月K 静默退化成日K。
+  const SINA_SCALE: Record<KPeriod, number> = { day: 240, week: 1200, month: 7200 };
   const url =
     `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/` +
-    `CN_MarketData.getKLineData?symbol=${sinaPrefix(code)}${code}&scale=240&ma=no&datalen=${limit}`;
+    `CN_MarketData.getKLineData?symbol=${sinaPrefix(code)}${code}&scale=${SINA_SCALE[period]}&ma=no&datalen=${limit}`;
   const res = await fetch(url, {
     headers: { "User-Agent": UA, Referer: "https://finance.sina.com.cn/" },
     signal: AbortSignal.timeout(8000),
