@@ -458,7 +458,7 @@ async function eastmoneyFundamentals(code: string): Promise<EmFundamentals> {
     const res = await Promise.race<Response>([
       fetch(url, { headers: { "user-agent": UA }, signal: AbortSignal.timeout(TIMEOUT) }),
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("emFundamentals 超时")), 3_000),
+        setTimeout(() => reject(new Error("emFundamentals 超时")), 1_500),
       ),
     ]);
     if (!res.ok) return empty;
@@ -601,9 +601,18 @@ async function sinaFinancialStatements(code: string): Promise<SinaStatements> {
   };
   const headers = { "user-agent": UA, Referer: "https://quotes.sina.cn/" };
   try {
-    const [lrbRes, fzbRes] = await Promise.all([
+    // 新浪 getFinanceReport2022 接口在网络不佳时经常拖满全局超时（10s），
+    // 而它处于 getProfile 的 Promise.all 中，会拖慢整条个股分析链路。
+    // 用本地短超时（4s）包裹每个请求：超时即 reject，由外层 catch 返回缺省，
+    // 不让慢源阻塞「生成交易决策」主流程。
+    const SINA_FIN_TIMEOUT = 4_000;
+    const lrbRes = await Promise.race([
       fetch(`${base}?${new URLSearchParams({ paperCode: paper, source: "lrb", type: "0", page: "1", num: "8" })}`, { headers, signal: AbortSignal.timeout(TIMEOUT) }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("新浪利润表超时")), SINA_FIN_TIMEOUT)),
+    ]);
+    const fzbRes = await Promise.race([
       fetch(`${base}?${new URLSearchParams({ paperCode: paper, source: "fzb", type: "0", page: "1", num: "8" })}`, { headers, signal: AbortSignal.timeout(TIMEOUT) }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("新浪负债表超时")), SINA_FIN_TIMEOUT)),
     ]);
     if (!lrbRes.ok || !fzbRes.ok) return empty;
     const lrbJson = (await lrbRes.json()) as { result?: { data?: { report_list?: Record<string, SinaPeriod> } } };

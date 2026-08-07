@@ -26,7 +26,7 @@ test.beforeEach(() => {
   mock.restoreAll();
 });
 
-test("getKlines 优先东方财富（Yahoo 已移除，链仅东财+腾讯两级）", async () => {
+test("getKlines 优先东方财富（链路仅东财+腾讯两级）", async () => {
   const fetchMock = makeRouter({
     "push2his.eastmoney.com": () => emKlinesBody(),
     "web.ifzq.gtimg.cn": () => new Error("腾讯挂了"),
@@ -38,7 +38,7 @@ test("getKlines 优先东方财富（Yahoo 已移除，链仅东财+腾讯两级
   assert.ok(result.rows.length >= 20);
 });
 
-test("getKlines 东财+腾讯都失败直接抛错（无 Yahoo 第三级兜底）", async () => {
+test("getKlines 东财+腾讯都失败直接抛错", async () => {
   const fetchMock = makeRouter({
     "push2his.eastmoney.com": () => new Error("东财挂了"),
     "web.ifzq.gtimg.cn": () => new Error("腾讯挂了"),

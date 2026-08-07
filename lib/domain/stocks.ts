@@ -82,19 +82,6 @@ export function isEtfCode(code: string) {
   return Boolean(FUND_PROFILES[code]);
 }
 
-type FundamentalSeries = {
-  meta?: { type?: string[] };
-  timestamp?: number[];
-  [key: string]: unknown;
-};
-
-export function yahooSymbol(code: string) {
-  if (/^(5|6)/.test(code)) return `${code}.SS`;
-  if (/^(0|3)/.test(code)) return `${code}.SZ`;
-  if (/^(4|8)/.test(code)) return `${code}.BJ`;
-  return `${code}.SZ`;
-}
-
 export function tencentSymbol(code: string) {
   if (/^(5|6)/.test(code)) return `sh${code}`;
   if (/^(4|8)/.test(code)) return `bj${code}`;
@@ -331,85 +318,6 @@ function buildHistory(rows: Array<{
   }));
 }
 
-async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, {
-    headers: { "user-agent": "Mozilla/5.0 StockReviewAssistant/1.0" },
-    signal: AbortSignal.timeout(8_000),
-  });
-  if (!response.ok) {
-    throw new Error(`数据源返回 ${response.status}`);
-  }
-  try {
-    return await response.json() as Promise<T>;
-  } catch {
-    throw new Error("数据源返回内容无法解析，可能是接口限流，请稍后重试");
-  }
-}
-
-type FundamentalPoint = { date: string; value: number };
-/** 基本面时序返回：成功时按指标名给出序列，失败时 unavailable=true 且无序列。
- * 显式声明联合后的统一形状，避免调用方在 catch 分支上被窄化成「无任何指标字段」。 */
-type FundamentalsResult = {
-  quarterlyTotalRevenue?: FundamentalPoint[];
-  quarterlyNetIncome?: FundamentalPoint[];
-  quarterlyTotalAssets?: FundamentalPoint[];
-  quarterlyTotalDebt?: FundamentalPoint[];
-  unavailable: boolean;
-};
-
-async function getFundamentals(symbol: string): Promise<FundamentalsResult> {
-  const now = Math.floor(Date.now() / 1000);
-  const start = now - 60 * 60 * 24 * 365 * 3;
-  const types = [
-    "quarterlyTotalRevenue",
-    "quarterlyNetIncome",
-    "quarterlyTotalAssets",
-    "quarterlyTotalDebt",
-  ].join(",");
-  const url = `https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${symbol}?symbol=${symbol}&type=${types}&period1=${start}&period2=${now}`;
-
-  try {
-    // Yahoo 为境外源，国内网络普遍不可达。用本地短超时（3.5s）包裹，
-    // 避免拖慢整个分析主流程（Promise.all 会等最慢的源）。
-    const data = await Promise.race<{ timeseries?: { result?: FundamentalSeries[] } }>([
-      fetchJson<{ timeseries?: { result?: FundamentalSeries[] } }>(url),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Yahoo 财务源超时")), 3_500),
-      ),
-    ]);
-    const rows: Record<string, FundamentalPoint[]> = {};
-
-    for (const series of data.timeseries?.result ?? []) {
-      const type = series.meta?.type?.[0];
-      if (!type) continue;
-      const values = series[type] as Array<{ asOfDate?: string; reportedValue?: { raw?: number } }> | undefined;
-      rows[type] = (values ?? [])
-        .filter((value) => Number.isFinite(value.reportedValue?.raw))
-        .map((value) => ({
-          date: value.asOfDate ?? "",
-          value: value.reportedValue?.raw ?? 0,
-        }))
-        .slice(-5);
-    }
-    return { ...rows, unavailable: false };
-  } catch {
-    return { unavailable: true };
-  }
-}
-
-function growth(series: Array<{ date: string; value: number }> | undefined) {
-  if (!series || series.length < 2) return null;
-  // 按 asOfDate 升序排序，确保最新一条在末尾
-  const sorted = [...series].sort((a, b) => a.date.localeCompare(b.date));
-  const current = sorted.at(-1)!;
-  const currentYear = Number(current.date.slice(0, 4));
-  // 同比：找去年同季（同月同日，或同年份-1且月日最接近）的一条
-  const prev = [...sorted]
-    .reverse()
-    .find((s) => Number(s.date.slice(0, 4)) === currentYear - 1);
-  if (!prev || !prev.value) return null;
-  return ((current.value - prev.value) / Math.abs(prev.value)) * 100;
-}
 
 // 关键词→概念题材 模糊匹配，覆盖全A股常见行业
 const THEME_RULES: Array<{ keywords: string[]; themes: string[] }> = [
@@ -464,13 +372,11 @@ export async function analyzeStockData(query: string, force = false) {
     throw new Error("暂时无法按名称识别这只股票，请输入6位股票代码");
   }
 
-  const symbol = yahooSymbol(stock.code);
   const fund = FUND_PROFILES[stock.code] ?? null;
   const isFund = Boolean(fund) || isFundCode(stock.code);
   const klinesPromise = getKlines(stock.code);
   // force=true 时强制拉最新行情，绕过实时行情缓存（供"重新分析"使用）
   const realtimePromise = getRealtime(stock.code, force);
-  const fundamentalsPromise = getFundamentals(symbol);
   const profilePromise = getProfile(stock.code, force);
   const klines = await klinesPromise;
   const history = buildHistory(klines.rows);
@@ -506,17 +412,12 @@ export async function analyzeStockData(query: string, force = false) {
   const support = Math.min(...lows.slice(-20));
   const resistance = Math.max(...highs.slice(-60));
   const riskPerShare = Math.max(livePrice - support, livePrice * 0.03);
-  const [fundamentals, profile] = await Promise.all([fundamentalsPromise, profilePromise]);
-  // 营收/利润/负债率优先用麦蕊 cwzb（配置 token 时），Yahoo Finance 作为兜底。
-  // 麦蕊是原生 A 股数据源、国内稳定；Yahoo 为境外源、国内网络可能加载失败。
-  const yahooRevenueGrowth = growth(fundamentals.quarterlyTotalRevenue);
-  const yahooProfitGrowth = growth(fundamentals.quarterlyNetIncome);
-  const yahooAssets = fundamentals.quarterlyTotalAssets?.at(-1)?.value ?? 0;
-  const yahooDebt = fundamentals.quarterlyTotalDebt?.at(-1)?.value ?? 0;
-  const yahooDebtRatio = yahooAssets ? (yahooDebt / yahooAssets) * 100 : null;
-  const revenueGrowth = profile.revenueGrowth ?? yahooRevenueGrowth;
-  const profitGrowth = profile.profitGrowth ?? yahooProfitGrowth;
-  const debtRatio = profile.debtRatio != null ? profile.debtRatio * 100 : yahooDebtRatio;
+  const profile = await profilePromise;
+  // 营收/利润/负债率取自麦蕊 cwzb（配置 token 时）；未配置或失败时回退东方财富 f10。
+  // 麦蕊是原生 A 股数据源、国内稳定。
+  const revenueGrowth = profile.revenueGrowth ?? null;
+  const profitGrowth = profile.profitGrowth ?? null;
+  const debtRatio = profile.debtRatio != null ? profile.debtRatio * 100 : null;
   // 三指标全部缺失才视为「基本面数据暂缺」（前端据此提示而非显示 0）
   const fundamentalsUnavailable =
     revenueGrowth === null && profitGrowth === null && debtRatio === null;
@@ -542,7 +443,7 @@ export async function analyzeStockData(query: string, force = false) {
       fund,
       sector: profile.sector,
       businessSummary: profile.businessSummary,
-      marketSymbol: symbol,
+      marketSymbol: stock.code,
     },
     quote: {
       price: livePrice,
@@ -572,13 +473,8 @@ export async function analyzeStockData(query: string, force = false) {
       grossMargin: profile.grossMargin,
       profitMargin: profile.profitMargin,
       operatingCashflow: profile.operatingCashflow,
-      // 营收/利润/负债率优先来自麦蕊 cwzb，Yahoo 作为兜底；全缺才标记 fundamentalsUnavailable
+      // 营收/利润/负债率来自麦蕊 cwzb / 东方财富 f10；全缺才标记 fundamentalsUnavailable
       fundamentalsUnavailable,
-      series: (() => {
-        const f = { ...(fundamentals as Record<string, unknown>) };
-        delete f.unavailable;
-        return f;
-      })(),
       // 诊断：PE/PB 取数失败原因（如东财接口超时/被限流），便于线上排查。
       profileError: profile.profileError ?? null,
     },

@@ -13,7 +13,7 @@ import {
   toTenThousandths,
   type Trade,
 } from "../lib/domain/domain";
-import { tencentSymbol, yahooSymbol } from "../lib/domain/stocks";
+import { tencentSymbol } from "../lib/domain/stocks";
 
 function trade(values: Partial<Trade>): Trade {
   return {
@@ -117,7 +117,6 @@ test("ETF价格按千分之一元保存并计算持仓", () => {
 });
 
 test("5开头ETF映射到上海市场", () => {
-  assert.equal(yahooSymbol("513180"), "513180.SS");
   assert.equal(tencentSymbol("513180"), "sh513180");
 });
 

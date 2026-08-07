@@ -156,11 +156,11 @@ export async function getMairuiRealtime(code: string, force = false): Promise<Ma
 // ---------------------------------------------------------------------------
 // 财务与资料增强层（cwzb 财务指标 / gsjj 公司简介 / zg 概念树提取行业）。
 // 补充 MarketDataProvider 免费链路不覆盖的 roe / profitMargin / businessSummary /
-// industry 字段；麦蕊作为原生 A 股数据源，比已移除的 Yahoo 兜底更稳定。
+// industry 字段；麦蕊作为原生 A 股数据源，数据稳定且口径统一。
 //
 // 字段真相（已用真实接口核对）：
 //   cwzb.jzsy = 净资产收益率(%)、cwzb.xsjl = 销售净利率(%) —— 均为百分比数值，
-//   需 ÷100 转成与 Yahoo financialData(0.x 小数) 一致的格式。
+//   需 ÷100 转成统一的 0.x 小数格式（与 stock.ts 消费端一致）。
 //   gsjj.desc = 公司中文简介。
 //   /hszg/zg/{code}/{licence} 返回 [{code,name}]，含「申万行业」「概念」等标签。
 // ---------------------------------------------------------------------------
@@ -169,13 +169,13 @@ const FUND_TTL_MS = 30 * 60 * 1000; // 财务/资料变化慢，30 分钟缓存
 const fundCache = new Map<string, { ts: number; data: MairuiFundamentals }>();
 
 export type MairuiFundamentals = {
-  roe: number | null; // 净资产收益率（小数，与 Yahoo 对齐）
+  roe: number | null; // 净资产收益率（统一 0.x 小数格式）
   profitMargin: number | null; // 销售净利率（小数）
   businessSummary: string | null; // 中文公司简介
   industry: string | null; // 行业标签（从申万行业概念提取）
   /**
    * 营收同比（%）——由 cwzb 相邻两期主营收入(zyyw)推算；
-   * 仅在相邻期口径一致（同为季末/年末）时给出，否则为 null 交 Yahoo 兜底。
+   * 仅在相邻期口径一致（同为季末/年末）时给出，否则为 null。
    */
   revenueGrowth: number | null;
   /** 利润同比（%）——由 cwzb 相邻两期扣非净利润(kflr)推算；口径不一致时为 null。 */
@@ -187,7 +187,7 @@ export type MairuiFundamentals = {
   debtRatio: number | null;
 };
 
-// 麦蕊财务比率返回百分比数值，转小数以对齐 Yahoo（Yahoo financialData 为 0.x）
+// 麦蕊财务比率返回百分比数值，转成统一的 0.x 小数格式供下游消费
 function pct(value: unknown): number | null {
   const n = num(value);
   if (n === null) return null;
@@ -268,7 +268,7 @@ function parseFinancials(rows: unknown): {
         out.profitGrowth = ((cur.netProfit - prev.netProfit) / Math.abs(prev.netProfit)) * 100;
       }
     }
-    // 口径不一致时：不强行给同比，交给 Yahoo 兜底，避免给出错误增长数据
+    // 口径不一致时：不强行给同比，避免给出错误增长数据
   }
   return out;
 }

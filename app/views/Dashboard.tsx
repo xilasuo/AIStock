@@ -2144,7 +2144,7 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
   onSell: () => void;
   onReanalyze: () => Promise<void>;
 }) {
-  const [showRaw, setShowRaw] = useState(false);
+
   const { stock, quote, financials, explanation } = analysis;
   const isEtf = stock.instrumentType === "etf" && stock.fund;
   const companyLabels = isEtf
@@ -2280,15 +2280,6 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
               {financials.pe == null && financials.profileError ? (
                 <div className="profile-error">市盈率/市净率暂未取到：{financials.profileError}</div>
               ) : null}
-              <Button variant="link" onClick={() => setShowRaw((value) => !value)} iconRight={showRaw ? <ChevronUp size={14} /> : <ChevronRight size={14} />}>{showRaw ? "收起原始数字" : "展开查看原始数字"}</Button>
-              {showRaw && (
-                <div className="raw-data">
-                  {Object.entries(financials.series).map(([key, rows]) => (
-                    <div key={key}><b>{key}</b>{rows.length ? rows.map((row) => <span key={row.date}>{row.date}: {row.value.toLocaleString("zh-CN")}</span>) : <span>暂无数据</span>}</div>
-                  ))}
-                  {!Object.keys(financials.series).length && <p>数据源暂未返回财务明细。</p>}
-                </div>
-              )}
             </>
           )}
         </section>
