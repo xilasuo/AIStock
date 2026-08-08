@@ -80,8 +80,8 @@ function summarizeContext(ctx: AssistantContext): string {
   const lines = [
     `股票：${s.name}(${s.code})，类型=${s.instrumentType}，行业=${s.industry ?? "未知"}`,
     `行情时间：${q.marketTime ?? "未提供"}`,
-    `当前价=${q.price}，涨跌幅=${q.changePercent.toFixed(2)}%，MA20=${q.ma20}`,
-    `走势结构：现价相对MA20${q.price >= q.ma20 ? "之上（短线偏强）" : "之下（短线偏弱）"}；支撑=${q.support}，阻力=${q.resistance}，价格相对阻力距离=${q.resistance > 0 ? (((q.resistance - q.price) / q.price) * 100).toFixed(1) + "%" : "缺失"}，近20日平均波动=${q.volatility.toFixed(2)}%`,
+    `当前价=${q.price.toFixed(3)}元，涨跌幅=${q.changePercent.toFixed(2)}%，MA20=${q.ma20.toFixed(3)}元`,
+    `走势结构：现价相对MA20${q.price >= q.ma20 ? "之上（短线偏强）" : "之下（短线偏弱）"}；支撑=${q.support.toFixed(3)}元，阻力=${q.resistance.toFixed(3)}元，价格相对阻力距离=${q.resistance > 0 ? (((q.resistance - q.price) / q.price) * 100).toFixed(1) + "%" : "缺失"}，近20日平均波动=${q.volatility.toFixed(2)}%`,
     `财务：营收增长=${f.revenueGrowth ?? "数据缺失"}，利润增长=${f.profitGrowth ?? "数据缺失"}，负债率=${f.debtRatio ?? "数据缺失"}，PE=${f.pe ?? "数据缺失"}，PB=${f.pb ?? "数据缺失"}，ROE=${f.roe ?? "数据缺失"}${f.revenueGrowth == null && f.profitGrowth == null && f.debtRatio == null ? "（基本面几乎全部缺失，本次判断以技术面为主）" : ""}`,
     `一句话结论：${ctx.summary}`,
     `已识别风险：${(ctx.risks ?? []).join("；") || "无"}`,
@@ -90,14 +90,14 @@ function summarizeContext(ctx: AssistantContext): string {
   ];
   if (ctx.position) {
     const p = ctx.position;
-    lines.push(`我的持仓：${p.quantity}股，成本=${p.averageCost}，当前回报=${p.returnPercent.toFixed(2)}%，占账户仓位=${p.stockPositionPercent ?? "数据缺失"}%`);
+    lines.push(`我的持仓：${p.quantity}股，成本=${p.averageCost.toFixed(3)}元，当前回报=${p.returnPercent.toFixed(2)}%，占账户仓位=${p.stockPositionPercent ?? "数据缺失"}%`);
   } else if (ctx.holdingsSummary) {
     lines.push(`我的持仓：${ctx.holdingsSummary}`);
   } else {
     lines.push("我的持仓：无");
   }
   const pf = ctx.portfolio;
-  lines.push(`账户：总资产=${pf.totalAssets ?? "数据缺失"}，现金=${pf.cash ?? "数据缺失"}，总仓位=${pf.totalPositionPercent ?? "数据缺失"}%，账户总收益=${pf.totalProfitPercent ?? "数据缺失"}%`);
+  lines.push(`账户：总资产=${pf.totalAssets === null ? "数据缺失" : `¥${pf.totalAssets.toFixed(2)}`}，现金=${pf.cash === null ? "数据缺失" : `¥${pf.cash.toFixed(2)}`}，总仓位=${pf.totalPositionPercent ?? "数据缺失"}%，账户总收益=${pf.totalProfitPercent ?? "数据缺失"}%`);
   if (ctx.volume) {
     const divergenceNote =
       ctx.volume.divergence === "顶背离"
@@ -220,6 +220,7 @@ export async function POST(request: Request) {
               "9. 下方的【我的交易纪律与风险偏好】是硬约束，必须优先生效，不得再用固定的 2%/30% 规则；当 enforce_stop_loss=是 时，任何买入动作都必须先给出止损位，跌破即执行。",
               "10. 【技术面为主，基本面按实际可得性使用】基本面是否可得，一律以下方 context 的“财务”行实际内容为准，不得预设它一定缺失：凡是 context 里给出了数值的字段（营收增长/利润增长/负债率/PE/PB/ROE 等），都必须在【依据】里明确引用并参与判断，不许无视已有数据、更不许笼统宣称“基本面缺失”。只有当某项确实显示“数据缺失”时，才对该项说明缺失。K线/成交量/MACD/RSI/KDJ/支撑阻力始终稳定可得，因此在基本面确实不足时，以走势结构（均线多头/空头、价格与支撑阻力的位置）、量能（放量突破/缩量回调/量价背离）、动能指标（MACD金叉死叉、RSI超买超卖、KDJ）为主要评判依据，并注明“基本面数据缺失，以下判断以技术面为主”。任何情况下都不得编造财务数字。",
               "11. 【解释深度自适应】根据用户提问的措辞调整解释深度：问法偏入门（如“什么是支撑位”）就用大白话先讲清概念再给结论；用专业术语提问就直接讲要点、少铺垫。但无论深浅，结论都要落到明确的买卖建议与量化动作上。",
+              "12. 【金额/价格一律以“元”为单位，必须带小数点】context 中所有价格、成本、总资产、现金等单位均为元。回答中引用这些数字时必须原样保留小数点（如成本 15.958 元、总资产 100000.00 元），禁止输出成无小数点的整数（如 15958、10000000），否则会让用户误读为分/厘。",
               "【反幻觉示例】用户问“茅台 PE 多少、能买吗”而 pe=数据缺失 → 正确回答：“PE 数据缺失，我不凭记忆给你编数。没有估值和账户资金，谁让你现在拍脑袋买谁就是害你；先把账户资金补全、仓位和止损设好，再来谈买不买。”",
               "【我的交易纪律与风险偏好，必须优先遵守，替代任何固定百分比】",
               `risk_profile=${prefs.riskProfile}`,

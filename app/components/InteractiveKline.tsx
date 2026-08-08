@@ -867,6 +867,18 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
                     </div>
                   );
                 })()}
+                {(() => {
+                  const last = bars[bars.length - 1];
+                  if (!last || last.date === crosshair.bar.date) return null;
+                  const chg = last.close - crosshair.bar.close;
+                  const pct = (chg / (crosshair.bar.close || 1)) * 100;
+                  const up = chg >= 0;
+                  return (
+                    <div style={{ fontSize: 11, color: up ? "var(--up)" : "var(--down)" }}>
+                      →今日 {last.close.toFixed(2)}　{up ? "+" : ""}{chg.toFixed(2)}　{up ? "+" : ""}{pct.toFixed(2)}%
+                    </div>
+                  );
+                })()}
                 <div style={{ display: "grid", gridTemplateColumns: "auto auto", gap: "1px 12px", fontSize: 10.5, color: "var(--muted)" }}>
                   <span>开 {crosshair.bar.open.toFixed(2)}</span>
                   <span>高 {crosshair.bar.high.toFixed(2)}</span>

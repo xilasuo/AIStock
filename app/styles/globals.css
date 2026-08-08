@@ -2984,6 +2984,8 @@ svg { display: block; }
   padding: 0;
 }
 
+.sa--compact { border: 0; border-radius: inherit; height: 100%; margin: 0; }
+
 /* —— 顶部单行：上下文 + 两个图标按钮 —— */
 .sa-head {
   align-items: center;
@@ -3246,9 +3248,9 @@ svg { display: block; }
 .sa-prompts {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 10px;
+  gap: 8px;
   margin-top: 0;
-  padding-top: 12px;
+  padding-top: 0;
 }
 
 .sa-prompt {
@@ -3260,7 +3262,7 @@ svg { display: block; }
   flex: 0 0 auto;
   font-size: 12px;
   font-weight: 500;
-  padding: 7px 13px;
+  padding: 6px 12px;
   transition: background .15s ease, color .15s ease, border-color .15s ease, transform .1s ease;
   white-space: nowrap;
 }
@@ -3273,6 +3275,19 @@ svg { display: block; }
 .sa-prompt:disabled { cursor: not-allowed; opacity: 0.55; }
 
 /* —— 输入框 + 圆形发送按钮：贴底一行，与上方消息流用细线分开 —— */
+.sa-anchored {
+  align-items: flex-start;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: auto;
+  min-height: 0;
+  padding: 12px 16px;
+}
+
+.sa-anchored--relaxed { padding: 14px 16px 8px; }
+
 .sa-form {
   align-items: center;
   background: var(--surface);
@@ -3323,6 +3338,41 @@ svg { display: block; }
 }
 .sa-send:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
 .sa-send:disabled { cursor: not-allowed; opacity: 0.4; }
+
+/* —— 紧凑模式：适合嵌入大屏/侧栏窄卡片，减小内边距与间距 —— */
+.sa--compact .sa-head { min-height: 32px; padding: 8px 10px; gap: 8px; }
+.sa--compact .sa-head__title { gap: 4px; }
+.sa--compact .sa-eyebrow { font-size: 10px; padding: 1px 5px; }
+.sa--compact .sa-target { font-size: 12px; }
+.sa--compact .sa-iconbtn { width: 24px; height: 24px; border-radius: 6px; }
+.sa--compact .sa-iconbtn svg { width: 14px; height: 14px; }
+
+.sa--compact .sa-msgs { padding: 8px 10px 6px; gap: 8px; }
+.sa--compact .sa-msg { gap: 6px; }
+.sa--compact .sa-msg__avatar { width: 22px; height: 22px; margin-top: 0; }
+.sa--compact .sa-msg__avatar svg { width: 12px; height: 12px; }
+.sa--compact .sa-msg__body,
+.sa--compact .sa-msg--assistant .sa-msg__main > .markdown-body {
+  font-size: 12px;
+  line-height: 1.55;
+  padding: 7px 10px;
+  border-radius: 10px;
+}
+.sa--compact .sa-msg--user .sa-msg__body { border-radius: 10px 10px 3px 10px; }
+.sa--compact .sa-msg--assistant .sa-msg__main { max-width: 94%; gap: 2px; }
+.sa--compact .sa-msg__meta { font-size: 10px; gap: 6px; }
+
+.sa--compact .sa-dots { height: 28px; padding: 0 10px; gap: 3px; }
+.sa--compact .sa-dots span { width: 5px; height: 5px; }
+
+.sa--compact .sa-prompts { padding-top: 8px; gap: 6px 8px; }
+.sa--compact .sa-prompt { font-size: 11px; padding: 5px 10px; }
+
+.sa--compact .sa-anchored { padding: 6px 10px 2px; gap: 6px; }
+.sa--compact .sa-form { padding: 4px 10px 2px; gap: 8px; }
+.sa--compact .sa-form input { padding: 7px 12px; font-size: 12px; }
+.sa--compact .sa-send { width: 28px; height: 28px; }
+.sa--compact .sa-send svg { width: 14px; height: 14px; }
 
 /* —— AssistantAnswer 内部 markdown + sections：用 .sa-msg__body 容器作用域 —— */
 .sa-msg--assistant .markdown-body {

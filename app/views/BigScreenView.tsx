@@ -26,6 +26,7 @@ import { StrategyModal } from "../components/StrategyModal";
 import { searchLocalStocks } from "../../lib/domain/stocks";
 import { recordQuota, useMairuiQuota } from "../../lib/market/mairui-quota";
 import { resolveSectorKlineCode } from "../../lib/market/sectors";
+import SmartAssistant from "../components/SmartAssistant";
 
 type Quote = { price: number; changePercent: number; fetchedAt: string };
 type MarketIndex = { code: string; name: string; price: number; changePercent: number; change: number };
@@ -1666,10 +1667,7 @@ export function BigScreenView() {
                 })}
               </div>
             </div>
-          </section>
-
-          <section className="fade-up" style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0, animationDelay: "270ms" }}>
-            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 16px", flex: 6, minHeight: 0, overflow: "hidden" }}>
+            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 16px", flex: 1, minHeight: 0, overflow: "hidden" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
                 <span style={{ fontSize: 12, color: MUTED }}>策略选股榜</span>
                 <span style={{ fontSize: 10, color: MUTED, fontFamily: "var(--font-mono)" }}>
@@ -1730,7 +1728,10 @@ export function BigScreenView() {
                 );
               })}
             </div>
-            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 16px", flex: 5, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          </section>
+
+          <section className="fade-up" style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0, animationDelay: "270ms" }}>
+            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 16px", flex: 3, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8, flexShrink: 0 }}>
                 <span style={{ fontSize: 12, color: MUTED }}>板块热力</span>
                 <span style={{ fontSize: 10, color: MUTED, fontFamily: "var(--font-mono)" }}>{sectors?.date ?? "加载中"}</span>
@@ -1784,6 +1785,14 @@ export function BigScreenView() {
                   })}
                 </div>
               )}
+            </div>
+            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: 0, flex: 6, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+              <SmartAssistant
+                analysis={null}
+                position={null}
+                portfolioInsights={insights}
+                compact
+              />
             </div>
           </section>
         </main>
