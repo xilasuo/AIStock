@@ -753,45 +753,54 @@ export default function SmartAssistant(
                   <AssistantAnswer content={message.content} />
                 )}
                 {!regen && !message.streaming && (
-                  <div className="sa-msg__meta">
-                    {message.error ? (
-                      message.pendingQuestion && (
-                        <button
-                          type="button"
-                          className="sa-link"
-                          onClick={() => message.id && retry(message.id)}
-                          disabled={asking}
-                        >
-                          重试
-                        </button>
-                      )
-                    ) : (
-                      <>
-                        {message.interrupted && <span className="sa-msg__warn">回复可能不完整</span>}
-                        {message.fetchedAt && <span className="sa-msg__time">基于 {formatDateTimeShanghai(message.fetchedAt)} 数据</span>}
-                        <button
-                          type="button"
-                          className="sa-link"
-                          onClick={() => message.id && copyMessage(message.content, message.id)}
-                          aria-label="复制这条回复"
-                          title="复制"
-                        >
-                          {copiedId === message.id ? "已复制" : "复制"}
-                        </button>
-                        <span className="sa-sep" aria-hidden>·</span>
-                        <button
-                          type="button"
-                          className="sa-link"
-                          onClick={() => message.id && regenerate(message.id)}
-                          disabled={asking || regeneratingId === message.id}
-                          aria-label="换一版回复"
-                          title="换一版"
-                        >
-                          换一版
-                        </button>
-                      </>
+                  <>
+                    {message.interrupted && (
+                      <div className="sa-msg__notice" role="status">
+                        <span className="sa-msg__warn">回复可能不完整</span>
+                      </div>
                     )}
-                  </div>
+                    <div className="sa-msg__meta">
+                      {message.error ? (
+                        message.pendingQuestion && (
+                          <button
+                            type="button"
+                            className="sa-link"
+                            onClick={() => message.id && retry(message.id)}
+                            disabled={asking}
+                          >
+                            重试
+                          </button>
+                        )
+                      ) : (
+                        <>
+                          {message.fetchedAt && (
+                            <span className="sa-msg__time">基于 {formatDateTimeShanghai(message.fetchedAt)} 数据</span>
+                          )}
+                          <span className="sa-msg__actions">
+                            <button
+                              type="button"
+                              className="sa-link"
+                              onClick={() => message.id && copyMessage(message.content, message.id)}
+                              aria-label="复制这条回复"
+                              title="复制"
+                            >
+                              {copiedId === message.id ? "已复制" : "复制"}
+                            </button>
+                            <button
+                              type="button"
+                              className="sa-link"
+                              onClick={() => message.id && regenerate(message.id)}
+                              disabled={asking || regeneratingId === message.id}
+                              aria-label="换一版回复"
+                              title="换一版"
+                            >
+                              换一版
+                            </button>
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
             </div>
