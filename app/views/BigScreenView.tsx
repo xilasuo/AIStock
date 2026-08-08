@@ -1661,7 +1661,7 @@ export function BigScreenView() {
                 </div>
               </div>
             </div>
-            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 16px", flex: 1, minHeight: 0, overflow: "hidden" }}>
+            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 16px", flex: 1, minHeight: 0, overflowY: "auto" }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: MUTED, marginBottom: 6 }}>
                 <span>持仓明细 · 按今日涨跌</span>
                 <span>今日 / 累计</span>
@@ -1724,7 +1724,7 @@ export function BigScreenView() {
                 })}
               </div>
             </div>
-            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 16px", flex: 1, minHeight: 0, overflow: "hidden" }}>
+            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 16px", flex: 1, minHeight: 0, overflowY: "auto" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
                 <span style={{ fontSize: 12, color: MUTED }}>策略选股榜</span>
                 <span style={{ fontSize: 10, color: MUTED, fontFamily: "var(--font-mono)" }}>
@@ -1785,7 +1785,7 @@ export function BigScreenView() {
                 );
               })}
             </div>
-            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 16px", flex: 1, minHeight: 0, overflow: "hidden" }}>
+            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 16px", flex: 1, minHeight: 0, overflowY: "auto" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
                 <span style={{ fontSize: 12, color: MUTED }}>关注股票</span>
                 <span style={{ fontSize: 10, color: MUTED, fontFamily: "var(--font-mono)" }}>
