@@ -171,14 +171,16 @@ export async function fetchQuota(): Promise<QuotaView> {
 export function useMairuiQuota(pollMs = 30_000) {
   // 初始值统一用 used=0（SSR 与首次 CSR 一致），避免 hydration mismatch；
   // 真实额度由下方 useEffect 在挂载后从 localStorage / 后端异步读取并更新。
-  const [view, setView] = React.useState<QuotaView>(() => {
-    // 客户端首次渲染即读取 localStorage，避免挂载后 effect 里同步 setState 造成的闪烁；
-    // SSR 阶段无 window，返回 0 占位，与后端/CSR 水合一致。
-    if (typeof window !== "undefined") {
-      const local = quotaStatus();
-      return { ...local, source: "local" };
-    }
-    return { used: 0, limit: DAILY_LIMIT, degraded: false, suspended: false, ratio: 0, source: "local" };
+  const [view, setView] = React.useState<QuotaView>({
+    // 初始值固定为 0 占位，服务端 SSR 与客户端 hydration 首帧必须完全一致，
+    // 否则会触发 hydration mismatch（详见 React 报错：server 0 vs client 读数）。
+    // 真实额度由下方 useEffect 在挂载后从 localStorage / 后端异步读取并更新。
+    used: 0,
+    limit: DAILY_LIMIT,
+    degraded: false,
+    suspended: false,
+    ratio: 0,
+    source: "local",
   });
 
   const refresh = React.useCallback(async () => {

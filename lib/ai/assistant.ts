@@ -37,6 +37,8 @@ export type AssistantContext = {
     averageCost: number;
     returnPercent: number | null;
     stockPositionPercent: number | null;
+    /** 单股占比不可计算/口径说明（如后端成本口径估算），供前端与 AI 注入使用 */
+    stockPositionPercentNote?: string | null;
   } | null;
   portfolio: {
     totalAssets: number | null;
@@ -180,7 +182,9 @@ export function buildFallbackAnswer(
       return `### 结论\n暂时不能判断仓位是否允许新增${stock.name}。\n### 依据\n尚未设置账户初始资金，因此无法计算现金和总仓位。\n### 风险与缺口\n缺少账户资金基准；价格与基本面条件也不能替代仓位约束。\n### 下一步\n先在设置中填写账户初始资金，再进行买入条件检查。`;
     }
     const totalPosition = context.portfolio.totalPositionPercent;
-    const stockPosition = position?.stockPositionPercent ?? 0;
+    // 单股占比若基准失真（null）不得当 0 处理，否则会误导为“仓位有空间”。
+    const stockPosition = position?.stockPositionPercent ?? null;
+    const stockPositionText = stockPosition != null ? `${stockPosition.toFixed(2)}%` : "基准失真(无法计算，请检查账户初始资金/出入金设置)";
     const totalAssets = context.portfolio.totalAssets;
     const riskPerShare = Math.max(quote.price - quote.support, quote.price * 0.03);
     const maxLoss = totalAssets * (prefs.maxLossPercent / 100);
@@ -191,10 +195,12 @@ export function buildFallbackAnswer(
     const cheng = totalAssets > 0 ? (shares * quote.price) / totalAssets : 0;
     const constraint = totalPosition >= 80
       ? "总仓位已高，先别加风险暴露，优先处理已有仓位"
-      : stockPosition >= 20
+      : stockPosition != null && stockPosition >= prefs.maxConcentrationPercent
         ? "该股占比已高，先降集中度，别再堆单票"
-        : "仓位层面仍有空间，但空间不等于买点，标的得自己过关";
-    return `### 结论\n操盘手视角——${constraint}。\n### 依据\n当前总仓位${totalPosition.toFixed(2)}%，${stock.name}仓位${stockPosition.toFixed(2)}%，现金${context.portfolio.cash === null ? "暂无" : `¥${context.portfolio.cash.toFixed(2)}`}；当前价¥${quote.price.toFixed(3)}，风险观察线¥${quote.support.toFixed(3)}，单笔风险每股¥${riskPerShare.toFixed(3)}。\n可挂单仓位：约${cheng.toFixed(2)}成（约${shares}股），按价格到支撑线的距离控单笔亏损（单笔风险预算=总资产${prefs.maxLossPercent}%，止损线按买入价×(1−${prefs.maxLossPercent}%)自动建立；单股不超${prefs.maxConcentrationPercent}%），最终由你确认执行${prefs.enforceStopLoss ? "，且买入前必须先设止损" : ""}。\n### 风险与缺口\n仓位只限风险，不证明会涨；${context.missingInformation.slice(0, 2).join("、") || "最新公告仍需核验"}${osc ? `\n动能：${osc}` : ""}。\n### 下一步\n先定买入逻辑、失效条件和单笔最大亏损，再决定下不下手。`;
+        : stockPosition == null
+          ? "该股占比基准失真，无法判断集中度，请先核对账户初始资金/出入金设置"
+          : "仓位层面仍有空间，但空间不等于买点，标的得自己过关";
+    return `### 结论\n操盘手视角——${constraint}。\n### 依据\n当前总仓位${totalPosition.toFixed(2)}%，${stock.name}仓位${stockPositionText}，现金${context.portfolio.cash === null ? "暂无" : `¥${context.portfolio.cash.toFixed(2)}`}；当前价¥${quote.price.toFixed(3)}，风险观察线¥${quote.support.toFixed(3)}，单笔风险每股¥${riskPerShare.toFixed(3)}。\n可挂单仓位：约${cheng.toFixed(2)}成（约${shares}股），按价格到支撑线的距离控单笔亏损（单笔风险预算=总资产${prefs.maxLossPercent}%，止损线按买入价×(1−${prefs.maxLossPercent}%)自动建立；单股不超${prefs.maxConcentrationPercent}%），最终由你确认执行${prefs.enforceStopLoss ? "，且买入前必须先设止损" : ""}。\n### 风险与缺口\n仓位只限风险，不证明会涨；${context.missingInformation.slice(0, 2).join("、") || "最新公告仍需核验"}${osc ? `\n动能：${osc}` : ""}。\n### 下一步\n先定买入逻辑、失效条件和单笔最大亏损，再决定下不下手。`;
   }
 
   if (/卖出|减仓|清仓|止盈|获利了结|离场/.test(question)) {
@@ -204,27 +210,31 @@ export function buildFallbackAnswer(
     const p = position;
     const belowSupport = quote.price < quote.support;
     const nearResistance = quote.price >= quote.resistance * 0.98;
-    const concentration = p.stockPositionPercent ?? 0;
+    // 单股占比若基准失真（null）不得当 0，否则会误导为“占比未超标”。
+    const concentration = p.stockPositionPercent ?? null;
+    const concentrationText = concentration != null ? `${concentration.toFixed(2)}%` : "基准失真(无法计算)";
     const returnPercent = p.returnPercent ?? 0;
     let action: string;
     let reason: string;
     if (belowSupport) {
       action = "建议减仓/止损";
       reason = `价格已跌破风险观察线¥${quote.support.toFixed(3)}，原买入逻辑失效，先砍风险`;
-    } else if (returnPercent <= 0 && concentration >= 20) {
+    } else if (returnPercent <= 0 && concentration != null && concentration >= prefs.maxConcentrationPercent) {
       action = "建议减仓降集中";
-      reason = `浮亏且该股占仓${concentration.toFixed(2)}%偏高，先降单票风险`;
+      reason = `浮亏且该股占仓${concentrationText}偏高，先降单票风险`;
     } else if (returnPercent > 0 && nearResistance) {
       action = "建议分批止盈/减仓";
       reason = `已有盈利且逼近阻力¥${quote.resistance.toFixed(3)}，落袋为安不贪`;
-    } else if (concentration >= prefs.maxConcentrationPercent) {
+    } else if (concentration != null && concentration >= prefs.maxConcentrationPercent) {
       action = "建议减仓降集中";
-      reason = `该股占仓${concentration.toFixed(2)}%过高，超${prefs.maxConcentrationPercent}%警戒需压回`;
+      reason = `该股占仓${concentrationText}过高，超${prefs.maxConcentrationPercent}%警戒需压回`;
     } else {
-      action = "建议持有并设好止损";
-      reason = `仍在支撑上方、占仓${concentration.toFixed(2)}%未超标，持有观察，跌破¥${quote.support.toFixed(3)}再动`;
+      action = concentration == null ? "建议先核对持仓基准" : "建议持有并设好止损";
+      reason = concentration == null
+        ? `该股占比基准失真，请先核对账户初始资金/出入金设置，再判断持仓动作`
+        : `仍在支撑上方、占仓${concentrationText}未超标，持有观察，跌破¥${quote.support.toFixed(3)}再动`;
     }
-    return `### 结论\n${action}。\n### 依据\n持仓${p.quantity}股，成本¥${p.averageCost.toFixed(3)}，当前¥${quote.price.toFixed(3)}，相对成本${percent(p.returnPercent)}；支撑¥${quote.support.toFixed(3)}、阻力¥${quote.resistance.toFixed(3)}，占仓${concentration.toFixed(2)}%。\n### 风险与缺口\n${reason}；${context.missingInformation.slice(0, 2).join("、") || "最新公告仍需核验"}${osc ? `\n动能：${osc}` : ""}。\n### 下一步\n执行后把止损设在¥${quote.support.toFixed(3)}下方，单笔亏损控制在计划内，最终由你确认。`;
+    return `### 结论\n${action}。\n### 依据\n持仓${p.quantity}股，成本¥${p.averageCost.toFixed(3)}，当前¥${quote.price.toFixed(3)}，相对成本${percent(p.returnPercent)}；支撑¥${quote.support.toFixed(3)}、阻力¥${quote.resistance.toFixed(3)}，占仓${concentrationText}。\n### 风险与缺口\n${reason}；${context.missingInformation.slice(0, 2).join("、") || "最新公告仍需核验"}${osc ? `\n动能：${osc}` : ""}。\n### 下一步\n执行后把止损设在¥${quote.support.toFixed(3)}下方，单笔亏损控制在计划内，最终由你确认。`;
   }
 
   if (/持仓|成本|盈亏|回本|怎么办|怎么操作|怎么处理/.test(question)) {
@@ -234,14 +244,16 @@ export function buildFallbackAnswer(
     const p = position;
     const belowSupport = quote.price < quote.support;
     const nearResistance = quote.price >= quote.resistance * 0.98;
-    const concentration = p.stockPositionPercent ?? 0;
+    const concentration = p.stockPositionPercent ?? null;
+    const concentrationText = concentration != null ? `${concentration.toFixed(2)}%` : "基准失真(无法计算)";
     const returnPercent = p.returnPercent ?? 0;
     let action: string;
     if (belowSupport) action = "止损/减仓——跌破支撑，逻辑失效先控风险";
     else if (returnPercent > 0 && nearResistance) action = "分批止盈/减仓——到阻力附近，落袋为安";
-    else if (concentration >= prefs.maxConcentrationPercent) action = `减仓降集中——单票占仓超${prefs.maxConcentrationPercent}%，压回风险`;
+    else if (concentration != null && concentration >= prefs.maxConcentrationPercent) action = `减仓降集中——单票占仓超${prefs.maxConcentrationPercent}%，压回风险`;
+    else if (concentration == null) action = "先核对持仓基准——单票占比失真，请核对账户初始资金/出入金设置";
     else action = `持有并盯止损——仍在支撑上方，止损设¥${quote.support.toFixed(3)}下方`;
-    return `### 结论\n当前持仓相对成本${percent(p.returnPercent)}，${action}。\n### 依据\n持仓${p.quantity}股，成本¥${p.averageCost.toFixed(3)}，当前¥${quote.price.toFixed(3)}，占仓${concentration.toFixed(2)}%；支撑¥${quote.support.toFixed(3)}、阻力¥${quote.resistance.toFixed(3)}。\n### 风险与缺口\n未实现盈亏，未计费用和滑点；${context.missingInformation.slice(0, 2).join("、") || "最新公告仍需核验"}${osc ? `\n动能：${osc}` : ""}。\n### 下一步\n按动作执行，止损设在¥${quote.support.toFixed(3)}下方，最终由你确认。`;
+    return `### 结论\n当前持仓相对成本${percent(p.returnPercent)}，${action}。\n### 依据\n持仓${p.quantity}股，成本¥${p.averageCost.toFixed(3)}，当前¥${quote.price.toFixed(3)}，占仓${concentrationText}；支撑¥${quote.support.toFixed(3)}、阻力¥${quote.resistance.toFixed(3)}。\n### 风险与缺口\n未实现盈亏，未计费用和滑点；${context.missingInformation.slice(0, 2).join("、") || "最新公告仍需核验"}${osc ? `\n动能：${osc}` : ""}。\n### 下一步\n按动作执行，止损设在¥${quote.support.toFixed(3)}下方，最终由你确认。`;
   }
 
   if (/风险|下跌|止损|危险/.test(question)) {

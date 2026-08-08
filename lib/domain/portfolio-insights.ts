@@ -26,6 +26,8 @@ export type PortfolioInsights = {
     unrealizedCents: number;
     returnPercent: number;
     allocationPercent: number | null;
+    /** 单股占比不可计算时的可读原因（基准失真），供前端与 AI 注入使用 */
+    allocationPercentNote: string | null;
   }>;
   history: Array<{
     date: string;
@@ -69,6 +71,7 @@ export function calculatePortfolioInsights(
       unrealizedCents: marketValueCents - costCents,
       returnPercent: costCents ? ((marketValueCents / costCents) - 1) * 100 : 0,
       allocationPercent: null,
+      allocationPercentNote: null,
     };
   });
   const marketValueCents = positions.reduce((sum, position) => sum + position.marketValueCents, 0);
@@ -82,12 +85,24 @@ export function calculatePortfolioInsights(
       ), initialCapitalCents + netFlowCents);
   const totalAssetsCents = cashCents === null ? null : cashCents + marketValueCents;
 
+  // 单股占比上限保护：物理上限 100%（单股市值不可能超过总资产）。
+  // 若初始资金被误设导致分母（总资产）失真，单股占比会算出 >100% 的爆炸值
+  // （如 5000分初始资金下可算出 585%，更极端会出 2010%）。任何 >100% 都说明
+  // 分母失真，视为基准失真置 null，由前端/AI 走“无法计算”分支而非展示爆炸值。
   for (const position of positions) {
-    position.allocationPercent = totalAssetsCents && totalAssetsCents > 0
+    // 分母优先用总资产（已含现金+市值）；仅在 totalAssets 不可用时退化为“持仓内部占比”。
+    // 总资产非正（含大额出金压穿基准）时，分母失真，单股占比直接视为无法计算 → null。
+    const raw = totalAssetsCents && totalAssetsCents > 0
       ? position.marketValueCents / totalAssetsCents * 100
-      : marketValueCents > 0
-        ? position.marketValueCents / marketValueCents * 100
-        : null;
+      : null;
+    // 单股占比：先按 safePercent 做分母保护（分母非正/非有限/超 1000% 置 null），
+    // 再夹取 100% 上限——任何 >100% 都属分母失真，强制置 null，杜绝 2010% 类幻觉来源。
+    const safe = safePercent(position.marketValueCents, totalAssetsCents && totalAssetsCents > 0 ? totalAssetsCents : null);
+    position.allocationPercent = safe !== null
+      ? (Math.abs(safe) > 100 ? null : safe)
+      : (raw !== null && Math.abs(raw) > 100 ? null : raw);
+    position.allocationPercentNote = safePercentNote(position.marketValueCents, totalAssetsCents && totalAssetsCents > 0 ? totalAssetsCents : null)
+      ?? (position.allocationPercent === null ? "单股占比超过 100% 或账户总资产基准失真，无法有效计算，请检查账户初始资金/出入金设置" : null);
   }
 
   const history = initialCapitalCents === null

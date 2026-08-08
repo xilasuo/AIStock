@@ -88,10 +88,8 @@ function buildContextFromAnalysis(
     ? {
         quantity: position.quantity,
         averageCost: position.averageCostTenThousandths / 10000,
-        returnPercent:
-          position.averageCostTenThousandths > 0 && Number.isFinite(position.averageCostTenThousandths)
-            ? ((analysis.quote.price * 10000) / position.averageCostTenThousandths - 1) * 100
-            : null,
+        // 盈亏统一用后端 calculatePortfolio 的 returnPercent（基于最近收盘价），避免前端实时价重算与后端口径不一致。
+        returnPercent: position.returnPercent ?? null,
         stockPositionPercent: allocationPercent,
       }
     : null;

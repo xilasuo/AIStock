@@ -55,6 +55,39 @@ test("技术面问题会给出走势结构/支撑阻力/量能动能", () => {
   assert.match(answer, /短线结构偏强/);
 });
 
+test("持仓占比用成本口径回填时不超过 100% 且标注口径，杜绝 2010% 类爆炸值", () => {
+  // 复现生产事故根因：浮窗后端 focus backfill 在拿不到实时市值占比时，改用工信部成本口径
+  // （持仓成本/总持仓成本）并标注说明，而不是留 null 让模型自行编造 2010%。
+  const costBased: AssistantContext = {
+    ...context,
+    position: {
+      quantity: 100,
+      averageCost: 1450,
+      returnPercent: null,
+      stockPositionPercent: 35.5,
+      stockPositionPercentNote: "按成本口径估算(持仓成本/总持仓成本)，非实时市值占比",
+    },
+  };
+  // 后端回填必须携带口径说明，供 AI 注入层如实引用而非自由发挥
+  assert.equal(costBased.position?.stockPositionPercentNote, "按成本口径估算(持仓成本/总持仓成本)，非实时市值占比");
+  const answer = buildFallbackAnswer("结合我的持仓怎么看？", costBased);
+  assert.match(answer, /35\.50%/);
+  // 单股占比绝不允许上千%，物理上单股市值不可能超过总资产
+  assert.ok(!/2010%|[1-9]\d{3,}%/.test(answer), `不应出现上千%的爆炸占比，实际含匹配：${answer.match(/[1-9]\d{2,}%/g)}`);
+});
+
+test("持仓占比基准失真（null）时 fallback 明确提示无法计算，不编造占比", () => {
+  // 后端无法算出占比（初始资金/出入金失真）时 stockPositionPercent=null，
+  // fallback 必须落到“基准失真”分支，而不是让模型自由发挥成 2010%。
+  const distorted: AssistantContext = {
+    ...context,
+    position: { quantity: 100, averageCost: 1450, returnPercent: 3.45, stockPositionPercent: null },
+  };
+  const answer = buildFallbackAnswer("现在可以买入加仓吗？", distorted);
+  assert.match(answer, /基准失真|无法计算/);
+  assert.ok(!/2010%|[1-9]\d{3,}%/.test(answer), "占比失真时不得输出上千%的编造占比");
+});
+
 test("基本面缺失时仍以技术面为主给出回答，不拒绝判断", () => {
   const noFund = {
     ...context,

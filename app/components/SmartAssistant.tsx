@@ -96,7 +96,8 @@ export function buildAnalysisContext(
   const positionContext = position ? {
     quantity: position.quantity,
     averageCost: position.averageCostTenThousandths / 10_000,
-    returnPercent: ((analysis.quote.price * 10_000 / position.averageCostTenThousandths) - 1) * 100,
+    // 盈亏统一用后端 calculatePortfolio 的 returnPercent（基于最近收盘价），避免前端实时价重算与后端口径不一致。
+    returnPercent: position.returnPercent ?? null,
     stockPositionPercent: portfolioInsights.positions.find((item) => item.symbol === position.symbol)?.allocationPercent ?? null,
   } : null;
   return {

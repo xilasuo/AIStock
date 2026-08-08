@@ -417,15 +417,32 @@ function summarizeContext(ctx: AssistantContext): string {
   if (ctx.summary) lines.push(`一句话总结：${ctx.summary}`);
   lines.push(`风险点：${(ctx.risks || []).length ? ctx.risks.join("；") : "无明确列示"}`);
   lines.push(`还需核验：${(ctx.missingInformation || []).length ? ctx.missingInformation.join("；") : "无"}`);
-  lines.push(`成交量(近20日)：${ctx.volume ?? "数据缺失"}`);
+  // 量能：输出量比(ratio，当日量/近5日均量通用口径)与量价背离，供模型判断量能，
+  // 不再用"成交量(近20日)"这种易误导的标签。
+  if (ctx.volume) {
+    const v = ctx.volume;
+    const ratioText = v.ratio != null ? v.ratio.toFixed(2) : "数据缺失";
+    const ma5Text = v.ma5 > 0 ? v.ma5.toLocaleString("zh-CN") : "数据缺失";
+    lines.push(`量能：量比=${ratioText}（当日量/近5日均量）；近5日均量=${ma5Text}股；量价背离=${v.divergence ?? "无明显背离"}`);
+  } else {
+    lines.push(`量能：数据缺失`);
+  }
   const osc = oscillatorTip(ctx);
   if (osc) lines.push(`摆动指标：${osc}`);
   if (ctx.position && ctx.portfolio.totalAssets !== null) {
     const p = ctx.position;
     const posValue = p.quantity * q.price;
     const total = ctx.portfolio.totalAssets;
-    const pct = total > 0 ? (posValue / total) * 100 : 0;
-    lines.push(`我的持仓：数量=${p.quantity}股，成本=${p.averageCost.toFixed(3)}元，盈亏=${percent(p.returnPercent)}，占总资产=${pct.toFixed(2)}%`);
+    // 单股占比优先用已做基准失真保护的 p.stockPositionPercent；若失真（null）则重算并夹取到合理范围，
+    // 避免出现 2010% 这类爆炸值污染 prompt。
+    const rawPct = total > 0 ? (posValue / total) * 100 : 0;
+    const pct = p.stockPositionPercent != null
+      ? p.stockPositionPercent
+      : (Number.isFinite(rawPct) && rawPct > 0 && rawPct <= 100 ? rawPct : 0);
+    const pctText = p.stockPositionPercent != null
+      ? `${pct.toFixed(2)}%${p.stockPositionPercentNote ? `（${p.stockPositionPercentNote}）` : ""}`
+      : (pct > 0 ? `${pct.toFixed(2)}%` : "基准失真，无法计算（请检查账户初始资金/出入金设置）");
+    lines.push(`我的持仓：数量=${p.quantity}股，成本=${p.averageCost.toFixed(3)}元，盈亏=${percent(p.returnPercent)}，占总资产=${pctText}`);
   } else if (ctx.portfolio.totalAssets !== null) {
     lines.push(`我的账户：总资产=${ctx.portfolio.totalAssets.toFixed(2)}元，现金=${ctx.portfolio.cash?.toFixed(2) ?? "暂无"}，总仓位=${ctx.portfolio.totalPositionPercent?.toFixed(2) ?? "暂无"}%`);
   } else {
@@ -452,6 +469,7 @@ function buildTraderSystemPrompt(prefs: TradingPreferences, context: AssistantCo
     `10. 【开新仓硬约束（针对未持仓的新标的）】只要用户当前未持有该股，结论必须给出明确的「开新仓」判断——开新仓（买入建仓）/ 暂不开新仓（观望），且不得与「加仓」混淆（加仓只针对已持有标的）。是否开新仓须综合：①账户可用现金是否足以建仓（至少够 1 手并覆盖单笔风险预算）；②当前总仓位是否逼近纪律上限（超过 max_position_percent 或总仓位>80% 则空间不足）；③交易纪律是否放行（买入必须先设止损等）。三者任一不满足即「暂不开新仓」并点明原因；全部满足则给明确买点、建议仓位与止损位。`,
     `10. 【技术面为主，基本面按实际可得性使用】基本面是否可得一律以下方 context 的「基本面」行实际内容为准，不得预设它一定缺失：凡已给出数值的字段（营收增长/利润增长/负债率/PE/PB/ROE）必须引用并参与判断，不许无视已有数据或笼统宣称「基本面缺失」；只有确实显示「数据缺失」的项才说明该项缺失。K线/成交量/MACD/RSI/KDJ/支撑阻力始终稳定可得，故在基本面确实不足时，以走势结构（均线方向、价格与支撑阻力位置）、量能（放量突破/缩量回调/量价背离）、动能指标（MACD/RSI/KDJ）为主要评判依据，并注明「基本面数据缺失，以下判断以技术面为主」。任何情况下不得编造财务数字。`,
     `【反幻觉示例】用户问「茅台 PE 多少、能买吗」而 pe=数据缺失 → 正确回答：「数据缺失：本次没取到 PE，我不凭记忆补数。能不能买看你的仓位和计划，先把账户资金补全、设好止损再谈。」`,
+    `【数字格式硬约束】所有金额、价格、百分比、仓位一律用阿拉伯数字 + 单位呈现（如 ¥344.96、16.27%、仓位 12.3%），严禁使用中文大写数字（如「叁佰肆拾肆元玖角陆分」「贰拾点壹零百分比」「壹仟股」）。数字直接写在正文里，不要额外念成中文大写，也不要把「%」「元」替换成中文读法。`,
     `【我的交易纪律与风险偏好，必须优先遵守，替代任何固定百分比】`,
     `risk_profile=${prefs.riskProfile}`,
     `max_loss_percent=${prefs.maxLossPercent}`,

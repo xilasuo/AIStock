@@ -82,8 +82,9 @@ async function summarizeHistory(messages: ChatMessage[], ai: AiConfig): Promise<
  * 返回结构化持仓（用于回填 ctx.position）与一段汇总文本（用于注入 system，让 AI 总能看到完整持仓）。
  */
 async function getServerHoldings(userId: number): Promise<{
-  positions: Array<{ symbol: string; name: string; quantity: number; averageCostTenThousandths: number }>;
+  positions: Array<{ symbol: string; name: string; quantity: number; averageCostTenThousandths: number; costCents: number }>;
   text: string;
+  totalCostCents: number;
 } | null> {
   try {
     const rows = await getDb().select().from(tradeRecords).where(eq(tradeRecords.userId, userId));
@@ -109,14 +110,16 @@ async function getServerHoldings(userId: number): Promise<{
       name: p.name,
       quantity: p.quantity,
       averageCostTenThousandths: p.averageCostTenThousandths,
+      costCents: Math.round((p.averageCostTenThousandths / 10_000) * p.quantity * 100),
     }));
+    const totalCostCents = positions.reduce((sum, p) => sum + p.costCents, 0);
     const text = positions
       .map(
         (p) =>
           `${p.name}(${p.symbol}) ${p.quantity}股，成本均价¥${(p.averageCostTenThousandths / 10_000).toFixed(3)}`,
       )
       .join("；");
-    return { positions, text };
+    return { positions, text, totalCostCents };
   } catch {
     return null;
   }
@@ -311,11 +314,17 @@ export async function POST(request: Request) {
   if (serverHoldings && !ctx.position) {
     const focus = serverHoldings.positions.find((p) => p.symbol === ctx.stock.code);
     if (focus) {
+      // 后端无实时行情价时无法算精确的"市值/总资产"占比，这里用成本口径（持仓成本/总持仓成本）
+      // 作为集中度参考，并明确标注口径，避免 AI 拿不到占比数据而编造（如 2010%）。
+      const costBasedPercent = serverHoldings!.totalCostCents > 0
+        ? (focus.costCents / serverHoldings!.totalCostCents) * 100
+        : null;
       ctx.position = {
         quantity: focus.quantity,
         averageCost: focus.averageCostTenThousandths / 10_000,
         returnPercent: null,
-        stockPositionPercent: null,
+        stockPositionPercent: costBasedPercent,
+        stockPositionPercentNote: "按成本口径估算(持仓成本/总持仓成本)，非实时市值占比",
       };
     }
   }

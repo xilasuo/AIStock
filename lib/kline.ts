@@ -102,24 +102,58 @@ export async function fetchKline(
   limit = 220,
   period: KPeriod | KIntradayPeriod = "day",
 ): Promise<KBar[]> {
-  // ---- 分钟级分时：麦蕊优先，东财 push2his 兜底 ----
+  // ---- 分钟级分时 ----
+  // dn（当日分时）：东财 push2his 对「仅取1天 klt=1」经常返回不足 30 根，
+  //   会触发上层 bars.length<30 抛出 502。故 dn 改走【新浪当日1分钟线优先 + 麦蕊兜底】：
+  //   新浪 scale=1 配合 datalen 取近期交易日，稳定返回 >30 根；麦蕊 dn 为原生逐分钟分时，最可靠。
+  // 非 dn（5/15/30/60分，跨多日）：东财 push2his 优先（免费公开、稳定），新浪 + 麦蕊兜底。
+  //   麦蕊有每日 9500 次硬上限，非必要不消耗，仅作最后兜底。
   if (isIntraday(period)) {
-    const mr = await getMairuiIntraday(code, period).catch(() => null);
-    if (mr && mr.length) {
-      return mr.map((b) => ({
-        date: b.time,
-        open: b.open,
-        close: b.close,
-        high: b.high,
-        low: b.low,
-        vol: b.vol,
-      }));
+    if (period === "dn") {
+      // 新浪当日分时：scale=5（新浪 getKLineData 不支持 scale=1，最小为5分钟），
+      // datalen=48 取最近1个交易日的5分钟线（约48根 > 30），稳定无当日空白。
+      // 注意：5分档(period=5m)取的是跨多日历史5分钟线，与 dn 的「仅最近1天」范围不同，视觉区分明显。
+      try {
+        const url =
+          `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/` +
+          `CN_MarketData.getKLineData?symbol=${sinaPrefix(code)}${code}&scale=5&ma=no&datalen=48`;
+        const res = await fetch(url, {
+          headers: { "User-Agent": UA, Referer: "https://finance.sina.com.cn/" },
+          signal: AbortSignal.timeout(8000),
+        });
+        const raw = (await res.json()) as Array<{
+          day: string; open: string; high: string; low: string; close: string; volume: string;
+        }>;
+        if (Array.isArray(raw) && raw.length) {
+          return raw.map((b) => ({
+            date: b.day,
+            open: Number(b.open),
+            close: Number(b.close),
+            high: Number(b.high),
+            low: Number(b.low),
+            vol: Number(b.volume),
+          }));
+        }
+      } catch {
+        /* 新浪失败 -> 麦蕊真·分时兜底 */
+      }
+      // 麦蕊 dn 为原生逐分钟当日分时，最可靠，作为 dn 的最后兜底。
+      const mr = await getMairuiIntraday(code, "dn").catch(() => null);
+      if (mr && mr.length) {
+        return mr.map((b) => ({
+          date: b.time,
+          open: b.open,
+          close: b.close,
+          high: b.high,
+          low: b.low,
+          vol: b.vol,
+        }));
+      }
+      return [];
     }
-    // 麦蕊未配置 / 失败 / 解析为空：回退到公开分钟K线。
-    // dn（当日分时）按 5 分钟粒度近似——新浪不支持 scale=1（返回 null），
-    // 5 分钟已能刻画日内走势；此前 dn 直接回退日K，会把 220 天日线当"分时"展示，
-    // 视觉上完全看不出来，属于误导性降级。
-    const klt = period === "dn" ? 5 : INTRADAY_KLT[period];
+
+    // 非 dn：东财 push2his 优先（klt 取对应分钟数，跨多日稳定）。
+    const klt = INTRADAY_KLT[period];
     try {
       const url =
         `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${emSecid(code)}${code}` +
@@ -148,9 +182,7 @@ export async function fetchKline(
     } catch {
       /* 东财失败 -> 继续走新浪分钟级兜底 */
     }
-    // 新浪分钟级兜底：scale 直接就是分钟数（5/15/30/60），
-    // 返回的 day 字段形如 "2026-08-06 15:00:00"，符合分时时间轴解析要求。
-    // 缺此兜底时，东财一旦不可达（如 UND_ERR_SOCKET）分时档位会全部空白。
+    // 新浪分钟级兜底：scale 直接就是分钟数（5/15/30/60），返回的 day 形如 "2026-08-06 15:00:00"。
     try {
       const url =
         `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/` +
@@ -173,7 +205,19 @@ export async function fetchKline(
         }));
       }
     } catch {
-      /* 新浪也失败 -> 返回空，由调用方处理 */
+      /* 新浪也失败 -> 尝试麦蕊兜底 */
+    }
+    // 东财与新浪均不可达/为空：用麦蕊拿对应分钟聚合（5m/15m/...），仅作最后兜底。
+    const mr = await getMairuiIntraday(code, period).catch(() => null);
+    if (mr && mr.length) {
+      return mr.map((b) => ({
+        date: b.time,
+        open: b.open,
+        close: b.close,
+        high: b.high,
+        low: b.low,
+        vol: b.vol,
+      }));
     }
     return [];
   }

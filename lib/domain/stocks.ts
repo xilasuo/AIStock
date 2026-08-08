@@ -508,7 +508,8 @@ export function analyzeVolume(history: ChartRow[]): VolumeAnalysis {
   const latest = volumes[count - 1] ?? 0;
   const ma5 = count >= 5 ? average(volumes.slice(-5)) : average(volumes);
   const ma20 = count >= 20 ? average(volumes.slice(-20)) : average(volumes);
-  const ratio = ma20 > 0 ? latest / ma20 : null;
+  // 量比=A股通用口径：当日成交量 / 近5日平均成交量（与行情软件一致）。
+  const ratio = ma5 > 0 ? latest / ma5 : null;
 
   let upDaysWithVolume = 0;
   let downDaysWithVolume = 0;
