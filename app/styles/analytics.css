@@ -20,8 +20,8 @@
 }
 
 .chart-empty {
-  color: var(--muted, #8c8c83);
-  font-size: var(--fs-sm, 13px);
+  color: var(--muted, #5f8198);
+  font-size: var(--fs-sm, 14px);
   padding: 18px 4px;
   text-align: center;
 }
