@@ -1,6 +1,6 @@
 import { getCurrentUser } from "../../../lib/auth/auth";
 import { ensureSchema } from "../../../db";
-import { listSuggestions, updateSuggestionOutcome, getLinkedReviewsMap, type Outcome } from "../../../lib/strategy-suggestions";
+import { listSuggestions, updateSuggestionOutcome, getLinkedReviewsMap, deleteSuggestions, type Outcome } from "../../../lib/strategy-suggestions";
 
 export async function GET(request: Request) {
   const user = await getCurrentUser();
@@ -44,4 +44,39 @@ export async function PATCH(request: Request) {
     outcomePrice: outcomePrice ?? undefined,
   });
   return Response.json({ code: 0, data: { ok: true } });
+}
+
+/**
+ * 删除建议记录。请求体三选一：
+ * - { ids: number[] }        删除指定记录
+ * - { outcome: "pending" }   按标注状态批量删除
+ * - { all: true }            清空全部
+ */
+export async function DELETE(request: Request) {
+  const user = await getCurrentUser();
+  await ensureSchema();
+  const body = (await request.json().catch(() => ({}))) as {
+    ids?: unknown;
+    outcome?: string;
+    all?: boolean;
+  };
+
+  const ids = Array.isArray(body.ids)
+    ? body.ids.filter((v): v is number => typeof v === "number" && Number.isInteger(v))
+    : undefined;
+  const outcome =
+    typeof body.outcome === "string" && ["pending", "correct", "wrong", "uncertain"].includes(body.outcome)
+      ? (body.outcome as Outcome)
+      : undefined;
+  const all = body.all === true;
+
+  if ((!ids || ids.length === 0) && outcome === undefined && !all) {
+    return Response.json(
+      { code: 1, message: "需提供 ids / outcome / all 之一" },
+      { status: 400 },
+    );
+  }
+
+  const deleted = await deleteSuggestions({ userId: user.id, ids, outcome, all });
+  return Response.json({ code: 0, data: { deleted } });
 }

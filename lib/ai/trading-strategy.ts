@@ -4,6 +4,7 @@ import { tradeModePrompt } from "../utils/trade-mode";
 import type { AssistantContext } from "./assistant";
 import type { Oscillators } from "../domain/stocks";
 import { evaluateContextQuality, type ContextQuality } from "../context-quality";
+import { guardNumbers, hasBlockingIssue, issuesToWarnings } from "./number-guard";
 
 type StrategyAction = "开新仓" | "加仓" | "持有" | "减仓" | "清仓" | "观望" | null;
 
@@ -22,6 +23,11 @@ export interface StrategyResult {
   validationWarnings?: string[];
   /** 上下文数据质量评分 */
   contextQuality?: ContextQuality;
+  /**
+   * true = AI 输出命中确定性错误（[幻觉] 级），content 已被替换为规则引擎结果。
+   * 此时 structured/aiAction 仍保留原值，供前端展示「AI 建议已被拦截及原因」。
+   */
+  blocked?: boolean;
 }
 
 /** AI 结构化策略输出 schema */
@@ -636,12 +642,36 @@ export async function generateStrategy(
 
     if (structured) {
       // 结构化解析成功 → 校验 + 对比规则引擎 + 用渲染版 markdown 替代原文
-      const validationWarnings = validateStructured(structured, context, prefs);
+      const rendered = renderStructuredToText(structured);
+      // 结构化字段校验（数值区间、层级、资金约束）
+      const structuralWarnings = validateStructured(structured, context, prefs);
+      // 自由文本数字守卫：覆盖 reasoning / risks / 各类 condition 等 JSON 校验触及不到的字段
+      const numberIssues = guardNumbers(rendered, context, { strictPrice: true });
+      const validationWarnings = [...structuralWarnings, ...issuesToWarnings(numberIssues)];
       const aiAction = structured.action;
       const diff = ruleAction !== null && aiAction !== null ? ruleAction !== aiAction : null;
 
+      // 命中确定性错误（结构化 [幻觉] 或 文本数字幻觉）→ 拦截 AI 正文，回退规则引擎结果。
+      // 保留 warnings 与 structured 供前端展示「AI 结果已被拦截及原因」。
+      const blocked =
+        structuralWarnings.some((w) => w.startsWith("[幻觉]")) || hasBlockingIssue(numberIssues);
+
+      if (blocked) {
+        return {
+          content: ruleContent,
+          mode: "automatic",
+          ruleAction,
+          aiAction,
+          diff,
+          structured,
+          validationWarnings,
+          contextQuality,
+          blocked: true,
+        };
+      }
+
       return {
-        content: renderStructuredToText(structured), // 用渲染版 markdown，前端 StrategyBlocks 才能分块
+        content: rendered, // 用渲染版 markdown，前端 StrategyBlocks 才能分块
         mode: ai.provider,
         ruleAction,
         aiAction,
@@ -655,6 +685,20 @@ export async function generateStrategy(
     // 结构化解析失败 → 退回文本模式提取
     const aiAction = extractAiAction(aiAnswer);
     const diff = ruleAction !== null && aiAction !== null ? ruleAction !== aiAction : null;
+    // 纯文本路径同样要过数字守卫（此处无结构化字段，价格白名单误报风险更高，仅做格式类拦截）
+    const textIssues = guardNumbers(aiAnswer, context, { strictPrice: false });
+    if (hasBlockingIssue(textIssues)) {
+      return {
+        content: ruleContent,
+        mode: "automatic",
+        ruleAction,
+        aiAction,
+        diff,
+        validationWarnings: issuesToWarnings(textIssues),
+        contextQuality,
+        blocked: true,
+      };
+    }
 
     return {
       content: aiAnswer,
@@ -662,6 +706,7 @@ export async function generateStrategy(
       ruleAction,
       aiAction,
       diff,
+      validationWarnings: textIssues.length > 0 ? issuesToWarnings(textIssues) : undefined,
       contextQuality,
     };
   } catch {

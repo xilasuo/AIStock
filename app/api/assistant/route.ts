@@ -1,5 +1,6 @@
 import { getAiConfig, type AiConfig } from "../../../lib/ai/ai-config";
 import { buildFallbackAnswer, isValidContext, summarizeContext, type AssistantContext } from "../../../lib/ai/assistant";
+import { guardNumbers, hasBlockingIssue, issuesToWarnings } from "../../../lib/ai/number-guard";
 import { getCurrentUser, requireApiUser } from "../../../lib/auth/auth";
 import { ensureSchema, getDb } from "../../../db";
 import { tradeRecords } from "../../../db/schema";
@@ -305,8 +306,45 @@ export async function POST(request: Request) {
         // 上游空响应（模型没吐任何字）：回退到本地兜底，避免前端拿到空回复
         if (!full.trim()) {
           controller.enqueue(encoder.encode(sseFrame({ type: "delta", content: OFFLINE_NOTE + fallback })));
+          controller.enqueue(encoder.encode(sseFrame({ type: "done", mode: "fallback" })));
+          return;
         }
-        controller.enqueue(encoder.encode(sseFrame({ type: "done", mode: full.trim() ? "ai" : "fallback" })));
+
+        // 数字守卫：流式内容已发出无法撤回，改为追加「数据校正」块并在 done 帧标记 blocked。
+        // 仅做格式类拦截（中文大写/掉首位/悬空单位/爆炸百分比），不开价格白名单以免误报。
+        const issues = guardNumbers(full, ctx, { strictPrice: false });
+        if (hasBlockingIssue(issues)) {
+          const seen = new Set<string>();
+          const lines: string[] = [];
+          for (const i of issues) {
+            if (i.level !== "hallucination" || seen.has(i.snippet)) continue;
+            seen.add(i.snippet);
+            lines.push(`- \`${i.snippet}\` — ${i.message}`);
+          }
+          const correction = [
+            "\n\n---\n",
+            "⚠️ **数据校正提示：上面回复中检测到数字格式错误，请勿直接采信。**\n",
+            ...lines.map((l) => `${l}\n`),
+            "\n**以下为系统核对后的真实数据：**\n\n",
+            "```\n",
+            summarizeContext(ctx, serverHoldingsText),
+            "\n```\n",
+          ].join("");
+          controller.enqueue(encoder.encode(sseFrame({ type: "delta", content: correction })));
+          controller.enqueue(
+            encoder.encode(
+              sseFrame({
+                type: "done",
+                mode: "ai",
+                blocked: true,
+                warnings: issuesToWarnings(issues),
+              }),
+            ),
+          );
+          return;
+        }
+
+        controller.enqueue(encoder.encode(sseFrame({ type: "done", mode: "ai" })));
       } catch {
         // 上游中途断流：已收到的内容保留；有内容时发 interrupted 帧让前端标注
         // "回复可能不完整"，没内容时前端会自动走空响应兜底。

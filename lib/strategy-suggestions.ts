@@ -154,6 +154,63 @@ export async function updateSuggestionOutcome(params: {
     .where(and(eq(strategySuggestions.id, id), eq(strategySuggestions.userId, userId)));
 }
 
+/**
+ * 删除建议记录。三种模式（互斥，按优先级取第一个命中的）：
+ * - ids：删除指定的若干条
+ * - outcome：按标注状态批量删除（如清空所有 pending / 所有已标注）
+ * - all：清空当前用户的全部记录
+ *
+ * 注意：reviews 表通过 strategy_suggestion_id 引用本表，删除前必须先解除引用，
+ * 否则会留下指向不存在记录的悬空外键，导致复盘详情页取不到关联建议。
+ * 这里选择置空而非级联删除复盘——复盘是用户手写的资产，不能因清理建议而丢失。
+ */
+export async function deleteSuggestions(params: {
+  userId: number;
+  ids?: number[];
+  outcome?: Outcome;
+  all?: boolean;
+}): Promise<number> {
+  const { userId, ids, outcome, all } = params;
+  const db = getDb();
+
+  const scope = [eq(strategySuggestions.userId, userId)];
+  if (ids && ids.length > 0) {
+    scope.push(inArray(strategySuggestions.id, ids));
+  } else if (outcome !== undefined) {
+    scope.push(eq(strategySuggestions.outcome, outcome as Outcome));
+  } else if (!all) {
+    // 三个条件都没给：拒绝执行，避免误清空
+    return 0;
+  }
+
+  // 先查出将被删除的 id，用于解除复盘引用并返回准确的删除条数
+  const targets = await db
+    .select({ id: strategySuggestions.id })
+    .from(strategySuggestions)
+    .where(and(...scope))
+    .all();
+  const targetIds = targets.map((t) => t.id);
+  if (targetIds.length === 0) return 0;
+
+  // 解除复盘对这些建议的引用（保留复盘本身）
+  await db
+    .update(reviews)
+    .set({ strategySuggestionId: null })
+    .where(and(
+      eq(reviews.userId, userId),
+      inArray(reviews.strategySuggestionId, targetIds),
+    ));
+
+  await db
+    .delete(strategySuggestions)
+    .where(and(
+      eq(strategySuggestions.userId, userId),
+      inArray(strategySuggestions.id, targetIds),
+    ));
+
+  return targetIds.length;
+}
+
 /** 统计当前用户的建议准确率 */
 export async function getSuggestionStats(userId: number): Promise<{
   total: number;

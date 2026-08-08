@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Target, CheckCircle, XCircle, HelpCircle, TrendingUp, Loader2, FileText } from "lucide-react";
+import { Target, CheckCircle, XCircle, HelpCircle, TrendingUp, Loader2, FileText, Trash2 } from "lucide-react";
 import type { Outcome } from "../../lib/strategy-suggestions";
 
 interface LinkedReviewInfo {
@@ -79,6 +79,7 @@ export default function SuggestionTrackingView() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState<number | "bulk" | null>(null);
   const [error, setError] = useState("");
 
   const fetchData = useCallback(async () => {
@@ -123,6 +124,55 @@ export default function SuggestionTrackingView() {
     }
   }, []);
 
+  /** 删除单条建议 */
+  const removeOne = useCallback(async (item: SuggestionItem) => {
+    const extra = item.linkedReview ? "\n\n该建议已关联复盘记录，删除后复盘本身会保留，但会解除关联。" : "";
+    if (!confirm(`确定删除「${item.name} ${item.action ?? ""}」这条建议记录吗？${extra}`)) return;
+    setDeleting(item.id);
+    setError("");
+    try {
+      const res = await fetch("/api/strategy-suggestions", {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ids: [item.id] }),
+      }).then(r => r.json()) as { code: number; message?: string };
+      if (res.code === 0) {
+        setSuggestions(prev => prev.filter(s => s.id !== item.id));
+        const statsRes = await fetch("/api/strategy-suggestions/stats").then(r => r.json()) as { code: number; data: Stats };
+        if (statsRes.code === 0) setStats(statsRes.data);
+      } else {
+        setError(res.message || "删除失败");
+      }
+    } catch {
+      setError("删除失败，请稍后重试");
+    } finally {
+      setDeleting(null);
+    }
+  }, []);
+
+  /** 批量清理：按标注状态或全部 */
+  const removeBulk = useCallback(async (payload: { outcome?: Outcome; all?: boolean }, label: string) => {
+    if (!confirm(`确定${label}吗？此操作不可撤销。\n\n关联的复盘记录会保留，仅解除与建议的关联。`)) return;
+    setDeleting("bulk");
+    setError("");
+    try {
+      const res = await fetch("/api/strategy-suggestions", {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      }).then(r => r.json()) as { code: number; data?: { deleted: number }; message?: string };
+      if (res.code === 0) {
+        await fetchData();
+      } else {
+        setError(res.message || "清理失败");
+      }
+    } catch {
+      setError("清理失败，请稍后重试");
+    } finally {
+      setDeleting(null);
+    }
+  }, [fetchData]);
+
   if (loading) {
     return (
       <div className="suggestion-page">
@@ -140,6 +190,35 @@ export default function SuggestionTrackingView() {
       </h2>
 
       {error && <div className="suggestion-error">{error}</div>}
+
+      {/* 批量清理工具栏 */}
+      {suggestions.length > 0 && (
+        <div className="suggestion-toolbar">
+          <span className="toolbar-hint">清理记录：</span>
+          <button
+            className="toolbar-btn"
+            disabled={deleting !== null}
+            onClick={() => removeBulk({ outcome: "pending" }, "清空所有「待验证」的建议")}
+          >
+            {deleting === "bulk" ? <Loader2 size={14} className="spin" /> : <Trash2 size={14} />}
+            清空待验证
+          </button>
+          <button
+            className="toolbar-btn"
+            disabled={deleting !== null}
+            onClick={() => removeBulk({ outcome: "uncertain" }, "清空所有「不确定」的建议")}
+          >
+            <Trash2 size={14} /> 清空不确定
+          </button>
+          <button
+            className="toolbar-btn toolbar-btn-danger"
+            disabled={deleting !== null}
+            onClick={() => removeBulk({ all: true }, "清空全部建议记录（含统计数据）")}
+          >
+            <Trash2 size={14} /> 清空全部
+          </button>
+        </div>
+      )}
 
       {/* 准确率统计 */}
       {stats && stats.total > 0 && (
@@ -290,6 +369,15 @@ export default function SuggestionTrackingView() {
                   {item.outcome === "correct" ? "✓ 正确" : item.outcome === "wrong" ? "✗ 错误" : "? 不确定"}
                 </span>
               )}
+              <button
+                className="outcome-btn outcome-delete"
+                onClick={() => removeOne(item)}
+                disabled={deleting !== null || updating === item.id}
+                title="删除这条建议记录"
+                aria-label="删除这条建议记录"
+              >
+                {deleting === item.id ? <Loader2 size={14} className="spin" /> : <Trash2 size={14} />}
+              </button>
             </div>
             {item.linkedReview && (
               <div className="suggestion-review-link">

@@ -8186,6 +8186,43 @@ html.stealth .bs-stealth-hint { display: block; }
   letter-spacing: -.02em;
   margin: 0 0 6px;
 }
+/* 批量清理工具栏 */
+.suggestion-toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+.toolbar-hint {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  margin-right: 2px;
+}
+.toolbar-btn {
+  align-items: center;
+  background: var(--surface-strong);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  gap: 5px;
+  padding: 6px 10px;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+.toolbar-btn:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+.toolbar-btn:disabled { cursor: not-allowed; opacity: .5; }
+.toolbar-btn-danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, .1);
+  border-color: rgba(239, 68, 68, .3);
+  color: #dc2626;
+}
 .suggestion-subtitle {
   color: var(--text-muted);
   font-size: var(--fs-sm);
@@ -8386,6 +8423,16 @@ html.stealth .bs-stealth-hint { display: block; }
 .outcome-correct:hover:not(:disabled) { background: rgba(34, 197, 94, .1); color: #16a34a; border-color: rgba(34, 197, 94, .25); }
 .outcome-wrong:hover:not(:disabled) { background: rgba(239, 68, 68, .1); color: #dc2626; border-color: rgba(239, 68, 68, .25); }
 .outcome-uncertain:hover:not(:disabled) { background: rgba(148, 163, 184, .1); color: var(--text-muted); border-color: rgba(148, 163, 184, .25); }
+/* 单条删除：图标按钮，默认低调，hover 转危险色 */
+.outcome-delete {
+  color: var(--text-subtle, var(--text-muted));
+  padding: 6px 8px;
+}
+.outcome-delete:hover:not(:disabled) {
+  background: rgba(239, 68, 68, .1);
+  border-color: rgba(239, 68, 68, .25);
+  color: #dc2626;
+}
 /* 已标注状态 */
 .outcome-result {
   border-radius: 6px;
