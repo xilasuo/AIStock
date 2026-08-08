@@ -54,7 +54,11 @@ async function syncFile(src: string, dest: string): Promise<void> {
   const srcBuf = await readFile(src);
   try {
     const destBuf = await readFile(dest);
-    if (destBuf.equals(srcBuf)) return; // 内容一致，跳过
+    // 全局 Buffer 类型被 @cloudflare/workers-types 覆盖为 NonSharedBuffer（无 equals），
+    // 此处是 Node 构建脚本，按 Uint8Array 逐字节比较内容是否一致以绕开类型冲突。
+    const a = destBuf as unknown as Uint8Array;
+    const b = srcBuf as unknown as Uint8Array;
+    if (a.length === b.length && a.every((v, i) => v === b[i])) return; // 内容一致，跳过
   } catch {
     // dest 不存在 → 走复制分支
   }

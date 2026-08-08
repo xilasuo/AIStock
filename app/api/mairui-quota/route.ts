@@ -33,7 +33,7 @@ export async function readMairuiQuota(): Promise<MairuiQuota> {
   };
 }
 
-export async function POST(request: Request) {
+export async function POST() {
   const user = await getAuthenticatedUser();
   if (!user) return Response.json({ error: "请先登录" }, { status: 401 });
   if (user.role !== "super_admin") {

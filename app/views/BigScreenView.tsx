@@ -29,12 +29,6 @@ import { recordQuota, useMairuiQuota } from "../../lib/market/mairui-quota";
 import { resolveSectorKlineCode } from "../../lib/market/sectors";
 import SmartAssistant from "../components/SmartAssistant";
 import { LoadingScreen } from "../components/LoadingScreen";
-import { TRADE_MODE_LABELS, resolveTradeMode } from "../../lib/utils/trade-mode";
-
-/** 风险偏好档位中文标签（值为 保守|平衡|激进，容错回退平衡） */
-function riskProfileLabel(value: unknown): string {
-  return value === "保守" || value === "激进" ? (value as string) : "平衡";
-}
 
 type Quote = { price: number; changePercent: number; fetchedAt: string };
 type MarketIndex = { code: string; name: string; price: number; changePercent: number; change: number };
@@ -1794,7 +1788,7 @@ export function BigScreenView() {
               </div>
               {watchlist.length === 0 && (
                 <div style={{ fontSize: 12, color: MUTED, lineHeight: 1.8 }}>
-                  暂无关注股票。<br />在首页"关注"中添加股票。
+                  暂无关注股票。<br />在首页&quot;关注&quot;中添加股票。
                 </div>
               )}
               <div style={{ display: "flex", flexDirection: "column" }}>

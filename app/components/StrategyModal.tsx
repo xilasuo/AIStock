@@ -81,16 +81,17 @@ function buildContextFromAnalysis(
   position: ReturnType<typeof calculatePortfolio>["positions"][number] | null,
   portfolioInsights: PortfolioInsights,
 ): AssistantContext {
-  const allocationPercent = position
-    ? portfolioInsights.positions.find((item) => item.symbol === position.symbol)?.allocationPercent ?? null
-    : null;
+  // 盈亏与占比统一取后端 calculatePortfolioInsights 的结果（基于最近收盘价），
+  // 避免前端用实时价重算与后端口径不一致。Position 只含成本/数量，不含 returnPercent。
+  const insight = position
+    ? portfolioInsights.positions.find((item) => item.symbol === position.symbol)
+    : undefined;
   const positionContext = position
     ? {
         quantity: position.quantity,
         averageCost: position.averageCostTenThousandths / 10000,
-        // 盈亏统一用后端 calculatePortfolio 的 returnPercent（基于最近收盘价），避免前端实时价重算与后端口径不一致。
-        returnPercent: position.returnPercent ?? null,
-        stockPositionPercent: allocationPercent,
+        returnPercent: insight?.returnPercent ?? null,
+        stockPositionPercent: insight?.allocationPercent ?? null,
       }
     : null;
 

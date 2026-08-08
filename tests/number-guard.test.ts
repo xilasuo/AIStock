@@ -25,7 +25,7 @@ const zhuoyiCtx: AssistantContext = {
     returnPercent: 1.79,
     stockPositionPercent: 12.3,
   },
-} as AssistantContext;
+} as unknown as AssistantContext;
 
 test("拦截中文大写数字（叁佰肆拾肆元玖角陆分）", () => {
   const text = "当前浮盈叁佰肆拾肆元玖角陆分，收益率贰拾点壹零百分比。";
@@ -100,6 +100,6 @@ test("issuesToWarnings 输出 [幻觉]/[注意] 前缀", () => {
 
 test("空文本与无上下文不崩溃", () => {
   assert.deepEqual(guardNumbers("", zhuoyiCtx), []);
-  const emptyCtx = { symbol: "000001", name: "x", quote: { price: 0 } } as AssistantContext;
+  const emptyCtx = { symbol: "000001", name: "x", quote: { price: 0 } } as unknown as AssistantContext;
   assert.doesNotThrow(() => guardNumbers("随便写点 1.23 元", emptyCtx, { strictPrice: true }));
 });

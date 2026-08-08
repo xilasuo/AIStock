@@ -664,7 +664,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   const quoteStale = useCallback((symbol: string) => {
     const fetchedAt = quoteFetchedAt.current[symbol];
     return !fetchedAt || Date.now() - fetchedAt > QUOTE_TTL_MS;
-  }, [QUOTE_TTL_MS]);
+  }, []);
 
   const refreshQuote = useCallback((symbol: string) => {
     if (pendingQuotes.current.has(symbol)) return;
@@ -1047,12 +1047,6 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   const reviewCycle = reviewCycleEndTradeId === null
     ? null
     : closedCycles.find((cycle) => cycle.endTradeId === reviewCycleEndTradeId) ?? null;
-
-  // 顶部全局搜索框联想数据：关注列表 + 最近分析 + 全市场本地搜索。
-  const topbarSuggestions = useMemo(
-    () => buildSearchSuggestions(query, watchlist, recentAnalyses),
-    [query, watchlist, recentAnalyses],
-  );
 
   return (
     <div className="app-shell">
@@ -2894,7 +2888,6 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
   const [chartActive, setChartActive] = useState(false);
   // 分时（5m/15m/30m/60m/dn）数据来自服务端 /api/kline，与日周月（analysis.history）分离。
   const [intradayBars, setIntradayBars] = useState<MarketBar[] | null>(null);
-  const [intradayLoading, setIntradayLoading] = useState(false);
 
   const code = analysis.stock.code;
   // 日/周/月：直接用 analysis.history 聚合；分时：从服务端拉取。
@@ -2912,7 +2905,6 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
       return;
     }
     let cancelled = false;
-    setIntradayLoading(true);
     fetch(`/api/kline/${code}.json?period=${period}`)
       .then((res) => res.json() as Promise<{ ok?: boolean; bars?: MarketBar[] }>)
       .then((data) => {
@@ -2923,9 +2915,6 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
       })
       .catch(() => {
         if (!cancelled) setIntradayBars([]);
-      })
-      .finally(() => {
-        if (!cancelled) setIntradayLoading(false);
       });
     return () => {
       cancelled = true;
@@ -3409,7 +3398,7 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onBuySymbol, onSaved, s
   quotes: Record<string, QuoteEntry>;
   onSearch: () => void;
   onAnalyze: (symbol: string) => void;
-  /** 点击分时弹窗「记录买入」时触发：先分析该股票再打开买入弹窗 */
+  /** 点击「记录买入」时触发：先分析该股票再打开买入弹窗。 */
   onBuySymbol?: (symbol: string) => void;
   onSaved: () => void;
   strategyScan?: StrategyScanResponse | null;
@@ -3579,6 +3568,9 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onBuySymbol, onSaved, s
                   <div className="condition-met">
                     <span className="condition-met-badge">✓ 条件已满足</span>
                     <span className="condition-met-desc">{conditionDesc}</span>
+                    {onBuySymbol && (
+                      <Button variant="primary" size="sm" iconLeft={<Wallet size={14} />} className="condition-met-buy" onClick={() => onBuySymbol(item.symbol)}>记录买入</Button>
+                    )}
                   </div>
                 )}
 
@@ -3641,6 +3633,9 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onBuySymbol, onSaved, s
                     </div>
                     <div className="watch-card-actions">
                       <Button variant="primary" iconRight={<ArrowUp size={14} style={{ transform: "rotate(45deg)" }} />} onClick={() => onAnalyze(item.symbol)}>查看分析</Button>
+                      {onBuySymbol && (
+                        <Button variant="ghost" size="sm" iconLeft={<Wallet size={14} />} onClick={() => onBuySymbol(item.symbol)}>记录买入</Button>
+                      )}
                       <IconButton label="编辑条件" title="编辑条件" onClick={() => setEditing(item.symbol)}><Pencil size={16} /></IconButton>
                       <IconButton label="移出关注" title="移出关注" variant="danger" onClick={() => setConfirming(item.symbol)}><Trash2 size={16} /></IconButton>
                     </div>

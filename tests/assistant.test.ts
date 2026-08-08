@@ -45,7 +45,7 @@ const bigScreenContext: AssistantContext = {
     downDaysWithVolume: 2,
   },
   oscillators: {
-    macd: { dif: 0.02, dea: 0.01, hist: 0.02, state: "金叉", divergence: "未知" },
+    macd: { dif: 0.02, dea: 0.01, hist: 0.02, state: "金叉", divergence: null },
     rsi: { rsi6: 55, rsi12: 52, rsi24: 50, zone: "中性" },
     kdj: { k: 60, d: 55, j: 70, state: "金叉" },
   },

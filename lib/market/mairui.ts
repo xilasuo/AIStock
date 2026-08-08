@@ -66,9 +66,6 @@ export async function isMairuiEnabled(): Promise<boolean> {
 // ── 麦蕊每日额度计数（真实消耗真值，落 D1，跨 isolate/多用户共享）─────────────
 // 每次真正向麦蕊发起 HTTP 请求前调用；落库失败（无 DB / 非 Worker 运行时）静默跳过，
 // 绝不影响行情主流程。读侧在 app/api/mairui-quota 汇总并返回降级阈值。
-const MAIRUI_DAILY_LIMIT = 10_000;
-const MAIRUI_SOFT_LIMIT = 8_000; // 超过则前端/大屏放慢刷新
-const MAIRUI_HARD_LIMIT = 9_500; // 超过则暂停前端主动刷新
 async function incMairuiQuota(n = 1): Promise<void> {
   try {
     const spec = "cloudflare:workers";

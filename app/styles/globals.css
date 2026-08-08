@@ -4753,6 +4753,7 @@ svg { display: block; }
   padding: 2px 10px;
 }
 .condition-met-desc { color: var(--muted); font-size: var(--fs-2xs); }
+.condition-met-buy { margin-left: auto; }
 
 .trade-list { overflow: hidden; }
 

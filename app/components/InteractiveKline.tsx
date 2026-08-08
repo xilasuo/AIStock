@@ -483,6 +483,8 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
       volRef.current = null;
       maRefs.current = {};
     };
+    // 初始化仅执行一次：高度变化由下方独立的 [chartHeight, height] effect 同步，无需重复依赖。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 图表高度同步：fillParent 时父容器高度变化，或 height prop 变化，都更新图表尺寸。

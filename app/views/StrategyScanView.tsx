@@ -809,6 +809,8 @@ export function StrategyScanView({
               </button>
             </header>
             <div style={{ padding: "16px 20px 20px" }}>
+              {/* 本地 API 动态生成的 SVG，next/image 默认不优化 SVG，用 <img> 即可 */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={`/api/kline/${kline.code}.svg`}
                 alt={`${kline.name} K线技术面板`}
