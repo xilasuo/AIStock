@@ -14,6 +14,8 @@ export type PortfolioInsights = {
   realizedCents: number;
   totalProfitCents: number | null;
   totalProfitPercent: number | null;
+  /** 收益率不可计算时的可读原因（基准过小/为负/未设置初始资金），供前端与 AI 注入使用 */
+  profitPercentNote: string | null;
   totalDepositCents: number;
   totalWithdrawalCents: number;
   netFlowCents: number;
@@ -107,15 +109,49 @@ export function calculatePortfolioInsights(
     unrealizedCents,
     realizedCents: portfolio.realizedCents,
     totalProfitCents,
-    totalProfitPercent: totalProfitCents === null || !adjustedBase
-      ? null
-      : totalProfitCents / adjustedBase * 100,
+    // 收益率分母保护：基准（初始资金+出入金）过小或为负时，百分比在数学上已无意义，
+    // 强制置 null 并给出可读说明，避免 AI/前端拿到上万%的爆炸值（如 -14216%）。
+    totalProfitPercent: safePercent(totalProfitCents, adjustedBase),
+    profitPercentNote: safePercentNote(totalProfitCents, adjustedBase),
     totalDepositCents,
     totalWithdrawalCents,
     netFlowCents,
     positions,
     history,
   };
+}
+
+/**
+ * 计算百分比收益，并对「基准失真」做保护，避免 -14216% 这类爆炸值。
+ * 触发保护的两类情况：
+ *  1) 基准（初始资金 + 出入金净额）非正或非有限 —— 分母无意义；
+ *  2) 算出的收益率绝对值超过 MAX_SANE_PROFIT_PERCENT（1000%）——
+ *     说明基准远小于当前总资产（如初始资金被误设为几元），结果已失真。
+ * 命中任一时返回 null，由 safePercentNote 给出可读说明。
+ */
+const MAX_SANE_PROFIT_PERCENT = 1000;
+
+function safePercent(numerator: number | null, denominator: number | null): number | null {
+  if (numerator === null || denominator === null) return null;
+  if (!Number.isFinite(denominator) || denominator <= 0) return null;
+  const percent = (numerator / denominator) * 100;
+  if (!Number.isFinite(percent) || Math.abs(percent) > MAX_SANE_PROFIT_PERCENT) return null;
+  return percent;
+}
+
+/** 配合 safePercent：在百分比不可计算时返回可读原因，否则返回 null。 */
+function safePercentNote(numerator: number | null, denominator: number | null): string | null {
+  if (numerator === null || denominator === null) {
+    return "尚未设置初始资金或出入金，无法计算账户收益率";
+  }
+  if (!Number.isFinite(denominator) || denominator <= 0) {
+    return "基准资金（初始资金 + 出入金净额）过小或为负，收益率无法有效计算，请检查账户设置";
+  }
+  const percent = (numerator / denominator) * 100;
+  if (!Number.isFinite(percent) || Math.abs(percent) > MAX_SANE_PROFIT_PERCENT) {
+    return "基准资金（初始资金 + 出入金净额）与当前总资产严重不匹配，收益率失真无法有效计算，请检查账户初始资金/出入金设置";
+  }
+  return null;
 }
 
 function buildPortfolioHistory(

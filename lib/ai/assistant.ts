@@ -35,7 +35,7 @@ export type AssistantContext = {
   position: {
     quantity: number;
     averageCost: number;
-    returnPercent: number;
+    returnPercent: number | null;
     stockPositionPercent: number | null;
   } | null;
   portfolio: {
@@ -43,6 +43,8 @@ export type AssistantContext = {
     cash: number | null;
     totalPositionPercent: number | null;
     totalProfitPercent: number | null;
+    /** 收益率不可计算时的可读原因（基准过小/为负/未设置初始资金） */
+    profitPercentNote?: string | null;
   };
   volume?: {
     latest: number;

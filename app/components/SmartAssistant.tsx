@@ -135,6 +135,7 @@ export function buildAnalysisContext(
       cash: portfolioInsights.cashCents === null ? null : portfolioInsights.cashCents / 100,
       totalPositionPercent: portfolioInsights.totalPositionPercent,
       totalProfitPercent: portfolioInsights.totalProfitPercent,
+      profitPercentNote: portfolioInsights.profitPercentNote,
     },
   };
 }
@@ -167,6 +168,7 @@ function buildPlaceholderContext(
       cash: portfolioInsights.cashCents === null ? null : portfolioInsights.cashCents / 100,
       totalPositionPercent: portfolioInsights.totalPositionPercent,
       totalProfitPercent: portfolioInsights.totalProfitPercent,
+      profitPercentNote: portfolioInsights.profitPercentNote,
     },
   };
 }
@@ -227,6 +229,7 @@ function buildLinkedContext(
       cash: portfolioInsights.cashCents === null ? null : portfolioInsights.cashCents / 100,
       totalPositionPercent: portfolioInsights.totalPositionPercent,
       totalProfitPercent: portfolioInsights.totalProfitPercent,
+      profitPercentNote: portfolioInsights.profitPercentNote,
     },
   };
 }

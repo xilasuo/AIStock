@@ -129,6 +129,7 @@ function buildContextFromAnalysis(
       cash: portfolioInsights.cashCents === null ? null : portfolioInsights.cashCents / 100,
       totalPositionPercent: portfolioInsights.totalPositionPercent,
       totalProfitPercent: portfolioInsights.totalProfitPercent,
+      profitPercentNote: portfolioInsights.profitPercentNote,
     },
   };
 }

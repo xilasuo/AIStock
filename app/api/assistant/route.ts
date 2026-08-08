@@ -148,7 +148,10 @@ function summarizeContext(ctx: AssistantContext, serverHoldingsText?: string): s
     lines.push("我的持仓：无");
   }
   const pf = ctx.portfolio;
-  lines.push(`账户：总资产=${pf.totalAssets === null ? "数据缺失" : `¥${pf.totalAssets.toFixed(2)}`}，现金=${pf.cash === null ? "数据缺失" : `¥${pf.cash.toFixed(2)}`}，总仓位=${pf.totalPositionPercent ?? "数据缺失"}%，账户总收益=${pf.totalProfitPercent ?? "数据缺失"}%`);
+  const profitText = pf.totalProfitPercent === null
+    ? (pf.profitPercentNote ?? "数据缺失（收益率无法计算）")
+    : `${pf.totalProfitPercent.toFixed(2)}%`;
+  lines.push(`账户：总资产=${pf.totalAssets === null ? "数据缺失" : `¥${pf.totalAssets.toFixed(2)}`}，现金=${pf.cash === null ? "数据缺失" : `¥${pf.cash.toFixed(2)}`}，总仓位=${pf.totalPositionPercent ?? "数据缺失"}%，账户总收益=${profitText}`);
   if (ctx.volume) {
     const divergenceNote =
       ctx.volume.divergence === "顶背离"
