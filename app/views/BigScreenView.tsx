@@ -28,6 +28,7 @@ import { searchLocalStocks } from "../../lib/domain/stocks";
 import { recordQuota, useMairuiQuota } from "../../lib/market/mairui-quota";
 import { resolveSectorKlineCode } from "../../lib/market/sectors";
 import SmartAssistant from "../components/SmartAssistant";
+import { LoadingScreen } from "../components/LoadingScreen";
 import { TRADE_MODE_LABELS, resolveTradeMode } from "../../lib/utils/trade-mode";
 
 /** 风险偏好档位中文标签（值为 保守|平衡|激进，容错回退平衡） */
@@ -1082,7 +1083,7 @@ export function BigScreenView() {
   }, [insights, todayPnl, positions, quotes, riskAlerts, scan, scanPicks, marketStateKey, marketStateLabel, prefs?.riskProfile, prefs?.maxLossPercent, prefs?.enforceStopLoss]);
 
   if (!mounted) {
-    return <div className="boot-loading">正在加载大屏…</div>;
+    return <LoadingScreen label="正在加载大屏展示…" />;
   }
 
   return (

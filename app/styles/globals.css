@@ -106,6 +106,91 @@ html {
   min-width: 320px;
 }
 
+/* 主题作用域：当前为暗色（青蓝霓虹）。data-theme 为后续亮色模式预留钩子。 */
+html[data-theme="dark"] { color-scheme: dark; }
+
+/* 全局应用外壳脚手架 */
+.app-root {
+  min-height: 100vh;
+  /* 首次绘制轻微上浮淡入，弱化「白屏→内容」的突兀感 */
+  animation: appBootIn .42s var(--ease-standard, ease) both;
+}
+@keyframes appBootIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-root { animation: none; }
+}
+
+/* 首屏启动加载屏：品牌 logo + 骨架 shimmer + 文案，与全局设计语言一致 */
+.app-boot {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg-grad);
+}
+.app-boot__panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: min(320px, 100%);
+  text-align: center;
+}
+.app-boot__brand {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(0, 229, 255, .18), rgba(43, 140, 255, .12));
+  border: 1px solid var(--accent-soft, rgba(0, 229, 255, .25));
+  box-shadow: var(--glow, 0 0 12px rgba(0, 229, 255, .5));
+}
+.app-boot__mark {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--accent, #00e5ff);
+  text-shadow: 0 0 10px rgba(0, 229, 255, .55);
+}
+.app-boot__name {
+  font-size: var(--fs-md, 15px);
+  font-weight: 700;
+  letter-spacing: .04em;
+  color: var(--text, #e9f6ff);
+}
+.app-boot__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin-top: 4px;
+}
+.app-boot__bar {
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg,
+    rgba(0, 229, 255, .08) 0%,
+    rgba(0, 229, 255, .22) 50%,
+    rgba(0, 229, 255, .08) 100%);
+  background-size: 200% 100%;
+  animation: appBootShimmer 1.4s ease-in-out infinite;
+}
+@keyframes appBootShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.app-boot__label {
+  font-size: var(--fs-xs, 12px);
+  color: var(--muted, #5f8198);
+  letter-spacing: .02em;
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-boot__bar { animation: none; }
+}
+
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
@@ -5730,8 +5815,9 @@ svg { display: block; }
 .toast svg { color: var(--green); }
 .inline-toast { bottom: 80px; }
 
-.loading-state,
-.empty-state {
+.loading-state {
+  background: var(--surface-soft);
+  border-radius: var(--radius-card);
   color: var(--text-soft);
   margin: 48px auto;
   max-width: 760px;
@@ -5739,17 +5825,7 @@ svg { display: block; }
   text-align: center;
 }
 
-.loading-state {
-  background: var(--surface-soft);
-  border-radius: var(--radius-card);
-}
-
-.empty-state {
-  background: var(--surface);
-  border: 1px dashed var(--line-strong);
-  border-radius: var(--radius-card);
-  margin: 14px 0;
-}
+/* .empty-state 的统一定义见下方「空状态」段（flex 居中 + __icon/__title/__hint/__action 子元素） */
 
 .empty-inline { color: var(--muted); font-size: var(--fs-xs); padding: 20px; text-align: center; }
 
