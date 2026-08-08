@@ -122,6 +122,71 @@ async function getServerHoldings(userId: number): Promise<{
   }
 }
 
+/**
+ * 把金额（单位：元）转成中文大写，作为给 LLM 的“不可改写”主引用。
+ * 例如 344.96 -> "叁佰肆拾肆元玖角陆分"。模型很难把中文大写数字去掉小数点或变换量级，
+ * 从而抑止“344.96 元 -> 34496 元”这类幻觉。
+ */
+function yuanToChinese(amount: number): string {
+  if (!Number.isFinite(amount)) return "数据缺失";
+  const neg = amount < 0;
+  const a = Math.abs(amount);
+  const yuan = Math.floor(a);
+  const jiao = Math.floor((a - yuan) * 10);
+  const fen = Math.round(((a - yuan) * 100 - jiao * 10));
+  const digits = ["零", "壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌", "玖"];
+  const units = ["", "拾", "佰", "仟", "万", "拾万", "佰万", "仟万", "亿"];
+  let yuanStr = "";
+  if (yuan === 0) yuanStr = "零";
+  else {
+    const s = String(yuan);
+    for (let i = 0; i < s.length; i++) {
+      const d = Number(s[i]);
+      const pos = s.length - 1 - i;
+      if (d === 0) {
+        if (!yuanStr.endsWith("零") && pos !== 0) yuanStr += "零";
+      } else {
+        yuanStr += digits[d] + units[pos];
+      }
+    }
+    const trailingZero = yuanStr.endsWith("零");
+    if (trailingZero) yuanStr = yuanStr.slice(0, -1);
+  }
+  let dec = "";
+  if (jiao > 0) dec += digits[jiao] + "角";
+  if (fen > 0) dec += digits[fen] + "分";
+  if (dec === "") dec = "整";
+  return (neg ? "负" : "") + yuanStr + "元" + dec;
+}
+
+/** 百分比转中文大写描述，抑止“97.87% -> 9787%”这类幻觉。 */
+function percentToChinese(pct: number): string {
+  if (pct === null || pct === undefined || !Number.isFinite(pct)) return "数据缺失";
+  const neg = pct < 0;
+  const abs = Math.abs(pct);
+  const intPart = Math.floor(abs);
+  const decPart = Math.round((abs - intPart) * 100);
+  const digits = ["零", "壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌", "玖"];
+  const units = ["", "拾", "佰", "仟", "万"];
+  let intStr = "";
+  if (intPart === 0) intStr = "零";
+  else {
+    const s = String(intPart);
+    for (let i = 0; i < s.length; i++) {
+      const d = Number(s[i]);
+      const pos = s.length - 1 - i;
+      if (d === 0) {
+        if (!intStr.endsWith("零") && pos !== 0) intStr += "零";
+      } else {
+        intStr += digits[d] + units[pos];
+      }
+    }
+    if (intStr.endsWith("零")) intStr = intStr.slice(0, -1);
+  }
+  const decStr = decPart > 0 ? digits[Math.floor(decPart / 10)] + digits[decPart % 10] : "";
+  return (neg ? "负" : "") + intStr + (decStr ? "点" + decStr : "") + "百分比";
+}
+
 function summarizeContext(ctx: AssistantContext, serverHoldingsText?: string): string {
   const s = ctx.stock;
   const q = ctx.quote;
@@ -145,7 +210,8 @@ function summarizeContext(ctx: AssistantContext, serverHoldingsText?: string): s
     const avgCostText = p.averageCost > 0 && Number.isFinite(p.averageCost)
       ? `${p.averageCost.toFixed(3)}元`
       : "数据缺失";
-    lines.push(`我的持仓：${p.quantity}股，成本=${avgCostText}，当前回报=${returnText}，占账户仓位=${p.stockPositionPercent ?? "数据缺失"}%`);
+    const stockPosText = p.stockPositionPercent === null || p.stockPositionPercent === undefined ? "数据缺失" : `${p.stockPositionPercent.toFixed(2)}%（${percentToChinese(p.stockPositionPercent)}）`;
+    lines.push(`我的持仓：${p.quantity}股，成本=${avgCostText}，当前回报=${returnText}，占账户仓位=${stockPosText}`);
   } else if (serverHoldingsText) {
     lines.push(`我的持仓：${serverHoldingsText}（以上为服务端按账户记录计算，回报按实时价由你估算）`);
   } else if (ctx.holdingsSummary) {
@@ -157,7 +223,11 @@ function summarizeContext(ctx: AssistantContext, serverHoldingsText?: string): s
   const profitText = pf.totalProfitPercent === null
     ? (pf.profitPercentNote ?? "数据缺失（收益率无法计算）")
     : `${pf.totalProfitPercent.toFixed(2)}%`;
-  lines.push(`账户：总资产=${pf.totalAssets === null ? "数据缺失" : `¥${pf.totalAssets.toFixed(2)}`}，现金=${pf.cash === null ? "数据缺失" : `¥${pf.cash.toFixed(2)}`}，总仓位=${pf.totalPositionPercent ?? "数据缺失"}%，账户总收益=${profitText}`);
+  // 金额/百分比同时给出阿拉伯数字与中文大写，中文大写作为“不可改写”主引用，抑止 LLM 去小数点幻觉（如 344.96->34496、97.87%->9787%）。
+  const totalAssetsText = pf.totalAssets === null ? "数据缺失" : `¥${pf.totalAssets.toFixed(2)}（${yuanToChinese(pf.totalAssets)}）`;
+  const cashText = pf.cash === null ? "数据缺失" : `¥${pf.cash.toFixed(2)}（${yuanToChinese(pf.cash)}）`;
+  const totalPosText = pf.totalPositionPercent === null ? "数据缺失" : `${pf.totalPositionPercent.toFixed(2)}%（${percentToChinese(pf.totalPositionPercent)}）`;
+  lines.push(`账户：总资产=${totalAssetsText}，现金=${cashText}，总仓位=${totalPosText}，账户总收益=${profitText}`);
   // 防幻觉：收益率失真/不可计算时，明确禁止 AI 自行根据总资产/现金推算收益率
   if (pf.totalProfitPercent === null) {
     lines.push("注意：账户收益率无法有效计算，请勿根据总资产或现金自行推算收益率数字，只能引用上方给出的说明文字。");
@@ -302,7 +372,7 @@ export async function POST(request: Request) {
               "9. 下方的【我的交易纪律与风险偏好】是硬约束，必须优先生效，不得再用固定的 2%/30% 规则；当 enforce_stop_loss=是 时，任何买入动作都必须先给出止损位，跌破即执行。",
               "10. 【技术面为主，基本面按实际可得性使用】基本面是否可得，一律以下方 context 的“财务”行实际内容为准，不得预设它一定缺失：凡是 context 里给出了数值的字段（营收增长/利润增长/负债率/PE/PB/ROE 等），都必须在【依据】里明确引用并参与判断，不许无视已有数据、更不许笼统宣称“基本面缺失”。只有当某项确实显示“数据缺失”时，才对该项说明缺失。K线/成交量/MACD/RSI/KDJ/支撑阻力始终稳定可得，因此在基本面确实不足时，以走势结构（均线多头/空头、价格与支撑阻力的位置）、量能（放量突破/缩量回调/量价背离）、动能指标（MACD金叉死叉、RSI超买超卖、KDJ）为主要评判依据，并注明“基本面数据缺失，以下判断以技术面为主”。任何情况下都不得编造财务数字。",
               "11. 【解释深度自适应】根据用户提问的措辞调整解释深度：问法偏入门（如“什么是支撑位”）就用大白话先讲清概念再给结论；用专业术语提问就直接讲要点、少铺垫。但无论深浅，结论都要落到明确的买卖建议与量化动作上。",
-              "12. 【金额/价格一律以“元”为单位，必须逐字照抄系统数字，禁止任何变形】context 中所有价格、成本、总资产、现金等单位均为元。回答中引用这些数字时必须原样保留小数点和“元”单位（如成本 15.958 元、总资产 100000.00 元、现金 344.96 元），严格禁止输出成无小数点的整数（如 15958、10000000、34496），也禁止去掉小数点写成“三百多元”、“约 345 元”等模糊表述。系统给出“现金=¥344.96”就必须在回答中以“344.96 元”完整出现，禁止把小数点去掉（去掉小数点等于把 344.96 元误写成 34496 元，差 100 倍）。同样适用于成本/股价/止损价/总资产/盈利等所有数字。任何四舍五入、省略、补 0、变换量级（万/千）都属于违规。",
+              "12. 【金额/价格一律以“元”为单位，必须原样照抄，禁止任何变形】context 中所有金额、价格、成本、总资产、现金、仓位%、收益率等数字，系统都同时给出了阿拉伯数字和中文大写两种写法（如“¥344.96（叁佰肆拾肆元玖角陆分）”“97.87%（玖拾柒点捌柒百分比）”）。你回复时必须让阿拉伯数字与中文大写同时出现且完全一致：引用现金必须写“344.96 元（叁佰肆拾肆元玖角陆分）”、引用总仓位必须写“97.87%（玖拾柒点捌柒百分比）”，二者缺一不可。禁止只输出阿拉伯数字而删掉中文大写，也禁止改写其中任意一方（尤其禁止删掉小数点：344.96 写成 34496 等于凭空放大 100 倍，97.87% 写成 9787% 同理）。禁止四舍五入、补 0、变换量级（万/千）、或写成“三百多元”“约 345 元”等模糊表述。成本/股价/止损价/总资产/盈利等所有数字同样适用。任何数字变形都属违规。",
               "【反幻觉示例】用户问“茅台 PE 多少、能买吗”而 pe=数据缺失 → 正确回答：“PE 数据缺失，我不凭记忆给你编数。没有估值和账户资金，谁让你现在拍脑袋买谁就是害你；先把账户资金补全、仓位和止损设好，再来谈买不买。”",
               "【我的交易纪律与风险偏好，必须优先遵守，替代任何固定百分比】",
               `risk_profile=${prefs.riskProfile}`,
