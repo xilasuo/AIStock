@@ -2,6 +2,9 @@ import { getAiConfig, type AiConfig } from "../../../lib/ai/ai-config";
 import { buildFallbackAnswer, isValidContext, type AssistantContext } from "../../../lib/ai/assistant";
 import { getCurrentUser, requireApiUser } from "../../../lib/auth/auth";
 import { ensureSchema, getDb } from "../../../db";
+import { trades } from "../../../db/schema";
+import { eq } from "drizzle-orm";
+import { calculatePortfolio, type Trade } from "../../../lib/domain/domain";
 import { DEFAULT_PREFERENCES, fetchPreferences, type TradingPreferences } from "../../../lib/utils/preferences";
 import { tradeModePrompt } from "../../../lib/utils/trade-mode";
 
@@ -73,7 +76,53 @@ async function summarizeHistory(messages: ChatMessage[], ai: AiConfig): Promise<
   }
 }
 
-function summarizeContext(ctx: AssistantContext): string {
+/**
+ * 服务端持仓抓取：无论前端是否传入 position，都从 D1 读取当前登录用户的真实持仓，
+ * 用 calculatePortfolio 算股数与成本均价，避免前端大屏/浮窗拿不到结构化持仓的问题。
+ * 返回结构化持仓（用于回填 ctx.position）与一段汇总文本（用于注入 system，让 AI 总能看到完整持仓）。
+ */
+async function getServerHoldings(userId: number): Promise<{
+  positions: Array<{ symbol: string; name: string; quantity: number; averageCostTenThousandths: number }>;
+  text: string;
+} | null> {
+  try {
+    const rows = await getDb().select().from(trades).where(eq(trades.userId, userId));
+    if (!rows.length) return null;
+    const mapped: Trade[] = rows.map((r) => ({
+      id: r.id,
+      symbol: r.symbol,
+      name: r.name,
+      side: r.side as "买入" | "卖出",
+      priceCents: r.priceCents,
+      priceMillis: r.priceMillis ?? null,
+      priceTenThousandths: r.priceTenThousandths ?? null,
+      quantity: r.quantity,
+      tradeDate: r.tradeDate,
+      reason: r.reason,
+      maxLossCents: null,
+      feeCents: 0,
+    }));
+    const portfolio = calculatePortfolio(mapped);
+    if (!portfolio.positions.length) return null;
+    const positions = portfolio.positions.map((p) => ({
+      symbol: p.symbol,
+      name: p.name,
+      quantity: p.quantity,
+      averageCostTenThousandths: p.averageCostTenThousandths,
+    }));
+    const text = positions
+      .map(
+        (p) =>
+          `${p.name}(${p.symbol}) ${p.quantity}股，成本均价¥${(p.averageCostTenThousandths / 10_000).toFixed(3)}`,
+      )
+      .join("；");
+    return { positions, text };
+  } catch {
+    return null;
+  }
+}
+
+function summarizeContext(ctx: AssistantContext, serverHoldingsText?: string): string {
   const s = ctx.stock;
   const q = ctx.quote;
   const f = ctx.financials;
@@ -91,6 +140,8 @@ function summarizeContext(ctx: AssistantContext): string {
   if (ctx.position) {
     const p = ctx.position;
     lines.push(`我的持仓：${p.quantity}股，成本=${p.averageCost.toFixed(3)}元，当前回报=${p.returnPercent.toFixed(2)}%，占账户仓位=${p.stockPositionPercent ?? "数据缺失"}%`);
+  } else if (serverHoldingsText) {
+    lines.push(`我的持仓：${serverHoldingsText}（以上为服务端按账户记录计算，回报按实时价由你估算）`);
   } else if (ctx.holdingsSummary) {
     lines.push(`我的持仓：${ctx.holdingsSummary}`);
   } else {
@@ -162,13 +213,31 @@ export async function POST(request: Request) {
     : [];
 
   let prefs: TradingPreferences = DEFAULT_PREFERENCES;
+  let serverHoldings: Awaited<ReturnType<typeof getServerHoldings>> = null;
   try {
     await ensureSchema();
     prefs = await fetchPreferences(getDb(), user.id);
+    serverHoldings = await getServerHoldings(user.id);
   } catch {
-    // 偏好缺失时退回默认纪律，不影响对话
+    // 偏好缺失或服务端持仓抓取失败：退回默认纪律，不影响对话
   }
-  const fallback = buildFallbackAnswer(question, payload.context as AssistantContext, prefs);
+
+  // 用服务端真实持仓补充前端 context：前端大屏/浮窗往往 position=null，导致 AI 拿不到股数/成本。
+  // 这里回填当前 context 股票（若有持仓）的 position，并准备全持仓汇总文本注入 system。
+  const ctx = payload.context as AssistantContext;
+  if (serverHoldings && !ctx.position) {
+    const focus = serverHoldings.positions.find((p) => p.symbol === ctx.stock.code);
+    if (focus) {
+      ctx.position = {
+        quantity: focus.quantity,
+        averageCost: focus.averageCostTenThousandths / 10_000,
+        returnPercent: null,
+        stockPositionPercent: null,
+      };
+    }
+  }
+  const serverHoldingsText = serverHoldings?.text;
+  const fallback = buildFallbackAnswer(question, ctx, prefs);
   const ai = getAiConfig();
   if (!ai.configured) {
     // 无 AI：一次性输出 fallback（SSE 协议一致，前端无需分支）
@@ -230,7 +299,7 @@ export async function POST(request: Request) {
               `enforce_stop_loss=${prefs.enforceStopLoss ? "是（任何买入必须先设止损）" : "否（由用户自行决定）"}`,
               `discipline_note=${prefs.disciplineNote || "（未填写）"}`,
               tradeModePrompt(prefs.tradeMode, "act"),
-              `context=\n${summarizeContext(payload.context as AssistantContext)}`,
+              `context=\n${summarizeContext(ctx, serverHoldingsText)}`,
             ].join("\n"),
           },
           ...history,
