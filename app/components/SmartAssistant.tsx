@@ -322,6 +322,7 @@ export default function SmartAssistant(
     onFetchStock,
     linkedStock,
     title,
+    quickPrompts: customPrompts,
     onFocusStock,
   }: {
     analysis: Analysis | null;
@@ -354,6 +355,8 @@ export default function SmartAssistant(
     onFocusStock?: (code: string, name: string) => void;
     /** 面板标题（默认按 analysis.stock.name 或 "账户总览" 回退；大屏可传 "AI 助手" 覆盖） */
     title?: string;
+    /** 自定义快捷提问词条（非空时覆盖内置默认提示；来自用户设置 preferences.quickPrompts） */
+    quickPrompts?: string[];
   },
 ) {
   const [question, setQuestion] = useState("");
@@ -656,11 +659,12 @@ export default function SmartAssistant(
   }
 
   const targetLabel = title ?? analysis?.stock.name ?? "账户总览";
-  const prompts = analysis
+  const defaultPrompts = analysis
     ? (position
       ? ["这只仓位还能加吗？", "结合我的成本怎么看？", "主要风险是什么？"]
       : ["这只票现在能买吗？", "主要风险是什么？", "财务数据说明了什么？"])
     : ["总仓位是多少？", "还能加多少现金？", "账户整体收益如何？"];
+  const prompts = customPrompts && customPrompts.length > 0 ? customPrompts : defaultPrompts;
 
   // 仅在尚未正式对话 / 正在等待回答时展示提示问题，避免反复出现打扰阅读
   const showPrompts = primed && (asking || messages.filter((m) => m.role === "user").length === 0);

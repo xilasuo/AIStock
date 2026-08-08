@@ -263,6 +263,9 @@ export async function ensureSchema() {
     await addColumnIfMissing("trading_preferences", "commission_rate_ten_thousandths", "commission_rate_ten_thousandths REAL NOT NULL DEFAULT 2.5");
     await addColumnIfMissing("trading_preferences", "min_commission_cents", "min_commission_cents INTEGER NOT NULL DEFAULT 500");
 
+    // AI 助手快捷提问词条（JSON 数组字符串）
+    await addColumnIfMissing("trading_preferences", "quick_prompts", "quick_prompts TEXT NOT NULL DEFAULT ''");
+
     // 策略建议记录：AI 输出数字回验警告列（JSON 数组字符串）
     await addColumnIfMissing("strategy_suggestions", "validation_warnings", "validation_warnings TEXT NOT NULL DEFAULT ''");
     await addColumnIfMissing("strategy_suggestions", "context_quality_score", "context_quality_score INTEGER");

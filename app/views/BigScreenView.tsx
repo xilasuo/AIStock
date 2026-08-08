@@ -1823,6 +1823,7 @@ export function BigScreenView() {
                 position={null}
                 portfolioInsights={insights}
                 title="AI 助手"
+                quickPrompts={prefs?.quickPrompts}
                 compact
                 linkedStock={klinePick ? {
                   code: klinePick.code,

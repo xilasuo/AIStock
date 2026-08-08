@@ -197,6 +197,8 @@ export const tradingPreferences = sqliteTable("trading_preferences", {
   commissionRateTenThousandths: real("commission_rate_ten_thousandths").notNull().default(2.5),
   /** 单笔最低佣金（分；0 = 免5），卖出另计印花税 0.05% */
   minCommissionCents: integer("min_commission_cents").notNull().default(500),
+  /** AI 助手快捷提问词条（JSON 数组字符串，如 ["总仓位是多少？","还能加多少现金？"]） */
+  quickPrompts: text("quick_prompts").notNull().default(""),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 

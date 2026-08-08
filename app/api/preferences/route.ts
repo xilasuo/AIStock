@@ -51,6 +51,7 @@ export async function PUT(request: NextRequest) {
           stealthMode: next.stealthMode,
           commissionRateTenThousandths: next.commissionRateTenThousandths,
           minCommissionCents: next.minCommissionCents,
+          quickPrompts: JSON.stringify(next.quickPrompts ?? []),
           updatedAt,
         },
       });

@@ -3366,9 +3366,9 @@ svg { display: block; }
 .sa--compact .sa-dots span { width: 5px; height: 5px; }
 
 .sa--compact .sa-prompts { padding-top: 8px; gap: 6px 8px; }
-.sa--compact .sa-prompt { font-size: 11px; padding: 5px 10px; }
+.sa--compact .sa-prompt { font-size: 11px; padding: 4px 10px; }
 
-.sa--compact .sa-anchored { padding: 6px 10px 2px; gap: 6px; }
+.sa--compact .sa-anchored { padding: 4px 10px 0; gap: 4px; }
 .sa--compact .sa-form { padding: 4px 10px 2px; gap: 8px; }
 .sa--compact .sa-form input { padding: 7px 12px; font-size: 12px; }
 .sa--compact .sa-send { width: 28px; height: 28px; }

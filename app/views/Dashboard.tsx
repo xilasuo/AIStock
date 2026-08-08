@@ -2828,6 +2828,7 @@ function FloatingAssistantLauncher(
             portfolioInsights={portfolioInsights}
             quotes={quotes}
             userId={userId}
+            quickPrompts={preferences?.quickPrompts}
             onClose={onToggle}
             headerSlot={linkerSlot}
             onFetchStock={onFetchStock}
@@ -2848,6 +2849,7 @@ function FloatingAssistantLauncher(
             portfolioInsights={portfolioInsights}
             quotes={quotes}
             userId={userId}
+            quickPrompts={preferences?.quickPrompts}
             onClose={onToggle}
             headerSlot={linkerSlot}
             onFetchStock={onFetchStock}
@@ -5149,6 +5151,8 @@ function PreferencesSettings({ preferences, onSave }: { preferences: TradingPref
   const [stealthMode, setStealthMode] = useState(initial.stealthMode);
   const [commissionRate, setCommissionRate] = useState(String(initial.commissionRateTenThousandths ?? DEFAULT_FEE_SETTINGS.commissionRateTenThousandths));
   const [minCommission, setMinCommission] = useState(String(((initial.minCommissionCents ?? DEFAULT_FEE_SETTINGS.minCommissionCents) / 100).toFixed(2)));
+  const [quickPrompts, setQuickPrompts] = useState<string[]>(initial.quickPrompts ?? []);
+  const [quickPromptInput, setQuickPromptInput] = useState("");
   const [saving, setSaving] = useState(false);
 
   function applyProfile(profile: RiskProfile) {
@@ -5174,6 +5178,7 @@ function PreferencesSettings({ preferences, onSave }: { preferences: TradingPref
         stealthMode,
         commissionRateTenThousandths: Number(commissionRate) > 0 ? Number(commissionRate) : DEFAULT_FEE_SETTINGS.commissionRateTenThousandths,
         minCommissionCents: Number(minCommission) >= 0 ? Math.round(Number(minCommission) * 100) : DEFAULT_FEE_SETTINGS.minCommissionCents,
+        quickPrompts,
       });
     } finally {
       setSaving(false);
@@ -5255,6 +5260,40 @@ function PreferencesSettings({ preferences, onSave }: { preferences: TradingPref
           隐身模式（办公室低存在感配色）
         </label>
         <Hint>开启后界面转为中性灰暗色调，涨跌红绿降饱和，整体像普通后台系统；按 Esc 可随时一键切换。</Hint>
+      </div>
+      <SectionHeader title="AI 助手快捷词条" subtitle="自定义 AI 助手底部的推荐提问按钮（留空则使用内置默认词条）。" />
+      <div className="form-group">
+        <label>自定义快捷提问（最多 8 条，回车添加，点击 × 删除）</label>
+        {quickPrompts.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
+            {quickPrompts.map((p, i) => (
+              <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 8px", borderRadius: 999, background: "rgba(99,102,241,.12)", color: "#818cf8", fontSize: 12, border: "0.5px solid rgba(99,102,241,.25)" }}>
+                {p}
+                <button type="button" onClick={() => setQuickPrompts((prev) => prev.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 0 }}>×</button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 6 }}>
+          <input
+            className="text-input"
+            placeholder={quickPrompts.length >= 8 ? "已达上限" : "输入问题后按回车添加…"}
+            value={quickPromptInput}
+            onChange={(e) => setQuickPromptInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && quickPromptInput.trim() && quickPrompts.length < 8) {
+                e.preventDefault();
+                setQuickPrompts((prev) => [...prev, quickPromptInput.trim()]);
+                setQuickPromptInput("");
+              }
+            }}
+            disabled={quickPrompts.length >= 8}
+          />
+          {quickPrompts.length > 0 && (
+            <Button variant="ghost" size="sm" onClick={() => setQuickPrompts([])}>清空</Button>
+          )}
+        </div>
+        <Hint>这些词条会显示在 AI 助手面板底部，点击即可一键发送。清空后恢复内置默认：无持仓时显示「总仓位/加现金/收益」，有持仓时显示「加仓/成本/风险」等。</Hint>
       </div>
       <SectionHeader title="交易费用" subtitle="用于记录买卖时自动估算手续费，不需要每次手算。" />
       <div className="form-row">

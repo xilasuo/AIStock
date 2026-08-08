@@ -21,6 +21,8 @@ export type TradingPreferences = {
   commissionRateTenThousandths: number;
   /** 单笔最低佣金（分；0 = 免5），卖出另计印花税 0.05% */
   minCommissionCents: number;
+  /** AI 助手快捷提问词条（自定义覆盖默认提示；空数组用内置默认） */
+  quickPrompts: string[];
 };
 
 /** 交易费用默认：万2.5 + 最低 5 元（不免5），多数券商口径，可在设置中改为自己的费率 */
@@ -43,6 +45,7 @@ export const DEFAULT_PREFERENCES: TradingPreferences = {
   disciplineNote: "",
   stealthMode: false,
   ...DEFAULT_FEE_SETTINGS,
+  quickPrompts: [],
 };
 
 export const RISK_PROFILE_LABELS: RiskProfile[] = ["保守", "平衡", "激进"];
@@ -71,6 +74,7 @@ export type PreferencesInput = {
   stealthMode?: unknown;
   commissionRateTenThousandths?: unknown;
   minCommissionCents?: unknown;
+  quickPrompts?: unknown;
 };
 
 export function normalizePreferences(row: PreferencesInput | undefined | null): TradingPreferences {
@@ -89,7 +93,19 @@ export function normalizePreferences(row: PreferencesInput | undefined | null): 
     stealthMode: typeof row.stealthMode === "boolean" ? row.stealthMode : preset.stealthMode,
     commissionRateTenThousandths: clampNonNegative(row.commissionRateTenThousandths, DEFAULT_FEE_SETTINGS.commissionRateTenThousandths) || DEFAULT_FEE_SETTINGS.commissionRateTenThousandths,
     minCommissionCents: clampNonNegative(row.minCommissionCents, DEFAULT_FEE_SETTINGS.minCommissionCents),
+    quickPrompts: parseQuickPrompts(row.quickPrompts),
   };
+}
+
+/** 解析 quickPrompts JSON 字符串 → string[]，非法值回退空数组（用内置默认） */
+function parseQuickPrompts(raw: unknown): string[] {
+  if (typeof raw !== "string" || !raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.filter((x): x is string => typeof x === "string" && x.length > 0).slice(0, 8) : [];
+  } catch {
+    return [];
+  }
 }
 
 /** 按成交金额与费用设置估算单笔手续费（分）：佣金 max(金额×费率, 最低佣金)，卖出再加印花税 0.05%。 */
