@@ -317,6 +317,63 @@ STRATEGY_PRESETS: dict[str, dict] = {
             "stop_loss_pct": -0.08,
         },
     },
+    # —— 2026-08-08 新增：斐波那契回调支撑策略 ——
+    # 斐波那契数列（1,1,2,3,5,8,13,21…）相邻两项之比趋近 0.618（黄金分割），
+    # 其衍生回调位 38.2%/50%/61.8% 是技术分析中最经典的支撑/阻力体系。
+    # 与江恩 142857 同属「回调档位」家族，但斐波那契位在 A 股更为主流通用。
+    "fibonacci_retracement": {
+        "label": "斐波那契回调",
+        "risk": "平衡",
+        "desc": "基于黄金分割比例：上涨波段回踩38.2%/50%/61.8%关键档位企稳 + 缩量 + 均线多头，捕捉趋势中继低吸买点。比江恩回调位更为主流通用。",
+        "universe_filter": "active",
+        "overrides": {
+            "w_trend": 0.34, "w_momentum": 0.22, "w_liquidity": 0.16,
+            "w_rsi": 0.10, "w_macd": 0.10, "w_value": 0.04,
+            "w_size": 0.00, "w_quality": 0.00, "w_fund_flow": 0.04,
+            "strategy_filter": "fibonacci_retracement",
+            "min_turnover_pct": 0.50, "top_n": 6,
+            "use_breakout_filter": False,
+            "stop_loss_pct": -0.08,
+        },
+    },
+    # —— 2026-08-08 新增：布林带收缩突破策略 ——
+    # 填补策略库中波动率类策略的空白。当布林带带宽收窄至历史低位时，
+    # 表明波动率极度压缩，价格即将选择方向。捕捉「收缩后放量突破上轨」。
+    "bollinger_squeeze": {
+        "label": "布林收缩突破",
+        "risk": "平衡",
+        "desc": "布林带带宽缩至近120日最低后放量突破上轨，捕捉波动率压缩后的方向性爆发。纯波动率策略，与趋势/动量策略互补。",
+        "universe_filter": "active",
+        "overrides": {
+            "w_momentum": 0.34, "w_liquidity": 0.28, "w_trend": 0.14,
+            "w_rsi": 0.08, "w_macd": 0.08, "w_value": 0.02,
+            "w_size": 0.00, "w_quality": 0.00, "w_fund_flow": 0.06,
+            "strategy_filter": "bollinger_squeeze",
+            "min_turnover_pct": 1.0, "top_n": 5,
+            "use_breakout_filter": True, "breakout_window": 20,
+            "momentum_window": 20,
+        },
+    },
+    # —— 2026-08-08 新增：MACD 底背离策略 ——
+    # 底背离是 MACD 的进阶用法：股价创新低但 MACD 柱不创新低，
+    # 预示下跌动能减弱、反转在即。比单纯 MACD 金叉假信号大幅减少。
+    "macd_divergence": {
+        "label": "MACD底背离",
+        "risk": "激进",
+        "desc": "股价创新低但MACD柱不创新低（底背离），预示下跌动能减弱、反转在即。配合缩量企稳确认，比单纯MACD金叉信号更可靠。",
+        "universe_filter": "active",
+        "overrides": {
+            "w_macd": 0.34, "w_rsi": 0.24, "w_momentum": 0.14, "w_liquidity": 0.08,
+            "w_trend": 0.06, "w_value": 0.04, "w_fund_flow": 0.06,
+            "w_size": 0.00, "w_quality": 0.00,
+            "strategy_filter": "macd_divergence",
+            "rsi_direction": "reversal",  # 反转类策略必须反转 RSI 因子
+            "momentum_window": 10, "max_pe_ttm": 500, "max_pb": 50,
+            "min_turnover_pct": 0.50, "top_n": 5,
+            "use_breakout_filter": False,
+            "stop_loss_pct": -0.06,
+        },
+    },
 }
 
 

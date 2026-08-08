@@ -291,6 +291,53 @@ export const STRATEGY_PRESETS: {
       stop_loss_pct: -0.08,
     },
   },
+  {
+    key: "fibonacci_retracement",
+    label: "斐波那契回调",
+    risk: "平衡",
+    desc: "基于黄金分割比例：上涨波段回踩38.2%/50%/61.8%关键档位企稳 + 缩量 + 均线多头，捕捉趋势中继低吸买点。比江恩回调位更为主流通用。",
+    overrides: {
+      w_trend: 0.34, w_momentum: 0.22, w_liquidity: 0.16,
+      w_rsi: 0.10, w_macd: 0.10, w_value: 0.04,
+      w_size: 0.00, w_quality: 0.00, w_fund_flow: 0.04,
+      strategy_filter: "fibonacci_retracement",
+      min_turnover_pct: 0.50, top_n: 6,
+      use_breakout_filter: false,
+      stop_loss_pct: -0.08,
+    },
+  },
+  {
+    key: "bollinger_squeeze",
+    label: "布林收缩突破",
+    risk: "平衡",
+    desc: "布林带带宽缩至近120日最低后放量突破上轨，捕捉波动率压缩后的方向性爆发。纯波动率策略，与趋势/动量策略互补。",
+    overrides: {
+      w_momentum: 0.34, w_liquidity: 0.28, w_trend: 0.14,
+      w_rsi: 0.08, w_macd: 0.08, w_value: 0.02,
+      w_size: 0.00, w_quality: 0.00, w_fund_flow: 0.06,
+      strategy_filter: "bollinger_squeeze",
+      min_turnover_pct: 1.0, top_n: 5,
+      use_breakout_filter: true, breakout_window: 20,
+      momentum_window: 20,
+    },
+  },
+  {
+    key: "macd_divergence",
+    label: "MACD底背离",
+    risk: "激进",
+    desc: "股价创新低但MACD柱不创新低（底背离），预示下跌动能减弱、反转在即。配合缩量企稳确认，比单纯MACD金叉信号更可靠。",
+    overrides: {
+      w_macd: 0.34, w_rsi: 0.24, w_momentum: 0.14, w_liquidity: 0.08,
+      w_trend: 0.06, w_value: 0.04, w_fund_flow: 0.06,
+      w_size: 0.00, w_quality: 0.00,
+      strategy_filter: "macd_divergence",
+      rsi_direction: "reversal",
+      momentum_window: 10, max_pe_ttm: 500, max_pb: 50,
+      min_turnover_pct: 0.50, top_n: 5,
+      use_breakout_filter: false,
+      stop_loss_pct: -0.06,
+    },
+  },
 ];
 
 /** 默认值（与 config.py ScreenerConfig 默认值对齐） */

@@ -109,7 +109,8 @@ def strategy_hard_filter(
     """按策略名执行 K 线级硬过滤；任一条件不满足返回 False 剔除该票。
 
     Args:
-        sf: 策略名（ma_momentum | oversold | dszn | limit_up | volume_breakout | gann_142857）
+        sf: 策略名（ma_momentum | oversold | dszn | limit_up | volume_breakout
+            | gann_142857 | fibonacci_retracement | bollinger_squeeze | macd_divergence）
         code: 股票代码
         closes: 日线收盘价序列（已从 kline 中提取，旧→新）
         volumes: 日线成交量序列（已从 kline 中提取，旧→新）
@@ -129,6 +130,12 @@ def strategy_hard_filter(
         return _filter_volume_breakout(closes, volumes)
     elif sf == "gann_142857":
         return _filter_gann_142857(closes, volumes, kline or [])
+    elif sf == "fibonacci_retracement":
+        return _filter_fibonacci_retracement(closes, volumes, kline or [])
+    elif sf == "bollinger_squeeze":
+        return _filter_bollinger_squeeze(closes, volumes)
+    elif sf == "macd_divergence":
+        return _filter_macd_divergence(closes, volumes)
     else:
         # 未知或无策略过滤 → 放行
         return True
@@ -301,6 +308,151 @@ def _filter_gann_142857(closes: list[float], volumes: list[float], kline: list[d
     if ma20_now is None or ma20_5ago is None or ma60 is None:
         return False
     if ma20_now <= ma20_5ago or closes[-1] <= ma60:
+        return False
+    return True
+
+
+def _filter_fibonacci_retracement(closes: list[float], volumes: list[float], kline: list[dict]) -> bool:
+    """斐波那契回调支撑：上涨波段回踩 38.2%/50%/61.8% 关键档位企稳。
+
+    斐波那契数列（1,1,2,3,5,8,13,21…）相邻两项之比趋近 0.618（黄金分割），
+    其衍生回调位 23.6%/38.2%/50%/61.8%/78.6% 是技术分析中最经典的支撑/阻力
+    体系。本策略取近期上涨波段的真实高低点，按前三档（浅/中/深回调）计算
+    支撑位，捕捉「上升趋势中回踩档位企稳」的低吸买点。与江恩 142857 同属
+    「回调档位」策略家族，但斐波那契位在 A 股中更为主流通用。
+    """
+    need = 60
+    if len(closes) < need or len(volumes) < need or len(kline) < need:
+        return False
+
+    # 1) 取近 60 日真实高低点（用 kline 的 high/low）
+    window_kl = kline[-need:]
+    highs = [float(b.get("high") or b.get("close") or 0) for b in window_kl]
+    lows = [float(b.get("low") or b.get("close") or 0) for b in window_kl]
+    H = max(highs)
+    L = min(lows)
+    h_idx = highs.index(H)
+    l_idx = lows.index(L)
+    # 波段必须有足够空间（涨幅 ≥10%），且高点在低点之后（上涨波段）
+    if H < L * 1.10 or h_idx <= l_idx:
+        return False
+
+    span = H - L
+    # 2) 斐波那契前三档回调支撑位（38.2% / 50% / 61.8%）
+    levels = [H - span * r for r in (0.382, 0.500, 0.618)]
+    price = closes[-1]
+    # 当前价在某档 ±2.5% 容差内 = 回踩企稳
+    if not any(lv > 0 and abs(price - lv) / lv <= 0.025 for lv in levels):
+        return False
+
+    # 3) 缩量企稳：近 3 日均量 < 近 20 日均量的 80%
+    recent_vol = sum(volumes[-3:]) / 3.0
+    avg_vol_20 = sum(volumes[-20:]) / 20.0
+    if avg_vol_20 <= 0 or recent_vol >= avg_vol_20 * 0.80:
+        return False
+
+    # 4) 趋势向上：MA20 今 > MA20 5 日前，且价在 MA60 上方
+    ma20_now = indicators.ma(closes, 20)
+    ma20_5ago = sum(closes[-25:-5]) / 20.0 if len(closes) >= 25 else None
+    ma60 = indicators.ma(closes, 60)
+    if ma20_now is None or ma20_5ago is None or ma60 is None:
+        return False
+    if ma20_now <= ma20_5ago or closes[-1] <= ma60:
+        return False
+    return True
+
+
+def _filter_bollinger_squeeze(closes: list[float], volumes: list[float]) -> bool:
+    """布林带收缩突破：带宽缩至近 120 日最低后放量突破上轨。
+
+    当布林带带宽（(上轨-下轨)/中轨）收窄至历史低位时，表明波动率极度压缩，
+    价格即将选择方向。本策略捕捉「收缩后放量突破上轨」的启动信号，填补
+    当前策略库中波动率类策略的空白。
+    """
+    need = 140  # 120 天带宽序列 + 20 日布林窗口
+    if len(closes) < need or len(volumes) < need:
+        return False
+
+    # 1) 计算近 120 日每日布林带带宽 = (upper-lower)/mid = 4*std/mid（k=2）
+    bandwidths: list[float] = []
+    for end_idx in range(len(closes) - 120, len(closes)):
+        w = closes[end_idx - 19 : end_idx + 1]
+        m = sum(w) / 20
+        if m <= 0:
+            bandwidths.append(0.0)
+            continue
+        var = sum((x - m) ** 2 for x in w) / 20
+        std = math.sqrt(var)
+        bandwidths.append(4.0 * std / m)
+
+    if len(bandwidths) < 120:
+        return False
+
+    # 2) 找近 120 日最小带宽，检查是否在近 10 日内发生（近期收缩）
+    min_bw = min(bandwidths)
+    min_idx = bandwidths.index(min_bw)
+    days_since_squeeze = len(bandwidths) - 1 - min_idx
+    if days_since_squeeze > 10:
+        return False
+
+    # 3) 价格突破布林带上轨（方向选择 = 向上）
+    _, upper, _ = indicators.bollinger_band(closes, 20, 2.0)
+    if upper is None or closes[-1] < upper:
+        return False
+
+    # 4) 放量确认：量比 ≥ 1.5
+    if indicators.volume_ratio(volumes, 20) < 1.5:
+        return False
+    return True
+
+
+def _filter_macd_divergence(closes: list[float], volumes: list[float]) -> bool:
+    """MACD 底背离：股价创新低但 MACD 柱不创新低，预示下跌动能减弱、反转在即。
+
+    底背离是 MACD 指标的进阶用法：当股价形成「更低的低点」但 MACD 柱形成
+    「更高的低点」（即下跌动能减弱），通常预示趋势即将反转。比单纯 MACD
+    金叉信号更可靠，假信号大幅减少。
+    """
+    need = 60
+    if len(closes) < need or len(volumes) < need:
+        return False
+
+    # 1) 计算完整 MACD 柱序列
+    hist_series = indicators.macd_histogram_series(closes, 12, 26, 9)
+    if len(hist_series) < need:
+        return False
+
+    recent_closes = closes[-need:]
+    recent_hist = hist_series[-need:]
+
+    # 2) 将近 60 日分前后两半，各找最低收盘价点
+    mid_point = need // 2
+    first_half = recent_closes[:mid_point]
+    second_half = recent_closes[mid_point:]
+
+    first_low_idx = first_half.index(min(first_half))
+    second_low_idx = mid_point + second_half.index(min(second_half))
+
+    # 两低点至少间隔 5 天，避免噪音
+    if second_low_idx - first_low_idx < 5:
+        return False
+
+    # 3) 价格创新低（第二个低点 < 第一个低点）
+    if recent_closes[second_low_idx] >= recent_closes[first_low_idx]:
+        return False
+
+    # 4) MACD 柱不创新低 = 底背离（第二个 MACD 值 > 第一个）
+    if recent_hist[second_low_idx] < recent_hist[first_low_idx]:
+        return False
+
+    # 5) 当前价格已从第二个低点回升
+    if closes[-1] <= recent_closes[second_low_idx]:
+        return False
+
+    # 6) 缩量企稳：近 3 日均量 < 近 20 日均量（抛压减轻）
+    recent_vol = sum(volumes[-3:]) / 3.0
+    avg_vol_20 = sum(volumes[-20:]) / 20.0
+    if avg_vol_20 <= 0 or recent_vol >= avg_vol_20:
         return False
     return True
 

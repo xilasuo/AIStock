@@ -177,6 +177,22 @@ def detect_limit_up(
     return -1
 
 
+def macd_histogram_series(
+    closes: list[float], fast: int = 12, slow: int = 26, signal: int = 9
+) -> list[float]:
+    """返回完整 MACD 柱（histogram = DIF - DEA）序列；数据不足返回空列表。
+
+    供底背离等需要逐点比较 MACD 值的策略使用。
+    """
+    if len(closes) < slow + signal:
+        return []
+    ef = ema(closes, fast)
+    es = ema(closes, slow)
+    dif_line = [ef[i] - es[i] for i in range(len(closes))]
+    sig = ema(dif_line, signal)
+    return [dif_line[i] - sig[i] for i in range(len(closes))]
+
+
 def macd_cross_status(
     closes: list[float], fast: int = 12, slow: int = 26, signal: int = 9
 ) -> str:
