@@ -309,10 +309,30 @@ export function splitAssistantSections(text: string): AssistantSection[] {
   if (!raw) return [];
 
   // 写法 1：### / #### 标题
+  // 关键修复：把「首个 heading 之前」的开场文本收纳成"结论"段，
+  // 避免 AI 漏写「### 结论」时（如只写「### 风险与缺口」「### 下一步」），
+  // 结论/依据的开场内容被整个丢掉（截图中表现为「内容渲染不出来」）。
   const headingRe = /^(#{3,4})\s+(.+)$/gm;
   const headingMatches = [...raw.matchAll(headingRe)];
   if (headingMatches.length >= 2) {
     const sections: AssistantSection[] = [];
+    const firstHeadingStart = headingMatches[0].index!;
+    if (firstHeadingStart > 0) {
+      const headText = raw.slice(0, firstHeadingStart).trim();
+      if (headText) {
+        // 若开场文本以"### 结论/依据..."这种标题开头，把标题词也剥离
+        const headHeading = headText.match(/^#{3,4}\s*([^\n]+)/);
+        if (headHeading && SECTION_HEADERS.find((h) => h.test.test(headHeading[1].trim()))) {
+          sections.push({
+            title: headHeading[1].trim(),
+            body: headText.slice(headHeading[0].length).trim(),
+            kind: SECTION_HEADERS.find((h) => h.test.test(headHeading[1].trim()))?.kind ?? "other",
+          });
+        } else {
+          sections.push({ title: "结论", body: headText, kind: "conclusion" });
+        }
+      }
+    }
     for (let i = 0; i < headingMatches.length; i += 1) {
       const m = headingMatches[i];
       const title = m[2].trim();
@@ -326,10 +346,18 @@ export function splitAssistantSections(text: string): AssistantSection[] {
   }
 
   // 写法 2：「结论：…\n依据：…」按冒号标题换行切分
+  // 同样把首个冒号标题之前的开场文本收纳成"结论"段，避免内容被吞。
   const colonRe = /^(结论|依据|风险与缺口|风险|下一步|下一步操作)[：:]\s*/gm;
   const colonMatches = [...raw.matchAll(colonRe)];
   if (colonMatches.length >= 2) {
     const sections: AssistantSection[] = [];
+    const firstColonStart = colonMatches[0].index!;
+    if (firstColonStart > 0) {
+      const headText = raw.slice(0, firstColonStart).trim();
+      if (headText) {
+        sections.push({ title: "结论", body: headText, kind: "conclusion" });
+      }
+    }
     for (let i = 0; i < colonMatches.length; i += 1) {
       const m = colonMatches[i];
       const title = m[1].trim();

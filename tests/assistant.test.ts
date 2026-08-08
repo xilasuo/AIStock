@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildFallbackAnswer, summarizeContext, type AssistantContext } from "../lib/ai/assistant";
+import { buildFallbackAnswer, splitAssistantSections, summarizeContext, type AssistantContext } from "../lib/ai/assistant";
 
 // 复现大屏浮窗“抽风”根因：现金 344.96 元 + 总仓位 97.88% 时，
 // summarizeContext 不得再注入/输出中文大写数字（叁佰肆拾肆元玖角陆分、玖拾柒点捌捌百分比）。
@@ -162,4 +162,74 @@ test("基本面缺失时仍以技术面为主给出回答，不拒绝判断", ()
   // 且不会因为财务缺失就空手而归——技术面要点被带出
   assert.match(answer, /支撑¥1400\.000/);
   assert.match(answer, /20日均线¥1480\.000/);
+});
+
+// —— splitAssistantSections 边界 case ——
+// 复现大屏「内容渲染不出来」根因：AI 漏写「### 结论/依据」开头，
+// 直接从结论正文 +「### 风险与缺口」起头，旧实现会把首段（结论+依据）整段丢弃。
+test("splitAssistantSections：写法 1（### 标题）下，首个标题之前的开场文本收纳为「结论」段", () => {
+  const text = [
+    "回撤约57.6元。",
+    "账户：总资产¥16298.96总仓位:88%,现金仅¥96。",
+    "单股占比：29.98%, 未超50%上限。",
+    "",
+    "### 风险与缺口",
+    "当前回报数据缺失，我按现价24.04与成本0.752算的浮盈，仅供。",
+    "财务、量能、摆动指标全部缺失，纯技术面判断。",
+    "",
+    "### 下一步",
+    "**持有**，但必须止损: 跌破18.630元无条件清仓。",
+  ].join("\n");
+
+  const sections = splitAssistantSections(text);
+  // 应有 3 段：结论 + 风险与缺口 + 下一步，且结论段不能丢失
+  assert.equal(sections.length, 3, `应有 3 段，实际 ${sections.length}`);
+  assert.equal(sections[0].kind, "conclusion", "首段应为结论");
+  assert.match(sections[0].body, /回撤约57\.6元/);
+  assert.match(sections[0].body, /总资产¥16298\.96/);
+  assert.match(sections[0].body, /单股占比：29\.98%/);
+  assert.equal(sections[1].kind, "risk");
+  assert.match(sections[1].body, /回报数据缺失/);
+  assert.equal(sections[2].kind, "next");
+  assert.match(sections[2].body, /跌破18\.630元无条件清仓/);
+});
+
+test("splitAssistantSections：写法 2（冒号标题）下，首个冒号之前的开场文本收纳为「结论」段", () => {
+  const text = [
+    "操盘手视角——总仓位已高，先别加风险暴露。",
+    "现金¥96 几乎归零，回撤约57.6元。",
+    "",
+    "风险与缺口：财务、量能、摆动指标全部缺失。",
+    "下一步：跌破18.630元无条件清仓。",
+  ].join("\n");
+
+  const sections = splitAssistantSections(text);
+  assert.equal(sections.length, 3);
+  assert.equal(sections[0].kind, "conclusion");
+  assert.match(sections[0].body, /操盘手视角/);
+  assert.match(sections[0].body, /现金¥96/);
+});
+
+test("splitAssistantSections：完整四段式（结论+依据+风险+下一步）正常切分", () => {
+  const text = [
+    "### 结论",
+    "建议止损。",
+    "### 依据",
+    "现价跌破支撑。",
+    "### 风险与缺口",
+    "财务数据缺失。",
+    "### 下一步",
+    "砍仓后重新审视。",
+  ].join("\n");
+
+  const sections = splitAssistantSections(text);
+  assert.equal(sections.length, 4);
+  assert.equal(sections[0].kind, "conclusion");
+  assert.equal(sections[1].kind, "basis");
+  assert.equal(sections[2].kind, "risk");
+  assert.equal(sections[3].kind, "next");
+  assert.match(sections[0].body, /建议止损/);
+  assert.match(sections[1].body, /现价跌破支撑/);
+  assert.match(sections[2].body, /财务数据缺失/);
+  assert.match(sections[3].body, /砍仓后重新审视/);
 });
