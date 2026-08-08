@@ -5489,7 +5489,10 @@ svg { display: block; }
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-raised);
-  max-height: calc(100dvh - 36px);
+  display: flex;
+  flex-direction: column;
+  margin: auto;
+  max-height: min(640px, calc(100dvh - 48px));
   max-width: 680px;
   overflow: auto;
   width: 100%;
@@ -5499,11 +5502,12 @@ svg { display: block; }
   align-items: flex-start;
   border-bottom: 1px solid var(--line);
   display: flex;
+  flex-shrink: 0;
   justify-content: space-between;
-  padding: 21px 24px 16px;
+  padding: 22px 28px 18px;
 }
 
-.modal h2 { font-size: var(--fs-2xl); letter-spacing: -.03em; margin: 4px 0 0; }
+.modal h2 { font-size: var(--fs-2xl); letter-spacing: -.03em; margin: 6px 0 0; }
 .modal header button { background: transparent; border: 0; color: var(--muted); font-size: var(--fs-2xl); line-height: 1; }
 .modal form { padding: 20px 24px 24px; }
 
@@ -7132,7 +7136,7 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
 .modal--sm { max-width: 420px; }
 .modal--md { max-width: 560px; }
 .modal--lg { max-width: 880px; }
-.modal__body { padding: 6px 28px 26px; font-size: 15px; line-height: 1.7; }
+.modal__body { padding: 6px 28px 26px; font-size: 15px; line-height: 1.7; overflow-y: auto; }
 .modal__footer {
   border-top: 1px solid var(--line);
   display: flex;
@@ -7141,6 +7145,75 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
   padding: 16px 28px 22px;
 }
 .modal form { padding: 4px 24px 22px; }
+
+.modal__eyebrow {
+  color: var(--accent-ink);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.modal__message {
+  color: var(--text-soft);
+  font-size: 15px;
+  line-height: 1.75;
+  margin: 0;
+}
+
+.modal__message strong,
+.modal__message b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.modal__footer-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.modal__footer-actions .btn {
+  min-height: 40px;
+  padding: 0 22px;
+}
+
+/* 确认弹窗：退出登录 / 移出关注 / 清空缓存 */
+.modal--confirm .modal__body {
+  padding: 8px 28px 28px;
+  text-align: left;
+}
+
+.modal--confirm .modal__footer {
+  padding: 18px 28px 24px;
+}
+
+.modal--confirm .modal__footer-actions .btn {
+  flex: 1;
+  justify-content: center;
+  min-height: 44px;
+}
+
+.modal--confirm .modal__footer-actions .btn--ghost {
+  background: transparent;
+  border-color: var(--line-strong);
+  color: var(--text-soft);
+}
+
+.modal--confirm .modal__footer-actions .btn--ghost:hover:not(:disabled) {
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+.modal--confirm .modal__footer-actions .btn--danger {
+  background: var(--down);
+  box-shadow: 0 4px 14px -6px rgba(239, 83, 80, .45);
+}
+
+.modal--confirm .modal__footer-actions .btn--danger:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
 
 /* ---------------- 移动端自适应（统一组件）---------------- */
 @media (max-width: 760px) {
@@ -7151,6 +7224,8 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
   .modal form { padding-left: 18px; padding-right: 18px; }
   .modal__footer { flex-wrap: wrap; padding: 12px 18px 18px; }
   .modal__footer .btn { flex: 1; }
+  .modal--confirm .modal__body { padding-left: 20px; padding-right: 20px; }
+  .modal--confirm .modal__footer { padding: 14px 20px 20px; }
   .segmented__item { padding-bottom: 9px; padding-top: 9px; }
   .card__header { flex-direction: column; }
 }
@@ -7161,6 +7236,15 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
     max-height: 92dvh;
     max-width: 100% !important;
   }
+  .modal--confirm {
+    align-self: center;
+    border-radius: var(--radius-card);
+    margin: auto 14px;
+    max-height: min(420px, calc(100dvh - 28px));
+    max-width: 420px;
+  }
+  .modal--confirm .modal__body,
+  .modal--confirm .modal__footer { padding-left: 22px; padding-right: 22px; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: .001ms !important; transition-duration: .001ms !important; }

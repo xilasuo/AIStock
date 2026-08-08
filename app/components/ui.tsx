@@ -437,6 +437,7 @@ interface ModalProps {
   footer?: React.ReactNode;
   size?: "sm" | "md" | "lg";
   closeLabel?: string;
+  className?: string;
 }
 
 export function Modal({
@@ -447,11 +448,12 @@ export function Modal({
   footer,
   size = "md",
   closeLabel = "关闭",
+  className,
 }: ModalProps) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
-        className={`modal modal--${size}`.trim()}
+        className={["modal", `modal--${size}`, className].filter(Boolean).join(" ")}
         role="dialog"
         aria-modal="true"
         onClick={(e) => e.stopPropagation()}
@@ -626,6 +628,7 @@ export function ConfirmDialog({
       title={title}
       onClose={loading ? undefined : onCancel}
       size="sm"
+      className="modal--confirm"
       footer={
         <div className="modal__footer-actions">
           <button
