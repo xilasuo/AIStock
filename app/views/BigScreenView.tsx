@@ -608,18 +608,19 @@ export function BigScreenView() {
       tick();
     };
 
-    // 首次进入：无论是否窗口内都加载一次。
+    // 首次进入：主看板基础数据（持仓/关注/账户/指数/提醒）无论窗口内外都必须加载一次，
+    // 否则首屏无任何数据。实时板块轮询仅在窗口内启动（startDataPolling）；窗口外只做一次
+    // 主看板拉取 + 一次慢数据（策略榜/历史板块），不轮询，省去无谓的实时请求。
     // 窗口外用 queueMicrotask 延迟到 effect 提交后执行，避免 effect 内同步 setState 级联渲染（react-hooks/set-state-in-effect）。
-    if (isRealtimeWindow()) {
-      startDataPolling();
-      startSlowPolling();
-    } else {
-      queueMicrotask(() => {
-        if (cancelled) return;
-        void loadData();
-        void loadSlowData();
-      });
-    }
+    queueMicrotask(() => {
+      if (cancelled) return;
+      void loadData();
+      void loadSlowData();
+      if (isRealtimeWindow()) {
+        startDataPolling();
+        startSlowPolling();
+      }
+    });
 
     // 定时启停：到达下一个边界自动按当前窗口状态开/关
     const scheduleBoundary = () => {

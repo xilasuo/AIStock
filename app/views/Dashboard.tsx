@@ -96,7 +96,7 @@ import {
 } from "../../lib/utils/trade-mode";
 import { formatDateTimeShanghai } from "../../lib/utils/time";
 import { readCache, writeCache, removeCache, removeCacheByPrefix, readKeyedCacheWithMeta, writeKeyedCache } from "../../lib/utils/client-cache";
-import { planRefresh, recordQuota, useMairuiQuota } from "../../lib/market/mairui-quota";
+import { planRefresh, recordQuota, useMairuiQuota, isRealtimeWindow } from "../../lib/market/mairui-quota";
 import SmartAssistant, { buildAnalysisContext } from "../components/SmartAssistant";
 
 type View = "home" | "watchlist" | "trades" | "settings" | "analytics" | "analysis" | "scan" | "writeback" | "suggestions";
@@ -558,7 +558,9 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     void probe().then((online) => {
       // 仅当在线时保持轮询；离线（如云端）不重复探测，省去无谓的定时请求与超时等待。
       if (online && !cancelled) {
-        timer = window.setInterval(() => void probe(), 60_000);
+        // 行情引擎只在实时交易窗口有意义，非交易时段拉长探测间隔（5 分钟）以省请求。
+        const intervalMs = isRealtimeWindow(new Date()) ? 60_000 : 300_000;
+        timer = window.setInterval(() => void probe(), intervalMs);
       }
     });
     return () => {
@@ -720,7 +722,10 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   // 首屏与每次状态变化后：为缺失或已过期的持仓/关注/提醒行情发起拉取。
   // 注意：依赖中刻意不含 `quotes` —— quoteStale 读的是 ref（quoteFetchedAt.current），
   // 而非 quotes 对象；若加入 quotes，每分钟轻量价格轮询都会重建 timer 并触发昂贵的全量分析拉取。
+  // 优化：非交易时段行情静止，跳过全量 /api/analyze 补全（该接口取 K线+财务+公告，最贵），
+  // 仅实时窗口才补；静态展示所需行情在进入页面时已由 loadData 的轻量缓存兜底。
   useEffect(() => {
+    if (!isRealtimeWindow(new Date())) return;
     const symbols = new Set([
       ...portfolio.positions.map((position) => position.symbol),
       ...alerts.filter((alert) => alert.enabled).map((alert) => alert.symbol),
