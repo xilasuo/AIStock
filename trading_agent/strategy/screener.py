@@ -104,16 +104,18 @@ def strategy_hard_filter(
     volumes: list[float],
     board: str,
     quote: dict,
+    kline: list[dict] | None = None,
 ) -> bool:
     """按策略名执行 K 线级硬过滤；任一条件不满足返回 False 剔除该票。
 
     Args:
-        sf: 策略名（ma_momentum | oversold | dszn | limit_up | volume_breakout）
+        sf: 策略名（ma_momentum | oversold | dszn | limit_up | volume_breakout | gann_142857）
         code: 股票代码
         closes: 日线收盘价序列（已从 kline 中提取，旧→新）
         volumes: 日线成交量序列（已从 kline 中提取，旧→新）
         board: 板块（main/cyb/kc/bj）
         quote: 行情快照
+        kline: 完整日线 K 线序列（含 high/low，供需要真实高低点的策略使用；可选）
     """
     if sf == "ma_momentum":
         return _filter_ma_momentum(closes)
@@ -125,6 +127,8 @@ def strategy_hard_filter(
         return _filter_limit_up(closes, volumes, board)
     elif sf == "volume_breakout":
         return _filter_volume_breakout(closes, volumes)
+    elif sf == "gann_142857":
+        return _filter_gann_142857(closes, volumes, kline or [])
     else:
         # 未知或无策略过滤 → 放行
         return True
@@ -248,6 +252,55 @@ def _filter_volume_breakout(closes: list[float], volumes: list[float]) -> bool:
     # MACD 金叉或红柱放大
     macd_status = indicators.macd_cross_status(closes)
     if macd_status not in ("golden", "red_expand"):
+        return False
+    return True
+
+
+def _filter_gann_142857(closes: list[float], volumes: list[float], kline: list[dict]) -> bool:
+    """江恩 142857 回调支撑：上涨波段回踩 14.28%/28.57%/42.85% 关键档位企稳。
+
+    142857 是 1/7 的循环小数（1÷7=0.142857 142857…），其各位数字
+    14.28% / 28.57% / 42.85% / 57.14% / 71.42% / 85.71% 被江恩理论用作
+    价格波动的关键支撑/阻力比例。本策略取近期上涨波段的真实高低点，按前
+    三档（浅/中/深回调）计算支撑位，捕捉「上升趋势中回踩档位企稳」的低吸买点。
+    """
+    need = 60
+    if len(closes) < need or len(volumes) < need or len(kline) < need:
+        return False
+
+    # 1) 取近 60 日真实高低点（用 kline 的 high/low，比收盘价更准）
+    window_kl = kline[-need:]
+    highs = [float(b.get("high") or b.get("close") or 0) for b in window_kl]
+    lows = [float(b.get("low") or b.get("close") or 0) for b in window_kl]
+    H = max(highs)
+    L = min(lows)
+    h_idx = highs.index(H)
+    l_idx = lows.index(L)
+    # 波段必须有足够空间（涨幅 ≥10%），且高点在低点之后（上涨波段而非下跌中继）
+    if H < L * 1.10 or h_idx <= l_idx:
+        return False
+
+    span = H - L
+    # 2) 142857 前三档回调支撑位（从高点 H 向下回撤）
+    levels = [H - span * r for r in (0.1428, 0.2857, 0.4285)]
+    price = closes[-1]
+    # 当前价在某档 ±2.5% 容差内 = 回踩企稳
+    if not any(lv > 0 and abs(price - lv) / lv <= 0.025 for lv in levels):
+        return False
+
+    # 3) 缩量企稳：近 3 日均量 < 近 20 日均量的 80%（抛压减轻）
+    recent_vol = sum(volumes[-3:]) / 3.0
+    avg_vol_20 = sum(volumes[-20:]) / 20.0
+    if avg_vol_20 <= 0 or recent_vol >= avg_vol_20 * 0.80:
+        return False
+
+    # 4) 趋势向上：MA20 今 > MA20 5 日前，且价在 MA60 上方（确保是上升趋势的回调）
+    ma20_now = indicators.ma(closes, 20)
+    ma20_5ago = sum(closes[-25:-5]) / 20.0 if len(closes) >= 25 else None
+    ma60 = indicators.ma(closes, 60)
+    if ma20_now is None or ma20_5ago is None or ma60 is None:
+        return False
+    if ma20_now <= ma20_5ago or closes[-1] <= ma60:
         return False
     return True
 
@@ -425,7 +478,7 @@ def screen(cfg: config.AppConfig, codes: list[str], dp=None, top_n_override: int
         if sc.strategy_filter:
             volumes = [float(b.get("volume", b.get("vol", 0)) or 0) for b in kline]
             _board = _guess_board(code, name)
-            if not strategy_hard_filter(sc.strategy_filter, code, closes, volumes, _board, quote):
+            if not strategy_hard_filter(sc.strategy_filter, code, closes, volumes, _board, quote, kline):
                 continue
 
         # —— 原始因子计算 ——

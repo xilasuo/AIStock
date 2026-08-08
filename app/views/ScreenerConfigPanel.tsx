@@ -276,6 +276,21 @@ export const STRATEGY_PRESETS: {
       momentum_window: 20,
     },
   },
+  {
+    key: "gann_142857",
+    label: "江恩142857回调",
+    risk: "平衡",
+    desc: "基于142857（1/7循环）关键比例：上涨波段回踩14.28%/28.57%/42.85%档位企稳 + 缩量 + 均线多头，捕捉趋势中继低吸买点。",
+    overrides: {
+      w_trend: 0.34, w_momentum: 0.22, w_liquidity: 0.16,
+      w_rsi: 0.10, w_macd: 0.10, w_value: 0.04,
+      w_size: 0.00, w_quality: 0.00, w_fund_flow: 0.04,
+      strategy_filter: "gann_142857",
+      min_turnover_pct: 0.50, top_n: 6,
+      use_breakout_filter: false,
+      stop_loss_pct: -0.08,
+    },
+  },
 ];
 
 /** 默认值（与 config.py ScreenerConfig 默认值对齐） */

@@ -298,6 +298,25 @@ STRATEGY_PRESETS: dict[str, dict] = {
             "momentum_window": 20,
         },
     },
+    # —— 2026-08-08 新增：142857 江恩回调支撑策略 ——
+    # 142857 是 1/7 的循环小数，其各位 14.28%/28.57%/42.85% 被江恩理论用作价格
+    # 波动的关键回调支撑比例。本策略取近 60 日上涨波段高低点，按前三档计算支撑位，
+    # 捕捉「上升趋势中回踩档位企稳」的低吸买点（缩量企稳 + 均线多头确认）。
+    "gann_142857": {
+        "label": "江恩142857回调",
+        "risk": "平衡",
+        "desc": "基于142857（1/7循环）关键比例：上涨波段回踩14.28%/28.57%/42.85%档位企稳 + 缩量 + 均线多头，捕捉趋势中继低吸买点。",
+        "universe_filter": "active",
+        "overrides": {
+            "w_trend": 0.34, "w_momentum": 0.22, "w_liquidity": 0.16,
+            "w_rsi": 0.10, "w_macd": 0.10, "w_value": 0.04,
+            "w_size": 0.00, "w_quality": 0.00, "w_fund_flow": 0.04,
+            "strategy_filter": "gann_142857",
+            "min_turnover_pct": 0.50, "top_n": 6,
+            "use_breakout_filter": False,
+            "stop_loss_pct": -0.08,
+        },
+    },
 }
 
 
