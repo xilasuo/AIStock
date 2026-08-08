@@ -2,7 +2,7 @@ import { getAiConfig, type AiConfig } from "../../../lib/ai/ai-config";
 import { buildFallbackAnswer, isValidContext, type AssistantContext } from "../../../lib/ai/assistant";
 import { getCurrentUser, requireApiUser } from "../../../lib/auth/auth";
 import { ensureSchema, getDb } from "../../../db";
-import { trades } from "../../../db/schema";
+import { tradeRecords } from "../../../db/schema";
 import { eq } from "drizzle-orm";
 import { calculatePortfolio, type Trade } from "../../../lib/domain/domain";
 import { DEFAULT_PREFERENCES, fetchPreferences, type TradingPreferences } from "../../../lib/utils/preferences";
@@ -86,7 +86,7 @@ async function getServerHoldings(userId: number): Promise<{
   text: string;
 } | null> {
   try {
-    const rows = await getDb().select().from(trades).where(eq(trades.userId, userId));
+    const rows = await getDb().select().from(tradeRecords).where(eq(tradeRecords.userId, userId));
     if (!rows.length) return null;
     const mapped: Trade[] = rows.map((r) => ({
       id: r.id,
