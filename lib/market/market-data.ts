@@ -33,6 +33,7 @@ const realtimeCache = new Map<string, { expiresAt: number; value: Promise<Realti
 // 麦蕊（商业付费 API）作为「优先数据源」：仅当配置了 MAIRUI_TOKEN 且未熔断时启用，
 // 作为实时行情 / 基本面 / 指数 / 板块的更高优先级源；无 token 时自动走下方免费多级降级链。
 import { getMairuiRealtime, getMairuiFundamentals, getMairuiSectorMoves, isMairuiEnabled } from "./mairui";
+import { num } from "../utils/num";
 
 // ---------------------------------------------------------------------------
 // 基础工具
@@ -54,12 +55,6 @@ async function fetchText(url: string, headers: Record<string, string> = {}): Pro
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return await res.text();
-}
-
-function num(value: unknown): number | null {
-  if (value === null || value === undefined || value === "") return null;
-  const n = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(n) ? n : null;
 }
 
 /** 东方财富 secid：上交所(5/6/9 开头)=1，深交所/北交所=0 */

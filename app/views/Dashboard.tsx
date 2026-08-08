@@ -98,6 +98,7 @@ import { formatDateTimeShanghai } from "../../lib/utils/time";
 import { readCache, writeCache, removeCache, removeCacheByPrefix, readKeyedCacheWithMeta, writeKeyedCache, clearAllAppCache } from "../../lib/utils/client-cache";
 import { planRefresh, recordQuota, useMairuiQuota, isRealtimeWindow } from "../../lib/market/mairui-quota";
 import SmartAssistant, { buildAnalysisContext } from "../components/SmartAssistant";
+import { jsonRequest } from "../../lib/utils/use-api";
 
 type View = "home" | "watchlist" | "trades" | "settings" | "analytics" | "analysis" | "scan" | "writeback" | "suggestions";
 type TradeMode = "buy" | "sell";
@@ -354,18 +355,6 @@ function latestWeekday() {
   const date = new Date();
   while (date.getDay() === 0 || date.getDay() === 6) date.setDate(date.getDate() - 1);
   return localIsoDate(date);
-}
-
-async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(url, init);
-  } catch {
-    throw new Error("网络连接中断，请稍后重试");
-  }
-  const payload = await response.json() as T & { error?: string };
-  if (!response.ok) throw new Error(payload.error ?? "请求失败");
-  return payload;
 }
 
 export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string }) {

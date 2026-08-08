@@ -2,6 +2,25 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+/**
+ * 统一 JSON 请求封装：fetch + JSON 解析 + 网络错误处理。
+ * 合并自 StrategyModal.tsx 和 Dashboard.tsx 的各自实现。
+ */
+export async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { "content-type": "application/json" },
+      ...init,
+    });
+  } catch {
+    throw new Error("网络连接中断，请稍后重试");
+  }
+  const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
+  if (!response.ok) throw new Error(payload.error ?? `请求失败 ${response.status}`);
+  return payload;
+}
+
 interface UseApiOptions<T> {
   /** 初始数据（如服务端预取），提供后首次渲染直接进入已加载态 */
   initialData?: T | null;

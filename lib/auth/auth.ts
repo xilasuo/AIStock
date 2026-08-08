@@ -173,6 +173,36 @@ export async function requireSuperAdmin(): Promise<AuthenticatedUser> {
   return user;
 }
 
+type AuthedContext = { user: AuthenticatedUser };
+type AuthedHandler = (request: Request, ctx: AuthedContext) => Promise<Response>;
+
+/**
+ * 高阶函数：封装 API 路由的鉴权 + try-catch 样板。
+ *
+ * 用法：
+ *   export const GET = withAuth(async (req, { user }) => { ... });
+ *
+ * handler 内部主动抛 Response（如 400/404 业务错误）会被 catch 捕获并透传，
+ * 其余异常统一返回 503 + errorMessage。
+ */
+export function withAuth(
+  handler: AuthedHandler,
+  errorMessage = "服务暂时不可用",
+): (request: Request) => Promise<Response> {
+  return async (request: Request) => {
+    const unauthorized = await requireApiUser();
+    if (unauthorized) return unauthorized;
+    try {
+      const user = await getCurrentUser();
+      return await handler(request, { user });
+    } catch (err) {
+      if (err instanceof Response) return err;
+      console.error("[withAuth] handler error", err);
+      return Response.json({ error: errorMessage }, { status: 503 });
+    }
+  };
+}
+
 export async function authenticate(username: string, password: string): Promise<string | null> {
   const config = getAuthConfig();
   if (!config) return null;

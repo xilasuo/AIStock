@@ -1,42 +1,30 @@
 import { and, desc, eq } from "drizzle-orm";
-import { ensureSchema, getDb } from "../../../db";
+import { getDb } from "../../../db";
 import { accountSettings, capitalFlows } from "../../../db/schema";
-import { getCurrentUser, requireApiUser } from "../../../lib/auth/auth";
+import { withAuth } from "../../../lib/auth/auth";
 import { shanghaiIso } from "../../../lib/utils/time";
 
-export async function GET() {
-  const unauthorized = await requireApiUser();
-  if (unauthorized) return unauthorized;
-  try {
-    const user = await getCurrentUser();
-    await ensureSchema();
-    const db = getDb();
-    const [settings, flows] = await Promise.all([
-      db.select().from(accountSettings).where(eq(accountSettings.userId, user.id)).limit(1),
-      db.select().from(capitalFlows)
-        .where(eq(capitalFlows.userId, user.id))
-        .orderBy(desc(capitalFlows.flowDate), desc(capitalFlows.id)),
-    ]);
-    return Response.json({
-      initialCapitalCents: settings[0]?.initialCapitalCents ?? null,
-      capitalFlows: flows.map((f) => ({
-        id: f.id,
-        amountCents: f.amountCents,
-        flowDate: f.flowDate,
-        note: f.note,
-        createdAt: f.createdAt,
-      })),
-    });
-  } catch {
-    return Response.json({ error: "账户资金设置暂时无法读取" }, { status: 503 });
-  }
-}
+export const GET = withAuth(async (_request, { user }) => {
+  const db = getDb();
+  const [settings, flows] = await Promise.all([
+    db.select().from(accountSettings).where(eq(accountSettings.userId, user.id)).limit(1),
+    db.select().from(capitalFlows)
+      .where(eq(capitalFlows.userId, user.id))
+      .orderBy(desc(capitalFlows.flowDate), desc(capitalFlows.id)),
+  ]);
+  return Response.json({
+    initialCapitalCents: settings[0]?.initialCapitalCents ?? null,
+    capitalFlows: flows.map((f) => ({
+      id: f.id,
+      amountCents: f.amountCents,
+      flowDate: f.flowDate,
+      note: f.note,
+      createdAt: f.createdAt,
+    })),
+  });
+}, "账户资金设置暂时无法读取");
 
-export async function PUT(request: Request) {
-  const unauthorized = await requireApiUser();
-  if (unauthorized) return unauthorized;
-
-  const user = await getCurrentUser();
+export const PUT = withAuth(async (request, { user }) => {
   const payload = await request.json().catch(() => null) as {
     initialCapital?: number;
     action?: string;
@@ -46,7 +34,6 @@ export async function PUT(request: Request) {
     flowId?: number;
   } | null;
 
-  await ensureSchema();
   const db = getDb();
 
   // 删除出入金流水
@@ -56,7 +43,7 @@ export async function PUT(request: Request) {
         .where(and(eq(capitalFlows.id, payload.flowId), eq(capitalFlows.userId, user.id)));
       return Response.json({ ok: true });
     } catch {
-      return Response.json({ error: "删除失败" }, { status: 500 });
+      return Response.json({ error: "删除失败" }, { status: 503 });
     }
   }
 
@@ -80,7 +67,7 @@ export async function PUT(request: Request) {
       });
       return Response.json({ ok: true });
     } catch {
-      return Response.json({ error: "保存失败" }, { status: 500 });
+      return Response.json({ error: "保存失败" }, { status: 503 });
     }
   }
 
@@ -102,9 +89,9 @@ export async function PUT(request: Request) {
       });
       return Response.json({ initialCapitalCents });
     } catch {
-      return Response.json({ error: "账户资金设置保存失败" }, { status: 500 });
+      return Response.json({ error: "账户资金设置保存失败" }, { status: 503 });
     }
   }
 
   return Response.json({ error: "无效的请求" }, { status: 400 });
-}
+}, "账户资金设置保存失败");

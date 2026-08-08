@@ -9,6 +9,8 @@
 // 确切字段（实时行情路径 /hsstock/real/time/{code}/{licence}）建议拿到 token 后
 // 在其 Playground 核对一次，再调整下方 pick() 的候选键。
 
+import { num } from "../utils/num";
+
 const MAIRUI_BASE = "https://api.mairuiapi.com";
 const REALTIME_TTL_MS = 5 * 60 * 1000; // 同只股票 5 分钟内不重复请求，缓解重复刷新浪费额度
 export type MairuiRealtime = {
@@ -83,15 +85,6 @@ async function incMairuiQuota(n = 1): Promise<void> {
   } catch {
     /* 计数失败不影响主流程 */
   }
-}
-
-function num(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string") {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : null;
-  }
-  return null;
 }
 
 // 麦蕊返回字段命名未完全公开，这里对常见中英文键名做容错提取（大小写不敏感）。

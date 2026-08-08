@@ -7,6 +7,7 @@ import { calculatePortfolio, type Trade } from "../../lib/domain/domain";
 import type { PortfolioInsights } from "../../lib/domain/portfolio-insights";
 import { Modal } from "./ui";
 import { StrategyBlocks } from "./StrategyBlocks";
+import { jsonRequest } from "../../lib/utils/use-api";
 
 // /api/analyze 返回的分析结构（explain=true 时）
 type Analysis = {
@@ -65,16 +66,6 @@ export type StrategyModalProps = {
   portfolioInsights: PortfolioInsights;
   onClose: () => void;
 };
-
-async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    headers: { "content-type": "application/json" },
-    ...init,
-  });
-  const payload = (await res.json().catch(() => ({}))) as { error?: string } & Record<string, unknown>;
-  if (!res.ok) throw new Error(payload.error ?? `请求失败 ${res.status}`);
-  return payload as T;
-}
 
 function buildContextFromAnalysis(
   analysis: Analysis,

@@ -1,7 +1,7 @@
 import { getAiConfig } from "./ai-config";
 import { DEFAULT_PREFERENCES, type TradingPreferences } from "../utils/preferences";
 import { tradeModePrompt } from "../utils/trade-mode";
-import { summarizeContext, type AssistantContext } from "./assistant";
+import { summarizeContext, percent, type AssistantContext } from "./assistant";
 import type { Oscillators } from "../domain/stocks";
 import { evaluateContextQuality, type ContextQuality } from "../context-quality";
 import { guardNumbers, hasBlockingIssue, issuesToWarnings } from "./number-guard";
@@ -114,12 +114,6 @@ export function renderStructuredToText(s: StructuredStrategy): string {
 type DeepSeekResponse = {
   choices?: Array<{ message?: { content?: string } }>;
 };
-
-function percent(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(value)) return "数据缺失";
-  const sign = value > 0 ? "+" : "";
-  return `${sign}${value.toFixed(2)}%`;
-}
 
 function oscillatorTip(ctx: AssistantContext): string {
   const osc: Oscillators | undefined | null = ctx.oscillators;

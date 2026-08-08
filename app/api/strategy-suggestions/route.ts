@@ -1,10 +1,7 @@
-import { getCurrentUser } from "../../../lib/auth/auth";
-import { ensureSchema } from "../../../db";
+import { withAuth } from "../../../lib/auth/auth";
 import { listSuggestions, updateSuggestionOutcome, getLinkedReviewsMap, deleteSuggestions, type Outcome } from "../../../lib/strategy-suggestions";
 
-export async function GET(request: Request) {
-  const user = await getCurrentUser();
-  await ensureSchema();
+export const GET = withAuth(async (request, { user }) => {
   const url = new URL(request.url);
   const limit = Math.min(parseInt(url.searchParams.get("limit") || "50"), 200);
   const offset = parseInt(url.searchParams.get("offset") || "0");
@@ -21,11 +18,9 @@ export async function GET(request: Request) {
   }));
 
   return Response.json({ code: 0, data });
-}
+}, "策略建议读取暂时不可用");
 
-export async function PATCH(request: Request) {
-  const user = await getCurrentUser();
-  await ensureSchema();
+export const PATCH = withAuth(async (request, { user }) => {
   const { id, outcome: raw, outcomeNote, outcomePrice } = (await request.json()) as {
     id?: number;
     outcome?: string;
@@ -44,7 +39,7 @@ export async function PATCH(request: Request) {
     outcomePrice: outcomePrice ?? undefined,
   });
   return Response.json({ code: 0, data: { ok: true } });
-}
+}, "策略建议更新暂时不可用");
 
 /**
  * 删除建议记录。请求体三选一：
@@ -52,9 +47,7 @@ export async function PATCH(request: Request) {
  * - { outcome: "pending" }   按标注状态批量删除
  * - { all: true }            清空全部
  */
-export async function DELETE(request: Request) {
-  const user = await getCurrentUser();
-  await ensureSchema();
+export const DELETE = withAuth(async (request, { user }) => {
   const body = (await request.json().catch(() => ({}))) as {
     ids?: unknown;
     outcome?: string;
@@ -79,4 +72,4 @@ export async function DELETE(request: Request) {
 
   const deleted = await deleteSuggestions({ userId: user.id, ids, outcome, all });
   return Response.json({ code: 0, data: { deleted } });
-}
+}, "策略建议删除暂时不可用");

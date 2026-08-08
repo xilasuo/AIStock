@@ -129,8 +129,10 @@ export function isValidContext(value: unknown): value is AssistantContext {
   );
 }
 
-function percent(value: number | null) {
-  return value === null ? "暂无" : `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+export function percent(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(value)) return "数据缺失";
+  const sign = value >= 0 ? "+" : "";
+  return `${sign}${value.toFixed(2)}%`;
 }
 
 function volumeTip(context: AssistantContext): string {

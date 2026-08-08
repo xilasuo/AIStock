@@ -1,6 +1,6 @@
 import { desc, eq } from "drizzle-orm";
-import { requireApiUser, getCurrentUser } from "../../../lib/auth/auth";
-import { getDb, ensureSchema } from "../../../db";
+import { withAuth } from "../../../lib/auth/auth";
+import { getDb } from "../../../db";
 import { strategyFeedback } from "../../../db/schema";
 import { shanghaiIso } from "../../../lib/utils/time";
 
@@ -12,34 +12,21 @@ import { shanghaiIso } from "../../../lib/utils/time";
  *
  * 鉴权：需登录会话（requireApiUser）。
  */
-export async function GET() {
-  const unauthorized = await requireApiUser();
-  if (unauthorized) return unauthorized;
+export const GET = withAuth(async (_request, { user }) => {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(strategyFeedback)
+    .where(eq(strategyFeedback.userId, user.id))
+    .orderBy(desc(strategyFeedback.createdAt))
+    .limit(100);
+  return Response.json({ ok: true, feedback: rows });
+}, "反馈读取暂时不可用");
 
-  try {
-    const user = await getCurrentUser();
-    await ensureSchema();
-    const db = getDb();
-    const rows = await db
-      .select()
-      .from(strategyFeedback)
-      .where(eq(strategyFeedback.userId, user.id))
-      .orderBy(desc(strategyFeedback.createdAt))
-      .limit(100);
-    return Response.json({ ok: true, feedback: rows });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return Response.json({ ok: false, error: msg }, { status: 500 });
-  }
-}
-
-export async function POST(req: Request) {
-  const unauthorized = await requireApiUser();
-  if (unauthorized) return unauthorized;
-
+export const POST = withAuth(async (request, { user }) => {
   let body: unknown;
   try {
-    body = await req.json();
+    body = await request.json();
   } catch {
     return Response.json({ ok: false, error: "invalid json" }, { status: 400 });
   }
@@ -63,14 +50,7 @@ export async function POST(req: Request) {
     }
   }
 
-  try {
-    const user = await getCurrentUser();
-    await ensureSchema();
-    const db = getDb();
-    await db.insert(strategyFeedback).values({ userId: user.id, symbol, name, verdict, note, source, factors, createdAt: shanghaiIso() });
-    return Response.json({ ok: true });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return Response.json({ ok: false, error: msg }, { status: 500 });
-  }
-}
+  const db = getDb();
+  await db.insert(strategyFeedback).values({ userId: user.id, symbol, name, verdict, note, source, factors, createdAt: shanghaiIso() });
+  return Response.json({ ok: true });
+}, "反馈提交暂时不可用");
