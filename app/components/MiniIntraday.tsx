@@ -112,8 +112,6 @@ export function MiniIntraday({
   }
 
   useEffect(() => {
-    setPoints(null);
-    setFailed(false);
     const id = ++reqId.current;
 
     // 缓存键必须带上 period，否则将来给迷你图加周期切换时会串数据
@@ -121,6 +119,8 @@ export function MiniIntraday({
     const cacheKey = `${code}:${MINI_PERIOD}`;
     const cached = MEM_CACHE.get(cacheKey) ?? loadFromStore(cacheKey);
     if (cached) {
+      // 命中本地缓存：在 effect 内同步设置状态是必要的（依赖 code/period 重新拉取）。
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPoints(cached);
       return;
     }

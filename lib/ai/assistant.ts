@@ -205,15 +205,16 @@ export function buildFallbackAnswer(
     const belowSupport = quote.price < quote.support;
     const nearResistance = quote.price >= quote.resistance * 0.98;
     const concentration = p.stockPositionPercent ?? 0;
+    const returnPercent = p.returnPercent ?? 0;
     let action: string;
     let reason: string;
     if (belowSupport) {
       action = "建议减仓/止损";
       reason = `价格已跌破风险观察线¥${quote.support.toFixed(3)}，原买入逻辑失效，先砍风险`;
-    } else if (p.returnPercent <= 0 && concentration >= 20) {
+    } else if (returnPercent <= 0 && concentration >= 20) {
       action = "建议减仓降集中";
       reason = `浮亏且该股占仓${concentration.toFixed(2)}%偏高，先降单票风险`;
-    } else if (p.returnPercent > 0 && nearResistance) {
+    } else if (returnPercent > 0 && nearResistance) {
       action = "建议分批止盈/减仓";
       reason = `已有盈利且逼近阻力¥${quote.resistance.toFixed(3)}，落袋为安不贪`;
     } else if (concentration >= prefs.maxConcentrationPercent) {
@@ -234,9 +235,10 @@ export function buildFallbackAnswer(
     const belowSupport = quote.price < quote.support;
     const nearResistance = quote.price >= quote.resistance * 0.98;
     const concentration = p.stockPositionPercent ?? 0;
+    const returnPercent = p.returnPercent ?? 0;
     let action: string;
     if (belowSupport) action = "止损/减仓——跌破支撑，逻辑失效先控风险";
-    else if (p.returnPercent > 0 && nearResistance) action = "分批止盈/减仓——到阻力附近，落袋为安";
+    else if (returnPercent > 0 && nearResistance) action = "分批止盈/减仓——到阻力附近，落袋为安";
     else if (concentration >= prefs.maxConcentrationPercent) action = `减仓降集中——单票占仓超${prefs.maxConcentrationPercent}%，压回风险`;
     else action = `持有并盯止损——仍在支撑上方，止损设¥${quote.support.toFixed(3)}下方`;
     return `### 结论\n当前持仓相对成本${percent(p.returnPercent)}，${action}。\n### 依据\n持仓${p.quantity}股，成本¥${p.averageCost.toFixed(3)}，当前¥${quote.price.toFixed(3)}，占仓${concentration.toFixed(2)}%；支撑¥${quote.support.toFixed(3)}、阻力¥${quote.resistance.toFixed(3)}。\n### 风险与缺口\n未实现盈亏，未计费用和滑点；${context.missingInformation.slice(0, 2).join("、") || "最新公告仍需核验"}${osc ? `\n动能：${osc}` : ""}。\n### 下一步\n按动作执行，止损设在¥${quote.support.toFixed(3)}下方，最终由你确认。`;

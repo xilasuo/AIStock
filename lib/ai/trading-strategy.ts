@@ -531,6 +531,7 @@ export function buildStrategyFallback(
   const belowSupport = quote.price < quote.support;
   const nearResistance = quote.resistance > 0 && quote.price >= quote.resistance * 0.98;
   const concentration = p.stockPositionPercent ?? 0;
+  const returnPercent = p.returnPercent ?? 0;
   const totalPosition = context.portfolio.totalPositionPercent ?? 0;
   const stopLoss = quote.support;
   const takeProfit = quote.resistance;
@@ -541,7 +542,7 @@ export function buildStrategyFallback(
     actionText = "立即减仓/清仓（止损优先）";
     strategyAction = "减仓";
     reason = `价格已跌破止损线¥${stopLoss.toFixed(3)}，原买入逻辑失效，先砍风险`;
-  } else if (p.returnPercent > 0 && nearResistance) {
+  } else if (returnPercent > 0 && nearResistance) {
     actionText = "分批止盈/减仓";
     strategyAction = "减仓";
     reason = `已有盈利且逼近阻力¥${takeProfit.toFixed(3)}，落袋为安`;

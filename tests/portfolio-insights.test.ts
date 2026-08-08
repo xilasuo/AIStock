@@ -68,7 +68,7 @@ test("基准资金过小/为负时收益率置 null 并给出可读说明，避�
       { date: "2026-07-02", close: 120 },
     ] },
     2_000_000,
-    [{ flowDate: "2026-07-03", amountCents: -5_000_000, note: "出金" }],
+    [{ id: 1, flowDate: "2026-07-03", amountCents: -5_000_000, note: "出金", createdAt: "2026-07-03T00:00:00.000Z" }],
   );
   assert.equal(negativeBase.totalProfitPercent, null);
   assert.ok((negativeBase.profitPercentNote ?? "").includes("基准资金"));

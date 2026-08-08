@@ -2891,6 +2891,8 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
   // 周期切换为分时档位时，单独拉取分钟级 K 线（麦蕊优先，东财兜底）。
   useEffect(() => {
     if (!isIntradayPeriod(period)) {
+      // 切换出分时档位时清空分钟级数据：周期切换的同步重置，属正常的状态同步。
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIntradayBars(null);
       return;
     }
@@ -4416,7 +4418,7 @@ function AlertEditModal({ alert, onClose, onSave }: {
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -4672,7 +4674,7 @@ function TradeModal({ mode, stock, editTrade, positions, analysisQuote, livePric
   // 仅在弹窗挂载时聚焦一次股票代码框；用 ref 持有最新的 onClose，避免父组件
   // 重渲染传入新的 onClose 引用导致 effect 反复执行、反复抢走输入焦点。
   const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
   useEffect(() => {
     symbolInputRef.current?.focus();
     const close = (event: KeyboardEvent) => { if (event.key === "Escape") onCloseRef.current(); };
@@ -4972,7 +4974,7 @@ function ReviewModal({ cycle, onClose, onSaved }: {
   }
 
   const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
 
   useEffect(() => {
     firstInput.current?.focus();

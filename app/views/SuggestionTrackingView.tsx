@@ -98,6 +98,8 @@ export default function SuggestionTrackingView() {
     }
   }, []);
 
+  // 数据获取 effect：挂载即拉取建议列表与统计，内部 setState 属正常的异步数据流。
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const markOutcome = useCallback(async (id: number, outcome: Outcome) => {

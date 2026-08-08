@@ -412,7 +412,7 @@ export function BigScreenView() {
   const [lastLoadAt, setLastLoadAt] = useState<number | null>(null);
   const { quota, reset: resetQuotaCounter } = useMairuiQuota();
   const quotaRef = useRef(quota);
-  quotaRef.current = quota;
+  useEffect(() => { quotaRef.current = quota; }, [quota]);
   const [quotaPanelOpen, setQuotaPanelOpen] = useState(false);
   const [hover, setHover] = useState<{ data: DetailData; pos: { left: number; top: number }; side: "right" | "left" } | null>(null);
   const [curveIdx, setCurveIdx] = useState<number | null>(null);
@@ -430,6 +430,9 @@ export function BigScreenView() {
   // 触发 React #418 hydration mismatch。用 mounted 门控后首屏（SSR 与 CSR）统一渲染稳定骨架，
   // 挂载完成后再在客户端渲染真实内容，彻底消除 hydration 不匹配。
   const [mounted, setMounted] = useState(false);
+  // 挂载门控：必须在挂载后于客户端置 true，以消除 hydration mismatch（SSR/CSR 时刻不一致）。
+  // 此处同步 setState 是必要的 mounted 门控模式，非数据获取。
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setMounted(true), []);
 
   // 大屏中央主图：交互式 K 线选中股票（前端拉取本地渲染，支持缩放/平移/周期切换）

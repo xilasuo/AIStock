@@ -171,9 +171,15 @@ export async function fetchQuota(): Promise<QuotaView> {
 export function useMairuiQuota(pollMs = 30_000) {
   // 初始值统一用 used=0（SSR 与首次 CSR 一致），避免 hydration mismatch；
   // 真实额度由下方 useEffect 在挂载后从 localStorage / 后端异步读取并更新。
-  const [view, setView] = React.useState<QuotaView>(
-    { used: 0, limit: DAILY_LIMIT, degraded: false, suspended: false, ratio: 0, source: "local" },
-  );
+  const [view, setView] = React.useState<QuotaView>(() => {
+    // 客户端首次渲染即读取 localStorage，避免挂载后 effect 里同步 setState 造成的闪烁；
+    // SSR 阶段无 window，返回 0 占位，与后端/CSR 水合一致。
+    if (typeof window !== "undefined") {
+      const local = quotaStatus();
+      return { ...local, source: "local" };
+    }
+    return { used: 0, limit: DAILY_LIMIT, degraded: false, suspended: false, ratio: 0, source: "local" };
+  });
 
   const refresh = React.useCallback(async () => {
     const v = await fetchQuota();
@@ -198,9 +204,9 @@ export function useMairuiQuota(pollMs = 30_000) {
   }, []);
 
   React.useEffect(() => {
-    // 挂载后立即从 localStorage 读取真实额度（避免 SSR 0 的短暂闪烁），再异步拉后端。
-    const local = quotaStatus();
-    setView({ ...local, source: "local" });
+    // 初始额度已在 useState 惰性初始化时从 localStorage 读取，这里仅异步拉取后端最新值。
+    // refresh 内部 setState，属正常的异步数据刷新，非同步级联渲染。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
     const t = window.setInterval(refresh, pollMs);
     return () => window.clearInterval(t);
