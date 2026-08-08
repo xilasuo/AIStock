@@ -1,7 +1,7 @@
 import { getAiConfig } from "./ai-config";
 import { DEFAULT_PREFERENCES, type TradingPreferences } from "../utils/preferences";
 import { tradeModePrompt } from "../utils/trade-mode";
-import type { AssistantContext } from "./assistant";
+import { summarizeContext, type AssistantContext } from "./assistant";
 import type { Oscillators } from "../domain/stocks";
 import { evaluateContextQuality, type ContextQuality } from "../context-quality";
 import { guardNumbers, hasBlockingIssue, issuesToWarnings } from "./number-guard";
@@ -171,23 +171,26 @@ function extractAiAction(text: string): StrategyAction {
 const STRUCTURED_OUTPUT_INSTRUCTION = [
   "",
   "【输出格式硬约束 — 必须且只能返回一个 JSON 对象】",
-  "不要外层包裹、不要 markdown 代码块标记、不要 ```json 后缀，直接输出纯 JSON：",
-  '{"action":"开新仓|加仓|持有|减仓|清仓|观望",',
-  '"actionSummary":"一句话动作总结",',
-  '"stopLossPrice":12.50,  // number | null，止损具体价位',
-  '"stopLossCondition":"跌破12.50立即止损",',
-  '"takeProfitPrice":15.00,  // number | null，止盈具体价位',
-  '"takeProfitCondition":"涨至15.00附近分批止盈",',
-  '"addAllowed":true,  // boolean，是否允许加仓',
-  '"addTriggerPrice":13.20,  // number | null，加仓触发价',
-  '"addMaxShares":500,  // number | null，加仓最大股数',
-  '"addCondition":"回踩13.20不破小仓加",',
-  '"reduceCondition":"占仓超30%或跌破支撑时减仓",',
-  '"suggestedShares":null,  // number | null，建议股数（开新仓时给出）',
-  '"suggestedCheng":null,  // number | null，建议成数（0-1之间的小数，如0.3=三成仓，开新仓时给出）',
-  '"reasoning":"简短理由，不超过120字",',
-  '"risks":"主要风险，分号分隔",',
-  '"dataGaps":"数据缺失项，分号分隔；无缺失则填空字符串"}',
+  "不要外层包裹、不要 markdown 代码块标记、不要 ```json 后缀，直接输出纯 JSON。",
+  "字段说明（类型与含义）：",
+  "- action: string，取值仅限 开新仓|加仓|持有|减仓|清仓|观望",
+  "- actionSummary: string，一句话动作总结",
+  "- stopLossPrice: number|null，止损具体价位",
+  "- stopLossCondition: string，止损触发条件",
+  "- takeProfitPrice: number|null，止盈具体价位",
+  "- takeProfitCondition: string，止盈触发条件",
+  "- addAllowed: boolean，是否允许加仓",
+  "- addTriggerPrice: number|null，加仓触发价",
+  "- addMaxShares: number|null，加仓最大股数（正整数）",
+  "- addCondition: string，加仓条件说明",
+  "- reduceCondition: string，减仓条件说明",
+  "- suggestedShares: number|null，建议股数（正整数，开新仓时给出）",
+  "- suggestedCheng: number|null，建议成数（0-1 之间小数，如 0.3=三成仓，开新仓时给出）",
+  "- reasoning: string，简短理由，不超过120字",
+  "- risks: string，主要风险，分号分隔",
+  "- dataGaps: string，数据缺失项，分号分隔；无缺失则填空字符串",
+  "输出示例（返回同结构的纯 JSON，值替换为实际数据）：",
+  '{"action":"观望","actionSummary":"暂不开新仓","stopLossPrice":null,"stopLossCondition":"","takeProfitPrice":null,"takeProfitCondition":"","addAllowed":false,"addTriggerPrice":null,"addMaxShares":null,"addCondition":"","reduceCondition":"","suggestedShares":null,"suggestedCheng":null,"reasoning":"示例理由","risks":"示例风险","dataGaps":""}',
   "价格字段若不确定或无法给出则填 null，boolean 字段必填，string 字段必填可为空字符串。整体不超 600 字。",
 ].join("\n");
 
@@ -408,56 +411,6 @@ function validateStructured(
   return warnings;
 }
 
-/* ================================================================ */
-
-function summarizeContext(ctx: AssistantContext): string {
-  const lines: string[] = [];
-  lines.push(`股票：${ctx.stock.name}（${ctx.stock.code}）${ctx.stock.industry ? `，行业：${ctx.stock.industry}` : ""}`);
-  if (ctx.stock.instrumentType === "etf") lines.push("品种：ETF/指数基金（不提供个股买卖建议，策略侧重定投与节奏）");
-  const q = ctx.quote;
-  lines.push(`现价：${q.price.toFixed(3)}元，涨跌幅：${q.changePercent.toFixed(2)}%；20日均线：${q.ma20.toFixed(3)}元`);
-  lines.push(`走势结构：现价相对20日均线${q.price >= q.ma20 ? "之上（短线偏强）" : "之下（短线偏弱）"}；支撑位：${q.support.toFixed(3)}元，阻力位：${q.resistance.toFixed(3)}元，价格距阻力${q.resistance > 0 ? ((q.resistance - q.price) / q.price * 100).toFixed(1) + "%" : "缺失"}，近期波动（年化）：约${q.volatility.toFixed(1)}%`);
-  const f = ctx.financials;
-  const financialsMissing = f.revenueGrowth == null && f.profitGrowth == null && f.debtRatio == null && f.pe == null && f.pb == null && f.roe == null;
-  lines.push(`基本面：营收增长=${f.revenueGrowth ?? "数据缺失"}；利润增长=${f.profitGrowth ?? "数据缺失"}；负债率=${f.debtRatio ?? "数据缺失"}；PE=${f.pe ?? "数据缺失"}；PB=${f.pb ?? "数据缺失"}；ROE=${f.roe ?? "数据缺失"}${financialsMissing ? "（基本面几乎全部缺失，本次判断以技术面为主）" : ""}`);
-  if (ctx.summary) lines.push(`一句话总结：${ctx.summary}`);
-  lines.push(`风险点：${(ctx.risks || []).length ? ctx.risks.join("；") : "无明确列示"}`);
-  lines.push(`还需核验：${(ctx.missingInformation || []).length ? ctx.missingInformation.join("；") : "无"}`);
-  // 量能：输出量比(ratio，当日量/近5日均量通用口径)与量价背离，供模型判断量能，
-  // 不再用"成交量(近20日)"这种易误导的标签。
-  if (ctx.volume) {
-    const v = ctx.volume;
-    const ratioText = v.ratio != null ? v.ratio.toFixed(2) : "数据缺失";
-    const ma5Text = v.ma5 > 0 ? v.ma5.toLocaleString("zh-CN") : "数据缺失";
-    lines.push(`量能：量比=${ratioText}（当日量/近5日均量）；近5日均量=${ma5Text}股；量价背离=${v.divergence ?? "无明显背离"}`);
-  } else {
-    lines.push(`量能：数据缺失`);
-  }
-  const osc = oscillatorTip(ctx);
-  if (osc) lines.push(`摆动指标：${osc}`);
-  if (ctx.position && ctx.portfolio.totalAssets !== null) {
-    const p = ctx.position;
-    const posValue = p.quantity * q.price;
-    const total = ctx.portfolio.totalAssets;
-    // 单股占比优先用已做基准失真保护的 p.stockPositionPercent；若失真（null）则重算并夹取到合理范围，
-    // 避免出现 2010% 这类爆炸值污染 prompt。
-    const rawPct = total > 0 ? (posValue / total) * 100 : 0;
-    const pct = p.stockPositionPercent != null
-      ? p.stockPositionPercent
-      : (Number.isFinite(rawPct) && rawPct > 0 && rawPct <= 100 ? rawPct : 0);
-    const pctText = p.stockPositionPercent != null
-      ? `${pct.toFixed(2)}%${p.stockPositionPercentNote ? `（${p.stockPositionPercentNote}）` : ""}`
-      : (pct > 0 ? `${pct.toFixed(2)}%` : "基准失真，无法计算（请检查账户初始资金/出入金设置）");
-    lines.push(`我的持仓：数量=${p.quantity}股，成本=${p.averageCost.toFixed(3)}元，盈亏=${percent(p.returnPercent)}，占总资产=${pctText}`);
-  } else if (ctx.portfolio.totalAssets !== null) {
-    lines.push(`我的账户：总资产=${ctx.portfolio.totalAssets.toFixed(2)}元，现金=${ctx.portfolio.cash?.toFixed(2) ?? "暂无"}，总仓位=${ctx.portfolio.totalPositionPercent?.toFixed(2) ?? "暂无"}%`);
-  } else {
-    lines.push("我的账户：尚未设置初始资金，无法计算现金和总仓位");
-  }
-  if (ctx.source?.fetchedAt) lines.push(`数据时间：${ctx.source.fetchedAt}`);
-  return lines.join("\n");
-}
-
 function buildTraderSystemPrompt(prefs: TradingPreferences, context: AssistantContext, structured = false): string {
   const base = [
     `你是严厉且资深的操盘手，只看数据、不拍脑袋。风格：直接、强硬、反幻觉；句句落到买卖动作上——开新仓/加仓/持有/减仓/止损/清仓，并给出明确价格与股数/金额，不许用「可以考虑」「或许」这类软话。能算就给数字，不能算就明说缺什么；违背纪律的倾向要直接点破。不承诺收益、不替用户下单，最终由用户确认执行。`,
@@ -473,7 +426,8 @@ function buildTraderSystemPrompt(prefs: TradingPreferences, context: AssistantCo
     `8. 仓位建议必须展示计算：风险每股=max(当前价-支撑线,当前价×3%)；单笔可亏=总资产×max_loss_percent%（这是仓位风险预算，用于反推股数）；止损线另按 max_loss_percent% 占买入价折算（止损价=买入价×(1−max_loss_percent%)，对应亏损 max_loss_percent 个点）。建议股数=单笔可亏÷风险每股，且≤可用现金、单股≤总资产×max_concentration_percent%；成数=建议金额÷总资产。数字只来自 context，缺失如实说明。`,
     `9. 下方的【我的交易纪律与风险偏好】是硬约束，必须优先生效，不得再用固定的 2%/30% 规则；当 enforce_stop_loss=是 时，任何买入动作都必须先给出止损位，跌破即执行。`,
     `10. 【开新仓硬约束（针对未持仓的新标的）】只要用户当前未持有该股，结论必须给出明确的「开新仓」判断——开新仓（买入建仓）/ 暂不开新仓（观望），且不得与「加仓」混淆（加仓只针对已持有标的）。是否开新仓须综合：①账户可用现金是否足以建仓（至少够 1 手并覆盖单笔风险预算）；②当前总仓位是否逼近纪律上限（超过 max_position_percent 或总仓位>80% 则空间不足）；③交易纪律是否放行（买入必须先设止损等）。三者任一不满足即「暂不开新仓」并点明原因；全部满足则给明确买点、建议仓位与止损位。`,
-    `10. 【技术面为主，基本面按实际可得性使用】基本面是否可得一律以下方 context 的「基本面」行实际内容为准，不得预设它一定缺失：凡已给出数值的字段（营收增长/利润增长/负债率/PE/PB/ROE）必须引用并参与判断，不许无视已有数据或笼统宣称「基本面缺失」；只有确实显示「数据缺失」的项才说明该项缺失。K线/成交量/MACD/RSI/KDJ/支撑阻力始终稳定可得，故在基本面确实不足时，以走势结构（均线方向、价格与支撑阻力位置）、量能（放量突破/缩量回调/量价背离）、动能指标（MACD/RSI/KDJ）为主要评判依据，并注明「基本面数据缺失，以下判断以技术面为主」。任何情况下不得编造财务数字。`,
+    `11. 【技术面为主，基本面按实际可得性使用】基本面是否可得一律以下方 context 的「基本面」行实际内容为准，不得预设它一定缺失：凡已给出数值的字段（营收增长/利润增长/负债率/PE/PB/ROE）必须引用并参与判断，不许无视已有数据或笼统宣称「基本面缺失」；只有确实显示「数据缺失」的项才说明该项缺失。K线/成交量/MACD/RSI/KDJ/支撑阻力始终稳定可得，故在基本面确实不足时，以走势结构（均线方向、价格与支撑阻力位置）、量能（放量突破/缩量回调/量价背离）、动能指标（MACD/RSI/KDJ）为主要评判依据，并注明「基本面数据缺失，以下判断以技术面为主」。任何情况下不得编造财务数字。`,
+    `12. 【价位/百分比必须逐字照抄，禁止自算、错位、前后矛盾】context 给出的现价、MA20、支撑、阻力等所有数字，你只能逐字引用到 JSON 字段中（如 MA20=5.34 就写 5.34，绝不允许写成 .335/.34、把 5.60 写成 .60），也不得凭记忆补出 context 没有的数字。stopLossPrice/takeProfitPrice/addTriggerPrice 必须基于 context 的支撑/阻力位得出，禁止凭印象自造。以下判断必须严格基于 context 数值，禁止凭印象：①支撑/阻力在现价上方还是下方，用 context 的现价与支撑/阻力数值比较得出（现价<支撑=支撑在上方，现价>支撑=支撑在下方），不得反说；②止损亏损百分比必须与止损价-现价的关系自洽；③任何 JSON 数值字段与前文不一致或与 context 矛盾都是硬违规。`,
     `【反幻觉示例】用户问「茅台 PE 多少、能买吗」而 pe=数据缺失 → 正确回答：「数据缺失：本次没取到 PE，我不凭记忆补数。能不能买看你的仓位和计划，先把账户资金补全、设好止损再谈。」`,
     `【数字格式硬约束】所有金额、价格、百分比、仓位一律用阿拉伯数字 + 单位呈现（如 ¥344.96、16.27%、仓位 12.3%），严禁使用中文大写数字（如「叁佰肆拾肆元玖角陆分」「贰拾点壹零百分比」「壹仟股」）。数字直接写在正文里，不要额外念成中文大写，也不要把「%」「元」替换成中文读法。`,
     `【我的交易纪律与风险偏好，必须优先遵守，替代任何固定百分比】`,
@@ -626,7 +580,14 @@ export async function generateStrategy(
     const response = await fetch(`${ai.apiBase}/chat/completions`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${ai.apiKey}` },
-      body: JSON.stringify({ model: ai.model, messages }),
+      body: JSON.stringify({
+        model: ai.model,
+        messages,
+        // 结构化 JSON 输出强制：配合 prompt 中的 JSON 格式硬约束，API 层面保证返回纯 JSON
+        response_format: { type: "json_object" },
+        // 结构化策略输出需要低随机性，保证价格/股数等数值稳定
+        temperature: 0.2,
+      }),
       signal: AbortSignal.timeout(20000),
     });
     if (!response.ok) throw new Error(`AI error ${response.status}`);

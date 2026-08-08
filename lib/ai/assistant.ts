@@ -426,6 +426,7 @@ export function summarizeContext(ctx: AssistantContext, serverHoldingsText?: str
   const f = ctx.financials;
   const lines = [
     `股票：${s.name}(${s.code})，类型=${s.instrumentType}，行业=${s.industry ?? "未知"}`,
+    ...(s.instrumentType === "etf" ? ["品种：ETF/指数基金（不提供个股买卖建议，策略侧重定投与节奏）"] : []),
     `行情时间：${q.marketTime ?? "未提供"}`,
     `当前价=${q.price.toFixed(3)}元，涨跌幅=${q.changePercent.toFixed(2)}%，MA20=${q.ma20.toFixed(3)}元`,
     `走势结构：现价相对MA20${q.price >= q.ma20 ? "之上（短线偏强）" : "之下（短线偏弱）"}；支撑=${q.support.toFixed(3)}元，阻力=${q.resistance.toFixed(3)}元，价格相对阻力距离=${q.resistance > 0 ? (((q.resistance - q.price) / q.price) * 100).toFixed(1) + "%" : "缺失"}，近20日平均波动=${q.volatility.toFixed(2)}%`,
