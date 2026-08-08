@@ -72,6 +72,24 @@ export function removeCache(key: string): void {
   }
 }
 
+/**
+ * 清空全部应用缓存（aistock: 前缀）。
+ * 用于退出登录时彻底抹除本地行情/分析等数据，避免不同账号间残留。
+ */
+export function clearAllAppCache(): void {
+  if (!isClient()) return;
+  try {
+    const targets: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (key && key.startsWith(PREFIX)) targets.push(key);
+    }
+    for (const key of targets) window.localStorage.removeItem(key);
+  } catch {
+    /* ignore */
+  }
+}
+
 /** 按前缀删除缓存项（如清空 assistant:{userId}:* 对话历史） */
 export function removeCacheByPrefix(prefix: string): void {
   if (!isClient()) return;

@@ -601,7 +601,9 @@ export function ConfirmDialog({
   message,
   confirmLabel = "确认",
   cancelLabel = "取消",
+  confirmLoadingLabel,
   tone = "primary",
+  loading = false,
   onConfirm,
   onCancel,
 }: {
@@ -611,7 +613,9 @@ export function ConfirmDialog({
   message?: ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
+  confirmLoadingLabel?: string;
   tone?: "primary" | "danger" | "warn";
+  loading?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -620,19 +624,26 @@ export function ConfirmDialog({
     <Modal
       eyebrow={eyebrow}
       title={title}
-      onClose={onCancel}
+      onClose={loading ? undefined : onCancel}
       size="sm"
       footer={
         <div className="modal__footer-actions">
-          <button type="button" className="btn btn--ghost" onClick={onCancel}>
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={onCancel}
+            disabled={loading}
+          >
             {cancelLabel}
           </button>
           <button
             type="button"
             className={`btn ${tone === "danger" ? "btn--danger" : tone === "warn" ? "btn--warn" : "btn--primary"}`}
             onClick={onConfirm}
+            disabled={loading}
+            aria-busy={loading}
           >
-            {confirmLabel}
+            {loading ? (confirmLoadingLabel ?? "处理中…") : confirmLabel}
           </button>
         </div>
       }

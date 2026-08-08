@@ -95,7 +95,7 @@ import {
   type TradeModeInfo,
 } from "../../lib/utils/trade-mode";
 import { formatDateTimeShanghai } from "../../lib/utils/time";
-import { readCache, writeCache, removeCache, removeCacheByPrefix, readKeyedCacheWithMeta, writeKeyedCache } from "../../lib/utils/client-cache";
+import { readCache, writeCache, removeCache, removeCacheByPrefix, readKeyedCacheWithMeta, writeKeyedCache, clearAllAppCache } from "../../lib/utils/client-cache";
 import { planRefresh, recordQuota, useMairuiQuota, isRealtimeWindow } from "../../lib/market/mairui-quota";
 import SmartAssistant, { buildAnalysisContext } from "../components/SmartAssistant";
 
@@ -408,6 +408,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   const [reviewCycleEndTradeId, setReviewCycleEndTradeId] = useState<number | null>(null);
   const [settingsSection, setSettingsSection] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [quotaPanelOpen, setQuotaPanelOpen] = useState(false);
   const { quota, reset: resetQuotaCounter } = useMairuiQuota();
   const [loading, setLoading] = useState(true);
@@ -1187,7 +1188,12 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 </div>
               </div>
             )}
-            <button className="account-button" onClick={() => setConfirming("logout")} title={`当前账号：${user.email}`}>
+            <button
+              className="account-button"
+              onClick={() => setConfirming("logout")}
+              title={`当前账号：${user.email}`}
+              disabled={loggingOut}
+            >
               <span className="avatar">{(user.displayName || "?").slice(0, 1).toUpperCase()}</span>
               <b>{user.displayName}</b>
               <LogOut size={15} aria-label="退出" />
@@ -1393,14 +1399,23 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
         open={confirming === "logout"}
         eyebrow="确认操作"
         title="退出登录？"
-        message="退出后需要重新登录才能使用。确定要退出吗？"
+        message={`将退出账号「${user.displayName || user.email}」，并清除本设备上的行情快照与历史分析缓存，避免其他账号看到你的数据。确定要退出吗？`}
         confirmLabel="确认退出"
+        confirmLoadingLabel="正在退出…"
         tone="danger"
+        loading={loggingOut}
         onCancel={() => setConfirming(null)}
-        onConfirm={() => {
-          // 退出登录时清空本地行情/最近分析缓存，避免不同账号间数据残留
-          removeCache("quotes");
-          removeCache("recent");
+        onConfirm={async () => {
+          if (loggingOut) return;
+          setLoggingOut(true);
+          // 退出登录时清空全部本地缓存，避免不同账号间数据残留
+          clearAllAppCache();
+          try {
+            // 先显式请求登出接口清除服务端会话 cookie（接收 set-cookie）
+            await fetch(signOutUrl, { method: "GET", credentials: "same-origin" });
+          } catch {
+            // 即便请求失败也继续跳转，硬跳转仍会经 303 到 /login 并重设 cookie
+          }
           window.location.href = signOutUrl;
         }}
       />
