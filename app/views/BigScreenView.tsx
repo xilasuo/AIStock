@@ -1822,6 +1822,7 @@ export function BigScreenView() {
                 analysis={null}
                 position={null}
                 portfolioInsights={insights}
+                title="AI 助手"
                 compact
                 linkedStock={klinePick ? {
                   code: klinePick.code,

@@ -321,6 +321,7 @@ export default function SmartAssistant(
     userId,
     onFetchStock,
     linkedStock,
+    title,
     onFocusStock,
   }: {
     analysis: Analysis | null;
@@ -351,6 +352,8 @@ export default function SmartAssistant(
     } | null;
     /** 大屏联动：让 K 线主图跳到指定股票（AI 回答或用户点选时触发） */
     onFocusStock?: (code: string, name: string) => void;
+    /** 面板标题（默认按 analysis.stock.name 或 "账户总览" 回退；大屏可传 "AI 助手" 覆盖） */
+    title?: string;
   },
 ) {
   const [question, setQuestion] = useState("");
@@ -652,7 +655,7 @@ export default function SmartAssistant(
     }]);
   }
 
-  const targetLabel = analysis?.stock.name ?? "账户总览";
+  const targetLabel = title ?? analysis?.stock.name ?? "账户总览";
   const prompts = analysis
     ? (position
       ? ["这只仓位还能加吗？", "结合我的成本怎么看？", "主要风险是什么？"]
