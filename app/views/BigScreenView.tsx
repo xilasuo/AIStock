@@ -423,7 +423,7 @@ export function BigScreenView() {
   const [stealth, setStealth] = useState(false);
   const prefsRef = useRef<Record<string, unknown> | null>(null);
   // 交易偏好（含 riskProfile/tradeMode/maxLossPercent 等），用于风险预警按用户设置判断与档位展示。
-  const [prefs, setPrefs] = useState<{ riskProfile?: string; tradeMode?: string; maxLossPercent?: number; maxConcentrationPercent?: number; maxPositionPercent?: number; enforceStopLoss?: boolean; stealthMode?: boolean } | null>(null);
+  const [prefs, setPrefs] = useState<{ riskProfile?: string; tradeMode?: string; maxLossPercent?: number; maxConcentrationPercent?: number; maxPositionPercent?: number; enforceStopLoss?: boolean; stealthMode?: boolean; quickPrompts?: string[] } | null>(null);
 
   // 客户端挂载门控：BigScreenView 含实时时钟/行情/持仓等大量随渲染时刻变化的文本，
   // SSR 阶段（服务器时刻）与客户端水合（浏览器时刻）极易产生文本不一致，
@@ -667,6 +667,9 @@ export function BigScreenView() {
           maxPositionPercent: typeof prefs.maxPositionPercent === "number" ? prefs.maxPositionPercent : undefined,
           enforceStopLoss: typeof prefs.enforceStopLoss === "boolean" ? prefs.enforceStopLoss : undefined,
           stealthMode: !!prefs.stealthMode,
+          quickPrompts: Array.isArray(prefs.quickPrompts)
+            ? prefs.quickPrompts.filter((x): x is string => typeof x === "string" && x.length > 0)
+            : undefined,
         });
         const on = !!prefs.stealthMode;
         setStealth(on);

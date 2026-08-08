@@ -1387,6 +1387,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
         fetchAnalysis={fetchAnalysis}
         quotes={quotes}
         userId={user.id}
+        quickPrompts={preferences?.quickPrompts}
       />
       <ConfirmDialog
         open={confirming === "logout"}
@@ -2625,7 +2626,7 @@ function StrategyCard({ analysis, position, portfolioInsights }: {
 
 
 function FloatingAssistantLauncher(
-  { open, onToggle, analysis, position, portfolioInsights, portfolio, watchlist, recentAnalyses, fetchAnalysis, quotes, userId }: {
+  { open, onToggle, analysis, position, portfolioInsights, portfolio, watchlist, recentAnalyses, fetchAnalysis, quotes, userId, quickPrompts }: {
     open: boolean;
     onToggle: () => void;
     analysis: Analysis | null;
@@ -2638,6 +2639,8 @@ function FloatingAssistantLauncher(
     /** 页面最新行情快照（每分钟轻量刷新），透传给 SmartAssistant 覆盖旧快照 */
     quotes: Record<string, QuoteEntry>;
     userId?: string | number;
+    /** 用户自定义快捷词条 */
+    quickPrompts?: string[];
   },
 ) {
   // 浮窗内关联的股票分析（与主页面 analysis 解耦，不影响主页视图）
@@ -2828,7 +2831,7 @@ function FloatingAssistantLauncher(
             portfolioInsights={portfolioInsights}
             quotes={quotes}
             userId={userId}
-            quickPrompts={preferences?.quickPrompts}
+            quickPrompts={quickPrompts}
             onClose={onToggle}
             headerSlot={linkerSlot}
             onFetchStock={onFetchStock}
@@ -2849,7 +2852,7 @@ function FloatingAssistantLauncher(
             portfolioInsights={portfolioInsights}
             quotes={quotes}
             userId={userId}
-            quickPrompts={preferences?.quickPrompts}
+            quickPrompts={quickPrompts}
             onClose={onToggle}
             headerSlot={linkerSlot}
             onFetchStock={onFetchStock}

@@ -33,7 +33,7 @@ export const DEFAULT_FEE_SETTINGS = {
 
 // maxLossPercent 语义统一为「占买入价 % 的止损线」：买入未填最大亏损时，
 // 自动以 买入价 ×(1 − maxLossPercent%) 建立止损提醒。
-export const RISK_PRESETS: Record<RiskProfile, Omit<TradingPreferences, "tradeMode" | "disciplineNote" | "commissionRateTenThousandths" | "minCommissionCents">> = {
+export const RISK_PRESETS: Record<RiskProfile, Omit<TradingPreferences, "tradeMode" | "disciplineNote" | "commissionRateTenThousandths" | "minCommissionCents" | "quickPrompts">> = {
   保守: { riskProfile: "保守", maxLossPercent: 2, maxConcentrationPercent: 15, maxPositionPercent: 50, enforceStopLoss: true, stealthMode: false },
   平衡: { riskProfile: "平衡", maxLossPercent: 3, maxConcentrationPercent: 30, maxPositionPercent: 70, enforceStopLoss: true, stealthMode: false },
   激进: { riskProfile: "激进", maxLossPercent: 6, maxConcentrationPercent: 50, maxPositionPercent: 90, enforceStopLoss: true, stealthMode: false },
@@ -97,8 +97,16 @@ export function normalizePreferences(row: PreferencesInput | undefined | null): 
   };
 }
 
-/** 解析 quickPrompts JSON 字符串 → string[]，非法值回退空数组（用内置默认） */
+/** 解析 quickPrompts → string[]，兼容两种来源：
+ *  - DB 读取：JSON 字符串（如 '["总仓位是多少？"]'）
+ *  - 前端 PUT 提交：已是 string[]（normalizePreferences 入参为 Partial<TradingPreferences>）
+ *  非法值回退空数组（用内置默认） */
 function parseQuickPrompts(raw: unknown): string[] {
+  // 前端直接提交数组（PUT body 里 quickPrompts 已是 string[]）
+  if (Array.isArray(raw)) {
+    return raw.filter((x): x is string => typeof x === "string" && x.length > 0).slice(0, 8);
+  }
+  // DB 行：JSON 字符串
   if (typeof raw !== "string" || !raw) return [];
   try {
     const arr = JSON.parse(raw);

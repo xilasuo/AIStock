@@ -37,7 +37,7 @@ export async function PUT(request: NextRequest) {
     const updatedAt = shanghaiIso();
     await db
       .insert(tradingPreferences)
-      .values({ userId: user.id, ...next, updatedAt })
+      .values({ userId: user.id, ...next, quickPrompts: JSON.stringify(next.quickPrompts ?? []), updatedAt })
       .onConflictDoUpdate({
         target: tradingPreferences.userId,
         set: {

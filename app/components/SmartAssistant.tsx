@@ -666,8 +666,8 @@ export default function SmartAssistant(
     : ["总仓位是多少？", "还能加多少现金？", "账户整体收益如何？"];
   const prompts = customPrompts && customPrompts.length > 0 ? customPrompts : defaultPrompts;
 
-  // 仅在尚未正式对话 / 正在等待回答时展示提示问题，避免反复出现打扰阅读
-  const showPrompts = primed && (asking || messages.filter((m) => m.role === "user").length === 0);
+  // 只要组件就绪就展示快捷提问（贴底在输入框上方，不干扰阅读消息）
+  const showPrompts = primed;
 
   return (
     <section className={`sa${floating ? " sa--floating" : ""}${page ? " sa--page" : ""}${compact ? " sa--compact" : ""}`}>
