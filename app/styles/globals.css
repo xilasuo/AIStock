@@ -5491,10 +5491,13 @@ svg { display: block; }
   box-shadow: var(--shadow-raised);
   display: flex;
   flex-direction: column;
-  margin: auto;
+  left: 50%;
   max-height: min(640px, calc(100dvh - 48px));
   max-width: 680px;
   overflow: auto;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
   width: 100%;
 }
 
@@ -6101,7 +6104,7 @@ svg { display: block; }
     padding: 4px 2px;
   }
   .mobile-nav button svg { width: 18px; height: 18px; }
-  .modal-backdrop { align-items: flex-end; padding: 8px; }
+  .modal-backdrop { padding: 8px; }
   .modal { border-radius: var(--radius-card) var(--radius-card) 8px 8px; max-height: calc(100dvh - 16px); }
   .login-page { padding: 14px; }
   .login-card { grid-template-columns: 1fr; max-width: 520px; }
@@ -7230,18 +7233,25 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
   .card__header { flex-direction: column; }
 }
 @media (max-width: 560px) {
-  .modal-backdrop { align-items: flex-end; padding: 0; }
+  .modal-backdrop { padding: 0; }
   .modal {
     border-radius: 18px 18px 0 0;
+    bottom: 0;
+    left: 0;
     max-height: 92dvh;
     max-width: 100% !important;
+    top: auto;
+    transform: none;
   }
   .modal--confirm {
-    align-self: center;
     border-radius: var(--radius-card);
-    margin: auto 14px;
+    bottom: auto;
+    left: 50%;
+    margin: 0 14px;
     max-height: min(420px, calc(100dvh - 28px));
     max-width: 420px;
+    top: 50%;
+    transform: translate(-50%, -50%);
   }
   .modal--confirm .modal__body,
   .modal--confirm .modal__footer { padding-left: 22px; padding-right: 22px; }
