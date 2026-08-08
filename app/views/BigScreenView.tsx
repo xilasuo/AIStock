@@ -1818,22 +1818,6 @@ export function BigScreenView() {
               )}
             </div>
             <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: 0, flex: 6, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-              {/* AI 助手生效档位条：明示当前风险偏好 + 操作模式，确认 AI 按用户设置约束作答 */}
-              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderBottom: `0.5px solid ${BORDER}`, fontSize: 12, color: MUTED, flexShrink: 0 }}>
-                <span style={{ color: TEXT, fontWeight: 600 }}>AI 助手约束</span>
-                {prefs ? (
-                  <>
-                    <span style={{ padding: "1px 8px", borderRadius: 999, background: "rgba(59,130,246,.15)", color: "#60a5fa", border: "0.5px solid rgba(59,130,246,.35)" }}>
-                      {riskProfileLabel(prefs.riskProfile)}档
-                    </span>
-                    <span style={{ padding: "1px 8px", borderRadius: 999, background: "rgba(168,85,247,.15)", color: "#c084fc", border: "0.5px solid rgba(168,85,247,.35)" }}>
-                      {TRADE_MODE_LABELS[resolveTradeMode(prefs.tradeMode)]}模式
-                    </span>
-                  </>
-                ) : (
-                  <span style={{ marginLeft: "auto", color: MUTED }}>读取设置中…</span>
-                )}
-              </div>
               <SmartAssistant
                 analysis={null}
                 position={null}
