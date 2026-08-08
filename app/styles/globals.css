@@ -5474,12 +5474,11 @@ svg { display: block; }
 }
 
 .modal-backdrop {
-  align-items: center;
   background: rgba(7, 10, 13, .7);
-  display: flex;
+  display: grid;
   inset: 0;
-  justify-content: center;
   padding: 20px;
+  place-items: center;
   position: fixed;
   z-index: 100;
 }
@@ -5491,13 +5490,11 @@ svg { display: block; }
   box-shadow: var(--shadow-raised);
   display: flex;
   flex-direction: column;
-  left: 50%;
+  margin: auto;
   max-height: min(640px, calc(100dvh - 48px));
   max-width: 680px;
   overflow: auto;
-  position: absolute;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  position: relative;
   width: 100%;
 }
 
@@ -7233,25 +7230,19 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
   .card__header { flex-direction: column; }
 }
 @media (max-width: 560px) {
-  .modal-backdrop { padding: 0; }
+  .modal-backdrop { padding: 0; place-items: end center; }
   .modal {
     border-radius: 18px 18px 0 0;
-    bottom: 0;
-    left: 0;
+    margin: 0;
     max-height: 92dvh;
     max-width: 100% !important;
-    top: auto;
-    transform: none;
   }
   .modal--confirm {
     border-radius: var(--radius-card);
-    bottom: auto;
-    left: 50%;
     margin: 0 14px;
     max-height: min(420px, calc(100dvh - 28px));
     max-width: 420px;
-    top: 50%;
-    transform: translate(-50%, -50%);
+    place-self: center;
   }
   .modal--confirm .modal__body,
   .modal--confirm .modal__footer { padding-left: 22px; padding-right: 22px; }
