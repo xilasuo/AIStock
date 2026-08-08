@@ -25,12 +25,12 @@ class WestockConnector(MCPConnector):
         headers = {}
         if token:
             headers["Authorization"] = f"Bearer {token}"
-        # 高层方法 -> 实际工具名（兼容不同 westock-mcp 命名）
+        # 高层方法 -> 实际工具名（对齐 WorkBuddy 托管的 westock-mcp 真实工具名）
         default_map = {
-            "search": "search_stock",
-            "get_quote": "get_stock_quote",
-            "get_kline": "get_stock_kline",
-            "get_finance": "get_finance",
+            "search": "data_search",
+            "get_quote": "data_quote",
+            "get_kline": "data_kline",
+            "get_finance": "data_finance",
         }
         super().__init__(
             endpoint,

@@ -35,28 +35,43 @@ class ConnectorHub:
 
     # ---------- 数据路由 ----------
     def request_kline(self, code: str, beg: str, end: str) -> list[dict]:
-        if self.tdx.enabled and self.tdx.has_tool("stock_kline"):
+        # 能力探测（has_tool）可能触发网络握手，包一层避免探测失败中断回退路径
+        try:
+            tdx_ok = self.tdx.enabled and self.tdx.has_tool("stock_kline")
+        except Exception:  # noqa: BLE001
+            tdx_ok = False
+        if tdx_ok:
             try:
                 # tdx 需要 market(0=深,1=沪) + 纯数字代码；解析失败则回退直连
                 market = 1 if code.startswith(("6", "9")) else 0
                 raw = self.tdx.stock_kline(market=market, code=code, period=4)
                 parsed = self._try_parse_kline(raw)
-                if parsed:
+                # 校验确为 K 线（含 date 字段），否则回退，避免把畸形数据喂引擎
+                if parsed and all(isinstance(b, dict) and b.get("date") for b in parsed):
                     return parsed
             except Exception as e:  # noqa: BLE001
                 print(f"[bridge] tdx kline 失败，回退直连: {e}")
-        if self.westock.enabled and self.westock.has_tool("get_kline"):
+
+        try:
+            westock_ok = self.westock.enabled and self.westock.has_tool("get_kline")
+        except Exception:  # noqa: BLE001
+            westock_ok = False
+        if westock_ok:
             try:
                 raw = self.westock.get_kline(code)
                 parsed = self._try_parse_kline(raw)
-                if parsed:
+                if parsed and all(isinstance(b, dict) and b.get("date") for b in parsed):
                     return parsed
             except Exception as e:  # noqa: BLE001
                 print(f"[bridge] westock kline 失败，回退直连: {e}")
         return provider.fetch_kline(code, beg, end)
 
     def request_quote(self, code: str) -> dict:
-        if self.westock.enabled and self.westock.has_tool("get_quote"):
+        try:
+            westock_ok = self.westock.enabled and self.westock.has_tool("get_quote")
+        except Exception:  # noqa: BLE001
+            westock_ok = False
+        if westock_ok:
             try:
                 raw = self.westock.get_quote(code)
                 parsed = self._try_parse_quote(raw)
@@ -73,7 +88,12 @@ class ConnectorHub:
         signals: [{"code","side","price","quantity"}]
         返回每笔的执行回执（含 dry_run 标记）。
         """
-        if not self.tdx.enabled or not self.tdx.has_tool("place_order"):
+        # 能力探测（has_tool）可能触发网络握手，包一层避免探测失败中断回写流程
+        try:
+            tdx_ok = self.tdx.enabled and self.tdx.has_tool("place_order")
+        except Exception:  # noqa: BLE001
+            tdx_ok = False
+        if not tdx_ok:
             print("[bridge] 无可用 tdx 交易接口，跳过回写")
             return []
         receipts = []
@@ -121,7 +141,10 @@ class ConnectorHub:
         try:
             obj = __import__("json").loads(raw)
             if isinstance(obj, dict):
-                return obj
+                # westock-mcp 返回 {ok,data,message}；只接受含必要字段的行情对象，
+                # 否则视为不可用、回退直连（避免残缺/错误数据污染引擎打分）。
+                if obj.get("price") is not None or obj.get("close") is not None or obj.get("name"):
+                    return obj
         except Exception:  # noqa: BLE001
             return {}
         return {}

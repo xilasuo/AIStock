@@ -139,6 +139,7 @@ class MCPConnector:
         self.enabled = bool(endpoint) and enabled
         self._client: Optional[MCPHTTPClient] = None
         self._tools: dict = {}
+        self._connect_failed: bool = False  # 端点不可达后置位，本次会话内不再重试
         self.tool_map = tool_map or {}
         self._extra_headers = headers or {}
 
@@ -148,18 +149,28 @@ class MCPConnector:
         return self._client
 
     def connect(self) -> dict:
-        if not self.enabled:
+        if not self.enabled or self._connect_failed:
             return {}
         if not self._tools:
-            self._client_for().initialize()
-            r = self._client_for().list_tools()
-            self._tools = {t["name"]: t for t in r.get("result", {}).get("tools", [])}
+            try:
+                self._client_for().initialize()
+                r = self._client_for().list_tools()
+                self._tools = {t["name"]: t for t in r.get("result", {}).get("tools", [])}
+            except Exception as e:  # noqa: BLE001
+                # 端点不可达 / 网络异常 / 鉴权失败：本次会话降级为不可用，
+                # 后续 has_tool / call 直接走兜底直连，避免每次请求都重连并报错。
+                self._connect_failed = True
+                self.enabled = False
+                print(f"[mcp] 连接器 {self.name} 连接失败，已降级直连: {type(e).__name__}: {e}")
         return self._tools
 
     def has_tool(self, method: str) -> bool:
         if not self.enabled:
             return False
-        self.connect()
+        try:
+            self.connect()
+        except Exception:  # noqa: BLE001
+            return False
         return self._resolve(method) in self._tools
 
     def _resolve(self, method: str) -> str:
