@@ -63,7 +63,7 @@ type DetailData = {
   note?: string;
 };
 
-const PIE_COLORS = ["#ff4d6d", "#00e5ff", "#b98cff", "#21e6a4", "#ffc24d", "#5cc8ff", "#ff8a7a", "#34d399"];
+const PIE_COLORS = ["var(--up)", "var(--chart-1)", "var(--chart-7)", "var(--down)", "var(--chart-4)", "var(--chart-3)", "var(--chart-6)", "var(--chart-5)"];
 const UP = "var(--up)";
 const DOWN = "var(--down)";
 const BG = "var(--bg)";
@@ -73,7 +73,7 @@ const TEXT = "var(--text)";
 const MUTED = "var(--muted)";
 const BRIGHT = "var(--accent)";
 const ACCENT = "var(--accent)";
-const CHART = "var(--up)";
+const CHART = "var(--chart-1)";
 const RING_R = 9;
 
 /**
@@ -126,7 +126,7 @@ function RealtimeClock({ refreshMs, lastLoadAt }: { refreshMs: number; lastLoadA
         {live ? (
           <>
             <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden>
-              <circle cx="11" cy="11" r={RING_R} fill="none" stroke="rgba(34,211,238,.16)" strokeWidth="2.5" />
+              <circle cx="11" cy="11" r={RING_R} fill="none" stroke="var(--accent-soft)" strokeWidth="2.5" />
               <circle
                 cx="11"
                 cy="11"
@@ -329,6 +329,25 @@ function smoothPath(points: Array<{ x: number; y: number }>): string {
 function heatColor(changePercent: number): string {
   const intensity = Math.min(Math.abs(changePercent) / 3, 1);
   const alpha = 0.12 + intensity * 0.5;
+  // 涨用 up 色系，跌用 down 色系；这里依赖 CSS 变量在运行时被内联样式解析。
+  // 由于这些颜色用于 background style 属性，需要在运行时读取 CSS 变量值。
+  if (typeof window !== "undefined") {
+    const upColor = getComputedStyle(document.documentElement).getPropertyValue("--up").trim() || "255,107,107";
+    const downColor = getComputedStyle(document.documentElement).getPropertyValue("--down").trim() || "45,212,191";
+    // CSS 变量可能是 #hex 格式，需要转为 r,g,b
+    const hexToRgb = (hex: string): string => {
+      const h = hex.replace("#", "");
+      if (h.length === 6) {
+        const r = parseInt(h.slice(0, 2), 16);
+        const g = parseInt(h.slice(2, 4), 16);
+        const b = parseInt(h.slice(4, 6), 16);
+        return `${r},${g},${b}`;
+      }
+      return hex; // fallback
+    };
+    const rgb = changePercent >= 0 ? hexToRgb(upColor) : hexToRgb(downColor);
+    return `rgba(${rgb},${alpha.toFixed(2)})`;
+  }
   return changePercent >= 0 ? `rgba(255,107,107,${alpha.toFixed(2)})` : `rgba(45,212,191,${alpha.toFixed(2)})`;
 }
 
@@ -1213,8 +1232,8 @@ export function BigScreenView() {
               onClick={() => setAiOpen(true)}
               className="interactive bs-panel"
               style={{
-                background: "rgba(0,229,255,.10)",
-                border: "0.5px solid rgba(0,229,255,.4)",
+                background: "var(--bs-accent-bg)",
+                border: "0.5px solid var(--bs-accent-border)",
                 color: ACCENT,
                 borderRadius: 999,
                 padding: "4px 12px",
@@ -1229,7 +1248,7 @@ export function BigScreenView() {
         </header>
 
         {error && (
-          <div style={{ background: "rgba(255,107,107,.12)", border: "0.5px solid rgba(255,107,107,.4)", color: "#ffb4b4", borderRadius: 10, padding: "8px 14px", fontSize: 12, marginBottom: 10 }}>
+          <div style={{ background: "var(--bs-error-bg)", border: "0.5px solid var(--bs-error-border)", color: "var(--bs-error-text)", borderRadius: 10, padding: "8px 14px", fontSize: 12, marginBottom: 10 }}>
             部分数据读取失败：{error}（实时时段将自动重试）
           </div>
         )}
@@ -1237,8 +1256,8 @@ export function BigScreenView() {
         <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, marginBottom: 12, alignItems: "center", width: "100%" }}>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
             {riskAlerts.length === 0 ? (
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(45,212,191,.10)", border: "0.5px solid rgba(45,212,191,.35)", color: "#9ff0e2", borderRadius: 10, padding: "7px 14px", fontSize: 12.5 }}>
-              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#2dd4bf", display: "inline-block" }} />
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "var(--bs-safe-bg)", border: "0.5px solid var(--bs-safe-border)", color: "var(--bs-safe-text)", borderRadius: 10, padding: "7px 14px", fontSize: 12.5 }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--bs-safe-dot)", display: "inline-block" }} />
               风险可控 · 无显著预警
             </div>
           ) : (
@@ -1363,7 +1382,7 @@ export function BigScreenView() {
                         fontFamily: "var(--font-mono)",
                         padding: "5px 0",
                         cursor: "pointer",
-                        background: active ? "rgba(0,229,255,.08)" : "transparent",
+                        background: active ? "var(--bs-accent-bg-hover)" : "transparent",
                         borderRadius: 4,
                       }}
                     >
@@ -1420,8 +1439,8 @@ export function BigScreenView() {
                           display: "flex",
                           alignItems: "center",
                           gap: 5,
-                          background: "rgba(0,229,255,.10)",
-                          border: "0.5px solid rgba(0,229,255,.4)",
+                          background: "var(--bs-accent-bg)",
+                          border: "0.5px solid var(--bs-accent-border)",
                           color: ACCENT,
                           borderRadius: 999,
                           padding: "3px 12px",
@@ -1440,8 +1459,8 @@ export function BigScreenView() {
                           onClick={() => setShowAssetCurve(false)}
                           className="interactive bs-panel"
                           style={{
-                            background: "rgba(0,229,255,.10)",
-                            border: "0.5px solid rgba(0,229,255,.4)",
+                            background: "var(--bs-accent-bg)",
+                            border: "0.5px solid var(--bs-accent-border)",
                             color: ACCENT,
                             borderRadius: 999,
                             padding: "3px 12px",
@@ -1459,8 +1478,8 @@ export function BigScreenView() {
                           onClick={() => setShowAssetCurve(true)}
                           className="interactive bs-panel"
                           style={{
-                            background: "rgba(0,229,255,.10)",
-                            border: "0.5px solid rgba(0,229,255,.4)",
+                            background: "var(--bs-accent-bg)",
+                            border: "0.5px solid var(--bs-accent-border)",
                             color: ACCENT,
                             borderRadius: 999,
                             padding: "3px 12px",
@@ -1488,18 +1507,18 @@ export function BigScreenView() {
                 >
                   <defs>
                     <linearGradient id="assetFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="rgba(255,107,107,.22)" />
-                      <stop offset="100%" stopColor="rgba(255,107,107,0)" />
+                      <stop offset="0%" stopColor="var(--bs-chart-area)" />
+                      <stop offset="100%" stopColor="transparent" />
                     </linearGradient>
                   </defs>
-                  <line x1={CHART_PAD} y1={CHART_PAD} x2={CHART_W - CHART_PAD} y2={CHART_PAD} stroke="rgba(255,255,255,.06)" strokeWidth="0.5" strokeDasharray="2 3" />
-                  <line x1={CHART_PAD} y1={CHART_H / 2} x2={CHART_W - CHART_PAD} y2={CHART_H / 2} stroke="rgba(255,255,255,.06)" strokeWidth="0.5" strokeDasharray="2 3" />
-                  <line x1={CHART_PAD} y1={CHART_H - CHART_PAD} x2={CHART_W - CHART_PAD} y2={CHART_H - CHART_PAD} stroke="rgba(255,255,255,.06)" strokeWidth="0.5" strokeDasharray="2 3" />
+                  <line x1={CHART_PAD} y1={CHART_PAD} x2={CHART_W - CHART_PAD} y2={CHART_PAD} stroke="var(--kline-grid)" strokeWidth="0.5" strokeDasharray="2 3" />
+                  <line x1={CHART_PAD} y1={CHART_H / 2} x2={CHART_W - CHART_PAD} y2={CHART_H / 2} stroke="var(--kline-grid)" strokeWidth="0.5" strokeDasharray="2 3" />
+                  <line x1={CHART_PAD} y1={CHART_H - CHART_PAD} x2={CHART_W - CHART_PAD} y2={CHART_H - CHART_PAD} stroke="var(--kline-grid)" strokeWidth="0.5" strokeDasharray="2 3" />
                   <path d={chart.smoothArea} fill="url(#assetFill)" />
-                  <path d={chart.smoothLine} fill="none" stroke="rgba(255,107,107,.22)" strokeWidth="5" strokeLinecap="round" />
+                  <path d={chart.smoothLine} fill="none" stroke="var(--bs-chart-line)" strokeWidth="5" strokeLinecap="round" />
                   <path d={chart.smoothLine} fill="none" stroke={CHART} strokeWidth="1.6" strokeLinecap="round" />
                   <circle cx={chart.pts[chart.pts.length - 1].x} cy={chart.pts[chart.pts.length - 1].y} r="3.5" fill={CHART} />
-                  <circle cx={chart.pts[chart.pts.length - 1].x} cy={chart.pts[chart.pts.length - 1].y} r="6.5" fill="none" stroke="rgba(0,229,255,.35)" strokeWidth="1" />
+                  <circle cx={chart.pts[chart.pts.length - 1].x} cy={chart.pts[chart.pts.length - 1].y} r="6.5" fill="none" stroke="var(--bs-chart-crosshair)" strokeWidth="1" />
                   {curveIdx !== null && (
                     <g pointerEvents="none">
                       <line
@@ -1507,7 +1526,7 @@ export function BigScreenView() {
                         y1={0}
                         x2={chart.pts[curveIdx].x}
                         y2={CHART_H}
-                        stroke="rgba(0,229,255,.45)"
+                        stroke="var(--bs-chart-crosshair)"
                         strokeWidth="0.5"
                         strokeDasharray="3 2"
                       />
@@ -1515,8 +1534,8 @@ export function BigScreenView() {
                         cx={chart.pts[curveIdx].x}
                         cy={chart.pts[curveIdx].y}
                         r="4.5"
-                        fill="var(--accent)"
-                        stroke="#060b14"
+                        fill="var(--bs-chart-cursor)"
+                        stroke="var(--bg)"
                         strokeWidth="1"
                       />
                     </g>
@@ -1589,7 +1608,7 @@ export function BigScreenView() {
                     marginLeft: "-8px",
                     borderBottom: "0.5px solid rgba(22,78,99,.55)",
                     borderLeft: active ? "2px solid var(--accent)" : "2px solid transparent",
-                    background: active ? "rgba(0,229,255,.06)" : undefined,
+                    background: active ? "var(--bs-accent-bg-active)" : undefined,
                   }}
                 >
                     <span style={{ fontFamily: "var(--font-mono)", color: MUTED, width: 62, flexShrink: 0 }}>{trade.tradeDate.slice(5)}</span>
@@ -1687,7 +1706,7 @@ export function BigScreenView() {
                         marginLeft: "-8px",
                         borderBottom: "0.5px solid rgba(22,78,99,.55)",
                         borderLeft: active ? "2px solid var(--accent)" : "2px solid transparent",
-                        background: active ? "rgba(0,229,255,.06)" : undefined,
+                        background: active ? "var(--bs-accent-bg-active)" : undefined,
                       }}
                     >
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "34%" }}>{pos.name}</span>
@@ -1749,7 +1768,7 @@ export function BigScreenView() {
                     marginLeft: "-8px",
                     borderBottom: "0.5px solid rgba(22,78,99,.55)",
                     borderLeft: active ? "2px solid var(--accent)" : "2px solid transparent",
-                    background: active ? "rgba(0,229,255,.06)" : undefined,
+                    background: active ? "var(--bs-accent-bg-active)" : undefined,
                   }}
                 >
                   <span style={{ width: 18, height: 18, flexShrink: 0, borderRadius: 5, background: index < 3 ? "rgba(34,211,238,.18)" : "rgba(111,147,168,.12)", color: index < 3 ? ACCENT : MUTED, fontSize: 10, fontFamily: "var(--font-mono)", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>

@@ -42,7 +42,7 @@
   --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 6px 22px rgba(0, 0, 0, .55);
   /* 补全被组件引用、亮色模式原本缺失的令牌（红涨绿跌：--up=红 --down=绿） */
   --border: rgba(0, 229, 255, .16);
-  --text-muted: #5f8198;
+  --text-muted: #7ba3b8;
   --text-faint: #3f5668;
   --surface-2: #0a1320;
   --up: #ff4d6d;
@@ -96,6 +96,108 @@
   --warning: #f59e0b;
   --accent-ink-contrast: #04161d;
   --keyboard-inset: 0px;
+
+  /* ---- 图表调色板（统一令牌，替代各处硬编码） ---- */
+  --chart-1: var(--accent);          /* #00e5ff 青蓝主色 */
+  --chart-2: var(--amber);           /* #ffcf4d 琥珀 */
+  --chart-3: #5cc8ff;               /* 亮青蓝 */
+  --chart-4: #ffc24d;               /* 金 */
+  --chart-5: #34d399;               /* 翠绿 */
+  --chart-6: #ff8a7a;               /* 珊瑚红 */
+  --chart-7: #b98cff;               /* 紫 */
+  --chart-8: #ffd98a;               /* 沙金 */
+  --chart-9: #3da5ff;               /* 亮蓝 */
+  --chart-10: #d6e06b;              /* 黄绿 */
+
+  /* 图表均线颜色 */
+  --ma5: #f5b301;                   /* MA5 金色 */
+  --ma10: #4f9bff;                  /* MA10 蓝色 */
+  --ma20: #e879f9;                  /* MA20 粉紫 */
+  --ma60: #34d399;                  /* MA60 翠绿 */
+
+  /* K线标记线颜色 */
+  --kline-top: rgba(239, 68, 68, .85);         /* 泡沫顶 */
+  --kline-breakout: #06b6d4;                   /* 突破确认位 */
+  --kline-price: #3b82f6;                      /* 现价 */
+  --kline-retest: #a855f7;                     /* 回踩点 */
+  --kline-support: #f59e0b;                    /* 双底生死线 */
+  --kline-deduct: rgba(236, 72, 153, .9);      /* 扣抵价 */
+  --kline-deduct-label: rgba(236, 72, 153, .95); /* 扣抵标签 */
+  --kline-day20: #f59e0b;                      /* 第20日标记 */
+
+  /* K线成交量颜色 */
+  --kline-vol-up: rgba(239, 68, 68, .45);      /* 涨量 */
+  --kline-vol-down: rgba(34, 197, 94, .45);    /* 跌量 */
+
+  /* K线界面色 */
+  --kline-grid: rgba(148, 163, 184, .08);      /* 网格 */
+  --kline-border: rgba(148, 163, 184, .2);     /* 边框 */
+  --kline-panel: rgba(8, 16, 28, .72);         /* 面板底色 */
+  --kline-panel-border: rgba(148, 163, 184, .25); /* 面板边框 */
+
+  /* 涨跌色扩展层次 */
+  --up-text: #ff8fa3;                          /* 涨-柔和文字 */
+  --up-border: rgba(255, 77, 109, .35);        /* 涨-边框级 */
+  --down-text: #5eedb8;                        /* 跌-柔和文字 */
+  --down-border: rgba(33, 230, 164, .35);      /* 跌-边框级 */
+
+  /* 操作标签颜色（以项目主色系重校准） */
+  --tag-buy: var(--up);                        /* 买入（红涨语义） */
+  --tag-buy-soft: var(--up-soft);              /* 买入柔和底 */
+  --tag-sell: #9333ea;                         /* 卖出（紫） */
+  --tag-sell-soft: rgba(168, 85, 247, .12);    /* 卖出柔和底 */
+  --tag-add: #d97706;                          /* 加仓（琥珀） */
+  --tag-add-soft: rgba(245, 158, 11, .12);     /* 加仓柔和底 */
+  --tag-hold: #16a34a;                         /* 持有（绿） */
+  --tag-hold-soft: rgba(34, 197, 94, .12);     /* 持有柔和底 */
+  --tag-cut: #2563eb;                          /* 减仓（蓝） */
+  --tag-cut-soft: rgba(59, 130, 246, .12);     /* 减仓柔和底 */
+
+  /* 质量评分颜色 */
+  --quality-excellent: #16a34a;                /* >=90 */
+  --quality-excellent-soft: rgba(34, 197, 94, .12);
+  --quality-good: #2563eb;                     /* >=70 */
+  --quality-good-soft: rgba(59, 130, 246, .12);
+  --quality-fair: #d97706;                     /* >=50 */
+  --quality-fair-soft: rgba(245, 158, 11, .12);
+  --quality-poor: #dc2626;                     /* <50 */
+  --quality-poor-soft: rgba(239, 68, 68, .12);
+
+  /* 来源/标注结果颜色 */
+  --src-ai-color: #2563eb;
+  --src-ai-soft: rgba(59, 130, 246, .12);
+  --src-hybrid-color: #16a34a;
+  --src-hybrid-soft: rgba(34, 197, 94, .12);
+  --outcome-correct-color: #16a34a;
+  --outcome-correct-soft: rgba(34, 197, 94, .1);
+  --outcome-wrong-color: #dc2626;
+  --outcome-wrong-soft: rgba(239, 68, 68, .1);
+
+  /* 大屏专用颜色 */
+  --bs-error-bg: rgba(255, 107, 107, .12);
+  --bs-error-border: rgba(255, 107, 107, .4);
+  --bs-error-text: #ffb4b4;
+  --bs-safe-bg: rgba(45, 212, 191, .10);
+  --bs-safe-border: rgba(45, 212, 191, .35);
+  --bs-safe-text: #9ff0e2;
+  --bs-safe-dot: #2dd4bf;
+  --bs-panel-glow: 0 12px 32px -18px rgba(0, 229, 255, .4);
+  --bs-hero-gradient: linear-gradient(94deg, #00e5ff, #5cc8ff 58%, #b98cff);
+  --bs-chart-area: rgba(255, 107, 107, .22);
+  --bs-chart-line: rgba(255, 107, 107, .22);
+  --bs-chart-crosshair: rgba(0, 229, 255, .45);
+  --bs-chart-cursor: var(--accent);
+  --bs-orb-a: rgba(0, 229, 255, .35);
+  --bs-orb-b: rgba(43, 140, 255, .35);
+
+  /* 大屏交互背景色 */
+  --bs-accent-bg: rgba(0, 229, 255, .10);
+  --bs-accent-border: rgba(0, 229, 255, .4);
+  --bs-accent-bg-hover: rgba(0, 229, 255, .08);
+  --bs-accent-bg-active: rgba(0, 229, 255, .06);
+
+  /* 改进对比度：muted 提升 ~1.5:1 */
+  --muted: #7ba3b8;
 
 }
 
@@ -242,11 +344,11 @@ select optgroup {
 .tick-num.up { animation: tickUp 0.6s ease-out; }
 .tick-num.down { animation: tickDown 0.6s ease-out; }
 @keyframes tickUp {
-  0% { background-color: rgba(255, 77, 109, 0.30); }
+  0% { background-color: var(--up-soft); }
   100% { background-color: transparent; }
 }
 @keyframes tickDown {
-  0% { background-color: rgba(33, 230, 164, 0.30); }
+  0% { background-color: var(--down-soft); }
   100% { background-color: transparent; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -2688,12 +2790,12 @@ svg { display: block; }
   white-space: nowrap;
 }
 .strategy-diff--ok {
-  background: rgba(34,197,94,.12);
-  color: #16a34a;
+  background: var(--quality-excellent-soft);
+  color: var(--quality-excellent);
 }
 .strategy-diff--warn {
-  background: rgba(245,158,11,.15);
-  color: #b45309;
+  background: var(--quality-fair-soft);
+  color: var(--quality-fair);
 }
 .strategy-diff--fallback {
   background: rgba(148,163,184,.12);
@@ -3924,9 +4026,9 @@ svg { display: block; }
 .volume-up { fill: color-mix(in srgb, var(--red) 28%, transparent); }
 .volume-down { fill: color-mix(in srgb, var(--green) 28%, transparent); }
 .ma-line { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; }
-.ma5-line { stroke: #36b3ff; }
-.ma20-line { stroke: #ffc24d; }
-.ma60-line { stroke: #b98cff; }
+.ma5-line { stroke: var(--ma5); }
+.ma20-line { stroke: var(--chart-4); }
+.ma60-line { stroke: var(--chart-7); }
 .chart-crosshair { stroke: color-mix(in srgb, var(--text) 38%, transparent); stroke-dasharray: 4 4; stroke-width: 1; }
 .chart-crosshair-horizontal { stroke-dasharray: 3 3; }
 .chart-price-label rect { fill: var(--surface-inverse); stroke: color-mix(in srgb, var(--bg) 18%, transparent); }
@@ -3937,14 +4039,14 @@ svg { display: block; }
 .chart-tooltip text tspan,
 .chart-tooltip .chart-tooltip-date { fill: var(--bg); font-weight: 700; }
 .chart-tooltip .chart-tooltip-date { font-size: 11px; }
-.chart-tooltip .chart-tooltip-up { fill: #e6a3a8; font-weight: 800; }
-.chart-tooltip .chart-tooltip-down { fill: #9ecbb6; font-weight: 800; }
+.chart-tooltip .chart-tooltip-up { fill: var(--up-text); font-weight: 800; }
+.chart-tooltip .chart-tooltip-down { fill: var(--down-text); font-weight: 800; }
 .chart-tooltip .chart-tooltip-ma5,
-.chart-tooltip .chart-tooltip-ma5 tspan { fill: #a7c0d6; }
+.chart-tooltip .chart-tooltip-ma5 tspan { fill: var(--ma5); }
 .chart-tooltip .chart-tooltip-ma20,
-.chart-tooltip .chart-tooltip-ma20 tspan { fill: #dcc089; }
+.chart-tooltip .chart-tooltip-ma20 tspan { fill: var(--ma20); }
 .chart-tooltip .chart-tooltip-ma60,
-.chart-tooltip .chart-tooltip-ma60 tspan { fill: #c3b6d6; }
+.chart-tooltip .chart-tooltip-ma60 tspan { fill: var(--ma60); }
 
 .chart-extreme-line { stroke: color-mix(in srgb, var(--text) 26%, transparent); stroke-dasharray: 2 4; stroke-width: 1; }
 .chart-extreme-max .chart-extreme-line { stroke: color-mix(in srgb, var(--red) 55%, transparent); }
@@ -6547,6 +6649,103 @@ html.stealth {
   --shadow: 0 1px 2px rgba(0, 0, 0, .5);
   --shadow-sm: 0 1px 1px rgba(0, 0, 0, .5);
   --shadow-lg: 0 12px 32px rgba(0, 0, 0, .55);
+
+  /* 图表调色板隐身覆盖 */
+  --chart-1: #56564f;
+  --chart-2: #9a8a5e;
+  --chart-3: #5e636a;
+  --chart-4: #8a8466;
+  --chart-5: #6e8074;
+  --chart-6: #7e706e;
+  --chart-7: #706e78;
+  --chart-8: #8a846e;
+  --chart-9: #5e6a7a;
+  --chart-10: #7a7a6a;
+
+  /* 均线隐身覆盖 */
+  --ma5: #8a8466;
+  --ma10: #6e747a;
+  --ma20: #7a6e7a;
+  --ma60: #6e8074;
+
+  /* K线标记隐身覆盖 */
+  --kline-top: rgba(140, 122, 120, .6);
+  --kline-breakout: #5e7a7a;
+  --kline-price: #6e7a8a;
+  --kline-retest: #7a6e7a;
+  --kline-support: #8a8466;
+  --kline-deduct: rgba(120, 110, 110, .6);
+  --kline-deduct-label: rgba(120, 110, 110, .7);
+  --kline-day20: #8a8466;
+
+  /* K线界面隐身覆盖 */
+  --kline-vol-up: rgba(140, 122, 120, .3);
+  --kline-vol-down: rgba(122, 140, 128, .3);
+  --kline-grid: rgba(107, 113, 120, .06);
+  --kline-border: rgba(107, 113, 120, .15);
+  --kline-panel: rgba(20, 24, 31, .72);
+  --kline-panel-border: rgba(107, 113, 120, .18);
+
+  /* 涨跌扩展层次隐身覆盖 */
+  --up-text: #8c7a78;
+  --up-border: rgba(140, 122, 120, .25);
+  --down-text: #7a8c80;
+  --down-border: rgba(122, 140, 128, .25);
+
+  /* 操作标签隐身覆盖 */
+  --tag-buy: #8c7a78;
+  --tag-buy-soft: #1c1818;
+  --tag-sell: #7a6e7a;
+  --tag-sell-soft: #1c1a1c;
+  --tag-add: #9a8a5e;
+  --tag-add-soft: #201d14;
+  --tag-hold: #6e8074;
+  --tag-hold-soft: #161c19;
+  --tag-cut: #6e747a;
+  --tag-cut-soft: #16181c;
+
+  /* 质量评分隐身覆盖 */
+  --quality-excellent: #6e8074;
+  --quality-excellent-soft: rgba(110, 128, 116, .08);
+  --quality-good: #6e747a;
+  --quality-good-soft: rgba(110, 116, 122, .08);
+  --quality-fair: #9a8a5e;
+  --quality-fair-soft: rgba(154, 138, 94, .08);
+  --quality-poor: #8c7a78;
+  --quality-poor-soft: rgba(140, 122, 120, .08);
+
+  /* 来源/标注隐身覆盖 */
+  --src-ai-color: #6e747a;
+  --src-ai-soft: rgba(110, 116, 122, .08);
+  --src-hybrid-color: #6e8074;
+  --src-hybrid-soft: rgba(110, 128, 116, .08);
+  --outcome-correct-color: #6e8074;
+  --outcome-correct-soft: rgba(110, 128, 116, .08);
+  --outcome-wrong-color: #8c7a78;
+  --outcome-wrong-soft: rgba(140, 122, 120, .08);
+
+  /* 大屏隐身覆盖 */
+  --bs-error-bg: rgba(140, 122, 120, .08);
+  --bs-error-border: rgba(140, 122, 120, .25);
+  --bs-error-text: #8c7a78;
+  --bs-safe-bg: rgba(122, 140, 128, .08);
+  --bs-safe-border: rgba(122, 140, 128, .2);
+  --bs-safe-text: #7a8c80;
+  --bs-safe-dot: #6e8074;
+  --bs-panel-glow: none;
+  --bs-hero-gradient: linear-gradient(94deg, #56564f, #5e636a 58%, #706e78);
+  --bs-chart-area: rgba(140, 122, 120, .12);
+  --bs-chart-line: rgba(140, 122, 120, .12);
+  --bs-chart-crosshair: rgba(107, 114, 128, .3);
+  --bs-chart-cursor: #56564f;
+  --bs-orb-a: rgba(107, 114, 128, .18);
+  --bs-orb-b: rgba(107, 114, 128, .18);
+
+  /* 大屏交互背景隐身覆盖 */
+  --bs-accent-bg: rgba(107, 114, 128, .08);
+  --bs-accent-border: rgba(107, 114, 128, .25);
+  --bs-accent-bg-hover: rgba(107, 114, 128, .05);
+  --bs-accent-bg-active: rgba(107, 114, 128, .04);
 }
 /* 隐身模式：图表网格线/坐标轴等也压暗，避免亮线暴露 */
 html.stealth canvas { filter: saturate(.7) brightness(.92); }
@@ -8229,13 +8428,13 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
 .bs-ambient::before {
   width: 46vw; height: 46vw;
   left: -12vw; top: -16vw;
-  background: radial-gradient(circle, rgba(0, 229, 255, .35), transparent 70%);
+  background: radial-gradient(circle, var(--bs-orb-a), transparent 70%);
   animation: bs-orb-a 19s ease-in-out infinite;
 }
 .bs-ambient::after {
   width: 40vw; height: 40vw;
   right: -10vw; bottom: -14vw;
-  background: radial-gradient(circle, rgba(43, 140, 255, .35), transparent 70%);
+  background: radial-gradient(circle, var(--bs-orb-b), transparent 70%);
   animation: bs-orb-b 23s ease-in-out infinite;
 }
 @keyframes bs-orb-a { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(4vw, 3vw); } }
@@ -8247,7 +8446,7 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
   top: 0; left: 0; right: 0;
   height: 3px;
   z-index: 30;
-  background: linear-gradient(90deg, var(--accent), #2b8cff, var(--accent));
+  background: linear-gradient(90deg, var(--accent), var(--accent-2), var(--accent));
   background-size: 220% 100%;
   animation: bs-shimmer 6s linear infinite;
 }
@@ -8255,12 +8454,12 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
 
 /* 卡片霓虹辉光：所有 .bs-panel 统一抬起感 */
 .bigscreen .bs-panel {
-  box-shadow: 0 0 0 0.5px var(--border), 0 12px 32px -18px rgba(0, 229, 255, .4);
+  box-shadow: 0 0 0 0.5px var(--border), var(--bs-panel-glow);
 }
 
 /* 总资产英雄数字：青蓝紫渐变填充 */
 .bs-hero {
-  background: linear-gradient(94deg, #00e5ff, #5cc8ff 58%, #b98cff);
+  background: var(--bs-hero-gradient);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -8302,12 +8501,12 @@ html.stealth .bs-stealth-hint { display: block; }
   position: fixed;
   z-index: 50;
   width: 264px;
-  background: rgba(12, 20, 32, .92);
+  background: var(--kline-panel);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  border: 0.5px solid rgba(0, 229, 255, .35);
+  border: 0.5px solid var(--bs-accent-border);
   border-radius: 14px;
-  box-shadow: 0 18px 48px -16px rgba(0, 229, 255, .35), 0 8px 24px rgba(0, 0, 0, .5);
+  box-shadow: var(--bs-panel-glow), 0 8px 24px rgba(0, 0, 0, .5);
   padding: 13px 16px;
   pointer-events: none;
   animation: bs-pop-in .14s var(--ease-standard);
@@ -8318,9 +8517,9 @@ html.stealth .bs-stealth-hint { display: block; }
   position: absolute;
   left: -7px; top: 18px;
   width: 12px; height: 12px;
-  background: rgba(12, 20, 32, .92);
-  border-left: 0.5px solid rgba(0, 229, 255, .35);
-  border-bottom: 0.5px solid rgba(0, 229, 255, .35);
+  background: var(--kline-panel);
+  border-left: 0.5px solid var(--bs-accent-border);
+  border-bottom: 0.5px solid var(--bs-accent-border);
   transform: rotate(45deg);
 }
 .bs-pop.left::before {
@@ -8328,8 +8527,8 @@ html.stealth .bs-stealth-hint { display: block; }
   position: absolute;
   right: -7px; top: 18px;
   width: 12px; height: 12px;
-  background: rgba(12, 20, 32, .92);
-  border-right: 0.5px solid rgba(0, 229, 255, .35);
+  background: var(--kline-panel);
+  border-right: 0.5px solid var(--bs-accent-border);
   border-top: 0.5px solid rgba(0, 229, 255, .35);
   transform: rotate(45deg);
 }
@@ -8579,11 +8778,11 @@ html.stealth .bs-stealth-hint { display: block; }
   font-weight: 700;
   padding: 2px 8px;
 }
-.act-buy { background: rgba(234, 88, 88, .12); color: #dc2626; }
-.act-add { background: rgba(245, 158, 11, .12); color: #d97706; }
-.act-hold { background: rgba(34, 197, 94, .12); color: #16a34a; }
-.act-cut { background: rgba(59, 130, 246, .12); color: #2563eb; }
-.act-sell { background: rgba(168, 85, 247, .12); color: #9333ea; }
+.act-buy { background: var(--tag-buy-soft); color: var(--tag-buy); }
+.act-add { background: var(--tag-add-soft); color: var(--tag-add); }
+.act-hold { background: var(--tag-hold-soft); color: var(--tag-hold); }
+.act-cut { background: var(--tag-cut-soft); color: var(--tag-cut); }
+.act-sell { background: var(--tag-sell-soft); color: var(--tag-sell); }
 .act-wait { background: rgba(148, 163, 184, .12); color: var(--text-muted); }
 /* 来源标签 */
 .source-badge {
@@ -8593,8 +8792,8 @@ html.stealth .bs-stealth-hint { display: block; }
   padding: 2px 8px;
 }
 .src-rule { background: var(--surface-strong); color: var(--text-muted); }
-.src-ai { background: rgba(59, 130, 246, .12); color: #2563eb; }
-.src-hybrid { background: rgba(34, 197, 94, .12); color: #16a34a; }
+.src-ai { background: var(--src-ai-soft); color: var(--src-ai-color); }
+.src-hybrid { background: var(--src-hybrid-soft); color: var(--src-hybrid-color); }
 /* 分歧标签 */
 .diff-badge {
   border-radius: 6px;
@@ -8630,8 +8829,8 @@ html.stealth .bs-stealth-hint { display: block; }
 }
 .outcome-btn:hover:not(:disabled) { color: var(--text); border-color: var(--line-strong); }
 .outcome-btn:disabled { cursor: not-allowed; opacity: .5; }
-.outcome-correct:hover:not(:disabled) { background: rgba(34, 197, 94, .1); color: #16a34a; border-color: rgba(34, 197, 94, .25); }
-.outcome-wrong:hover:not(:disabled) { background: rgba(239, 68, 68, .1); color: #dc2626; border-color: rgba(239, 68, 68, .25); }
+.outcome-correct:hover:not(:disabled) { background: var(--outcome-correct-soft); color: var(--outcome-correct-color); border-color: rgba(34, 197, 94, .25); }
+.outcome-wrong:hover:not(:disabled) { background: var(--outcome-wrong-soft); color: var(--outcome-wrong-color); border-color: rgba(239, 68, 68, .25); }
 .outcome-uncertain:hover:not(:disabled) { background: rgba(148, 163, 184, .1); color: var(--text-muted); border-color: rgba(148, 163, 184, .25); }
 /* 单条删除：图标按钮，默认低调，hover 转危险色 */
 .outcome-delete {
@@ -8650,8 +8849,8 @@ html.stealth .bs-stealth-hint { display: block; }
   font-weight: 700;
   padding: 4px 10px;
 }
-.outcome-correct { background: rgba(34, 197, 94, .1); color: #16a34a; }
-.outcome-wrong { background: rgba(239, 68, 68, .1); color: #dc2626; }
+.outcome-correct { background: var(--outcome-correct-soft); color: var(--outcome-correct-color); }
+.outcome-wrong { background: var(--outcome-wrong-soft); color: var(--outcome-wrong-color); }
 .outcome-uncertain { background: rgba(148, 163, 184, .1); color: var(--text-muted); }
 
 /* 关联复盘标记 */
@@ -8711,10 +8910,10 @@ html.stealth .bs-stealth-hint { display: block; }
   font-weight: 700;
   padding: 2px 8px;
 }
-.q-excellent { background: rgba(34, 197, 94, .12); color: #16a34a; }
-.q-good { background: rgba(59, 130, 246, .12); color: #2563eb; }
-.q-fair { background: rgba(245, 158, 11, .12); color: #d97706; }
-.q-poor { background: rgba(239, 68, 68, .12); color: #dc2626; }
+.q-excellent { background: var(--quality-excellent-soft); color: var(--quality-excellent); }
+.q-good { background: var(--quality-good-soft); color: var(--quality-good); }
+.q-fair { background: var(--quality-fair-soft); color: var(--quality-fair); }
+.q-poor { background: var(--quality-poor-soft); color: var(--quality-poor); }
 
 /* 移动端适配 */
 @media (max-width: 760px) {

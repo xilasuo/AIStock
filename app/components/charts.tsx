@@ -42,16 +42,16 @@ export function BarList({
 }
 
 const DONUT_PALETTE = [
-  "var(--accent)",   // 青蓝（主色）
-  "var(--amber)",    // 琥珀
-  "#5cc8ff",         // 亮青蓝
-  "#ffc24d",         // 金
-  "#34d399",         // 绿
-  "#ff8a7a",         // 珊瑚红
-  "#b98cff",         // 紫
-  "#ffd98a",         // 沙
-  "#3da5ff",         // 亮蓝（霓虹）
-  "#d6e06b",         // 黄绿
+  "var(--chart-1)",   // 青蓝（主色）
+  "var(--chart-2)",   // 琥珀
+  "var(--chart-3)",   // 亮青蓝
+  "var(--chart-4)",   // 金
+  "var(--chart-5)",   // 翠绿
+  "var(--chart-6)",   // 珊瑚红
+  "var(--chart-7)",   // 紫
+  "var(--chart-8)",   // 沙金
+  "var(--chart-9)",   // 亮蓝
+  "var(--chart-10)",  // 黄绿
 ];
 
 export function DonutChart({

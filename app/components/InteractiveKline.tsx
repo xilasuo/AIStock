@@ -339,12 +339,12 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
         fontSize: 11,
       },
       grid: {
-        vertLines: { color: "rgba(148,163,184,.08)" },
-        horzLines: { color: "rgba(148,163,184,.08)" },
+        vertLines: { color: cssVar("--kline-grid", "rgba(148,163,184,.08)") },
+        horzLines: { color: cssVar("--kline-grid", "rgba(148,163,184,.08)") },
       },
-      rightPriceScale: { borderColor: "rgba(148,163,184,.2)" },
+      rightPriceScale: { borderColor: cssVar("--kline-border", "rgba(148,163,184,.2)") },
       timeScale: {
-        borderColor: "rgba(148,163,184,.2)",
+        borderColor: cssVar("--kline-border", "rgba(148,163,184,.2)"),
         timeVisible: false,
         secondsVisible: false,
         // 关键：开启滚轮缩放 + 拖拽平移
@@ -451,10 +451,10 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
 
     // 均线 MA5/10/20/60（叠加在主图蜡烛之上）
     const maColors: Record<number, string> = {
-      5: "#f5b301",
-      10: "#4f9bff",
-      20: "#e879f9",
-      60: "#34d399",
+      5: cssVar("--ma5", "#f5b301"),
+      10: cssVar("--ma10", "#4f9bff"),
+      20: cssVar("--ma20", "#e879f9"),
+      60: cssVar("--ma60", "#34d399"),
     };
     for (const period of [5, 10, 20, 60]) {
       const ma = chart.addSeries(LineSeries, {
@@ -509,7 +509,7 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
     const volData = bars.map((b) => ({
       time: toTimestamp(b.date) as UTCTimestamp,
       value: b.vol,
-      color: b.close >= b.open ? "rgba(239,68,68,.45)" : "rgba(34,197,94,.45)",
+      color: b.close >= b.open ? cssVar("--kline-vol-up", "rgba(239,68,68,.45)") : cssVar("--kline-vol-down", "rgba(34,197,94,.45)"),
     }));
 
     // 切换周期（日/周/月）时，先清空再写入，避免跨周期时间轴冲突导致 setData 静默失败、图表不更新。
@@ -569,7 +569,7 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
           time: toTimestamp(bar.date) as UTCTimestamp,
           position: "aboveBar",
           shape: "circle",
-          color: "#f59e0b",
+          color: cssVar("--kline-day20", "#f59e0b"),
           text: "第20日",
           size: 1,
         };
@@ -592,11 +592,11 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
       if (deductPrice != null) {
         deductLineRef.current = candle.createPriceLine({
           price: deductPrice,
-          color: "rgba(236,72,153,.9)",
+          color: cssVar("--kline-deduct", "rgba(236,72,153,.9)"),
           lineWidth: 1 as LineWidth,
           lineStyle: 2, // 虚线
           axisLabelVisible: true,
-          axisLabelColor: "rgba(236,72,153,.95)",
+          axisLabelColor: cssVar("--kline-deduct-label", "rgba(236,72,153,.95)"),
           title: "扣抵",
         });
       }
@@ -667,31 +667,31 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
       "top",
       mk.top.isTrap ? "泡沫顶（上套牢）" : "泡沫顶",
       mk.top.price,
-      "rgba(239,68,68,.85)",
+      cssVar("--kline-top", "rgba(239,68,68,.85)"),
       1,
       2,
     );
 
     // 突破确认位（青绿虚线，区别于灰色回踩点）
-    pushLine("breakout", "突破确认位", mk.breakout, "#06b6d4", 1, 2);
+    pushLine("breakout", "突破确认位", mk.breakout, cssVar("--kline-breakout", "#06b6d4"), 1, 2);
 
     // 现价（蓝色实线，最粗，单独一档便于一眼定位）
     pushLine(
       "price",
       `现价（${mk.maPos}）`,
       mk.priceNow,
-      "#3b82f6",
+      cssVar("--kline-price", "#3b82f6"),
       2,
       0,
     );
 
     // 回踩点（紫色虚线，如有）
     if (mk.retest) {
-      pushLine("retest", "回踩点", mk.retest.price, "#a855f7", 1, 2);
+      pushLine("retest", "回踩点", mk.retest.price, cssVar("--kline-retest", "#a855f7"), 1, 2);
     }
 
     // 双底生死线（橙色虚线）
-    pushLine("support", "双底（生死线）", mk.support, "#f59e0b", 1, 2);
+    pushLine("support", "双底（生死线）", mk.support, cssVar("--kline-support", "#f59e0b"), 1, 2);
 
     priceLinesRef.current = lines;
     lineSpecsRef.current = specs;
@@ -839,8 +839,8 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
                   alignItems: "center",
                   justifyContent: "center",
                   borderRadius: 6,
-                  border: "0.5px solid rgba(148,163,184,.25)",
-                  background: "rgba(8,16,28,.72)",
+                  border: "0.5px solid var(--kline-panel-border)",
+                  background: "var(--kline-panel)",
                   backdropFilter: "blur(6px)",
                   WebkitBackdropFilter: "blur(6px)",
                   color: "var(--text)",
@@ -875,10 +875,10 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
                   top,
                   left,
                   padding: "7px 10px",
-                  background: "rgba(8,16,28,.78)",
+                  background: "var(--kline-panel)",
                   backdropFilter: "blur(6px)",
                   WebkitBackdropFilter: "blur(6px)",
-                  border: "0.5px solid rgba(148,163,184,.28)",
+                  border: "0.5px solid var(--kline-panel-border)",
                   borderRadius: 8,
                   boxShadow: "0 4px 16px rgba(0,0,0,.32)",
                   display: "flex",
@@ -963,10 +963,10 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
                     ? { left: legendPos.left, top: legendPos.top, right: "auto" }
                     : { top: 8, right: 8 }),
                   padding: "8px 10px",
-                  background: "rgba(8,16,28,.72)",
+                  background: "var(--kline-panel)",
                   backdropFilter: "blur(6px)",
                   WebkitBackdropFilter: "blur(6px)",
-                  border: "0.5px solid rgba(148,163,184,.25)",
+                  border: "0.5px solid var(--kline-panel-border)",
                   borderRadius: 8,
                   boxShadow: "0 4px 16px rgba(0,0,0,.28)",
                   display: "flex",
@@ -1074,7 +1074,7 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
                         style={{
                           width: 14,
                           height: 0,
-                          borderTop: "2px dashed rgba(236,72,153,.95)",
+                          borderTop: `2px dashed ${cssVar("--kline-deduct-label", "rgba(236,72,153,.95)")}`,
                           borderRadius: 1,
                           flexShrink: 0,
                           display: "inline-block",
