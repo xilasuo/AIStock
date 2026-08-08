@@ -386,3 +386,86 @@ export function conclusionTone(body: string): "act" | "warn" | "neutral" {
   }
   return "neutral";
 }
+
+/**
+ * 把结构化 context 拼成给 LLM 的「不可改写」主引用文本。
+ * 金额/百分比一律高精度阿拉伯数字 + 显式单位（如 ¥344.96、97.88%），不再注入中文大写。
+ * 防“去小数点/缩放量级/省略数字”幻觉靠 system 提示硬约束：数字须逐字照抄、禁止变形或中文大写化。
+ */
+export function summarizeContext(ctx: AssistantContext, serverHoldingsText?: string): string {
+  const s = ctx.stock;
+  const q = ctx.quote;
+  const f = ctx.financials;
+  const lines = [
+    `股票：${s.name}(${s.code})，类型=${s.instrumentType}，行业=${s.industry ?? "未知"}`,
+    `行情时间：${q.marketTime ?? "未提供"}`,
+    `当前价=${q.price.toFixed(3)}元，涨跌幅=${q.changePercent.toFixed(2)}%，MA20=${q.ma20.toFixed(3)}元`,
+    `走势结构：现价相对MA20${q.price >= q.ma20 ? "之上（短线偏强）" : "之下（短线偏弱）"}；支撑=${q.support.toFixed(3)}元，阻力=${q.resistance.toFixed(3)}元，价格相对阻力距离=${q.resistance > 0 ? (((q.resistance - q.price) / q.price) * 100).toFixed(1) + "%" : "缺失"}，近20日平均波动=${q.volatility.toFixed(2)}%`,
+    `财务：营收增长=${f.revenueGrowth ?? "数据缺失"}，利润增长=${f.profitGrowth ?? "数据缺失"}，负债率=${f.debtRatio ?? "数据缺失"}，PE=${f.pe ?? "数据缺失"}，PB=${f.pb ?? "数据缺失"}，ROE=${f.roe ?? "数据缺失"}${f.revenueGrowth == null && f.profitGrowth == null && f.debtRatio == null ? "（基本面几乎全部缺失，本次判断以技术面为主）" : ""}`,
+    `一句话结论：${ctx.summary}`,
+    `已识别风险：${(ctx.risks ?? []).join("；") || "无"}`,
+    `缺失信息：${(ctx.missingInformation ?? []).join("；") || "无"}`,
+    `数据来源：${ctx.source.name}（获取于 ${ctx.source.fetchedAt}）`,
+  ];
+  if (ctx.position) {
+    const p = ctx.position;
+    const returnText = p.returnPercent !== null && Number.isFinite(p.returnPercent)
+      ? `${p.returnPercent.toFixed(2)}%`
+      : "数据缺失";
+    const avgCostText = p.averageCost > 0 && Number.isFinite(p.averageCost)
+      ? `${p.averageCost.toFixed(3)}元`
+      : "数据缺失";
+    const stockPosText = p.stockPositionPercent === null || p.stockPositionPercent === undefined ? "数据缺失" : `${p.stockPositionPercent.toFixed(2)}%`;
+    lines.push(`我的持仓：${p.quantity}股，成本=${avgCostText}，当前回报=${returnText}，占账户仓位=${stockPosText}`);
+  } else if (serverHoldingsText) {
+    lines.push(`我的持仓：${serverHoldingsText}（以上为服务端按账户记录计算，回报按实时价由你估算）`);
+  } else if (ctx.holdingsSummary) {
+    lines.push(`我的持仓：${ctx.holdingsSummary}`);
+  } else {
+    lines.push("我的持仓：无");
+  }
+  const pf = ctx.portfolio;
+  const profitText = pf.totalProfitPercent === null
+    ? (pf.profitPercentNote ?? "数据缺失（收益率无法计算）")
+    : `${pf.totalProfitPercent.toFixed(2)}%`;
+  // 金额/百分比只给高精度阿拉伯数字 + 显式单位（已移除中文大写注入）。
+  const totalAssetsText = pf.totalAssets === null ? "数据缺失" : `¥${pf.totalAssets.toFixed(2)}`;
+  const cashText = pf.cash === null ? "数据缺失" : `¥${pf.cash.toFixed(2)}`;
+  const totalPosText = pf.totalPositionPercent === null ? "数据缺失" : `${pf.totalPositionPercent.toFixed(2)}%`;
+  lines.push(`账户：总资产=${totalAssetsText}，现金=${cashText}，总仓位=${totalPosText}，账户总收益=${profitText}`);
+  // 防幻觉：收益率失真/不可计算时，明确禁止 AI 自行根据总资产/现金推算收益率
+  if (pf.totalProfitPercent === null) {
+    lines.push("注意：账户收益率无法有效计算，请勿根据总资产或现金自行推算收益率数字，只能引用上方给出的说明文字。");
+  }
+  if (ctx.volume) {
+    const divergenceNote =
+      ctx.volume.divergence === "顶背离"
+        ? "（价格高位但量能未同步放大，警惕追高）"
+        : ctx.volume.divergence === "底背离"
+          ? "（低位缩量、抛压衰竭迹象，关注止跌但勿直接抄底）"
+          : ctx.volume.ratio != null && ctx.volume.ratio >= 1.5
+            ? "（明显放量，配合价格方向判断突破可靠性）"
+            : ctx.volume.ratio != null && ctx.volume.ratio < 0.6
+              ? "（明显缩量，突破可信度低）"
+              : "";
+    lines.push(`量能：当日成交量 ${ctx.volume.latest}，近5日均量 ${ctx.volume.ma5.toFixed(0)}、近20日均量 ${ctx.volume.ma20.toFixed(0)}，量比 ${ctx.volume.ratio === null ? "缺失" : ctx.volume.ratio.toFixed(2)}，量价背离 ${ctx.volume.divergence ?? "未知"}（近20日上涨放量 ${ctx.volume.upDaysWithVolume} 天、下跌放量 ${ctx.volume.downDaysWithVolume} 天）${divergenceNote}。`);
+  } else {
+    lines.push("量能：数据缺失。");
+  }
+  if (ctx.oscillators) {
+    const o = ctx.oscillators;
+    const macd = o.macd
+      ? `DIF=${o.macd.dif.toFixed(3)}, DEA=${o.macd.dea.toFixed(3)}, 柱=${o.macd.hist.toFixed(3)}, 状态=${o.macd.state}, 背离=${o.macd.divergence ?? "未知"}`
+      : "DIF/DEA/柱=缺失";
+    const rsi = o.rsi
+      ? `RSI6=${o.rsi.rsi6?.toFixed(1) ?? "缺失"}, RSI12=${o.rsi.rsi12?.toFixed(1) ?? "缺失"}, RSI24=${o.rsi.rsi24?.toFixed(1) ?? "缺失"}, 区=${o.rsi.zone}`
+      : "RSI=缺失";
+    const kdj = o.kdj
+      ? `K=${o.kdj.k?.toFixed(1) ?? "缺失"}, D=${o.kdj.d?.toFixed(1) ?? "缺失"}, J=${o.kdj.j?.toFixed(1) ?? "缺失"}, 状态=${o.kdj.state}`
+      : "KDJ=缺失";
+    lines.push(`摆动指标：${macd}；${rsi}；${kdj}。`);
+  } else {
+    lines.push("摆动指标：数据缺失。");
+  }
+  return lines.join("\n");
+}

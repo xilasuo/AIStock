@@ -1,6 +1,69 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildFallbackAnswer, type AssistantContext } from "../lib/ai/assistant";
+import { buildFallbackAnswer, summarizeContext, type AssistantContext } from "../lib/ai/assistant";
+
+// 复现大屏浮窗“抽风”根因：现金 344.96 元 + 总仓位 97.88% 时，
+// summarizeContext 不得再注入/输出中文大写数字（叁佰肆拾肆元玖角陆分、玖拾柒点捌捌百分比）。
+const bigScreenContext: AssistantContext = {
+  stock: { code: "002611", name: "东方精工", industry: "通用设备", instrumentType: "stock" },
+  quote: {
+    price: 16.27,
+    changePercent: 0.62,
+    ma20: 16.267,
+    support: 16.0,
+    resistance: 16.38,
+    volatility: 2.1,
+    marketTime: "2026-08-08T15:00:00+08:00",
+  },
+  financials: {
+    revenueGrowth: null, profitGrowth: null, debtRatio: null, pe: null, pb: null, roe: null,
+  },
+  summary: "震荡区间，量能缺失，突破未确认",
+  risks: ["量能缺失无法验证突破", "单股仓位偏重"],
+  missingInformation: ["财务数据缺失"],
+  source: { name: "实时行情", fetchedAt: "2026-08-08T15:00:00+08:00" },
+  position: {
+    quantity: 200,
+    averageCost: 16.376,
+    returnPercent: -0.65,
+    stockPositionPercent: 20.67,
+  },
+  portfolio: {
+    totalAssets: 344.96 / 0.9788, // 使总仓位≈97.88%
+    cash: 344.96,
+    totalPositionPercent: 97.88,
+    totalProfitPercent: null,
+    profitPercentNote: "基准失真",
+  },
+  volume: {
+    latest: 1_200_000,
+    ma5: 1_000_000,
+    ma20: 900_000,
+    ratio: 1.2,
+    divergence: "无明显背离",
+    upDaysWithVolume: 3,
+    downDaysWithVolume: 2,
+  },
+  oscillators: {
+    macd: { dif: 0.02, dea: 0.01, hist: 0.02, state: "金叉", divergence: "未知" },
+    rsi: { rsi6: 55, rsi12: 52, rsi24: 50, zone: "中性" },
+    kdj: { k: 60, d: 55, j: 70, state: "金叉" },
+  },
+};
+
+// 任何中文大写数字字符（含“百分比”这个中文大写专用后缀）都应被禁止出现
+const CHINESE_NUMERAL_RE = /[零壹贰叁肆伍陆柒捌玖拾佰仟万亿角分]|百分比/;
+
+test("summarizeContext 不再输出中文大写数字（大屏抽风根因固化）", () => {
+  const text = summarizeContext(bigScreenContext);
+  assert.ok(!CHINESE_NUMERAL_RE.test(text), `context 不得含中文大写数字，实际出现：${text.match(CHINESE_NUMERAL_RE)?.[0]}`);
+  // 阿拉伯数字须原样保留，不得丢失或变形
+  assert.match(text, /344\.96/);
+  assert.match(text, /97\.88%/);
+  assert.match(text, /16\.27/);
+  assert.match(text, /20\.67%/);
+});
+
 
 const context: AssistantContext = {
   stock: { code: "600519", name: "贵州茅台", industry: "白酒", instrumentType: "stock" },
