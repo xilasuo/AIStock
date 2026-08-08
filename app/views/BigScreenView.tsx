@@ -1785,6 +1785,66 @@ export function BigScreenView() {
                 );
               })}
             </div>
+            <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: "14px 16px", flex: 1, minHeight: 0, overflow: "hidden" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+                <span style={{ fontSize: 12, color: MUTED }}>关注股票</span>
+                <span style={{ fontSize: 10, color: MUTED, fontFamily: "var(--font-mono)" }}>
+                  {watchlist.length} 只
+                </span>
+              </div>
+              {watchlist.length === 0 && (
+                <div style={{ fontSize: 12, color: MUTED, lineHeight: 1.8 }}>
+                  暂无关注股票。<br />在首页"关注"中添加股票。
+                </div>
+              )}
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                {watchlist.map((item) => {
+                  const quote = quotes[item.symbol];
+                  const active = isActiveKlineCode(item.symbol);
+                  return (
+                    <div
+                      key={item.symbol}
+                      className="row-hover interactive"
+                      onMouseEnter={(e) =>
+                        showTooltip(e, {
+                          title: item.name,
+                          subtitle: item.symbol,
+                          rows: [
+                            { k: "现价", v: quote ? quote.price.toFixed(2) : "—" },
+                            { k: "今日涨跌", v: quote ? pct(quote.changePercent) : "—", c: quote ? (quote.changePercent >= 0 ? "up" : "down") : undefined },
+                            { k: "备注", v: item.note ?? "—" },
+                            { k: "大屏交互", v: active ? "K线展示中" : "点击查看日K", c: active ? "accent" : undefined },
+                          ],
+                          note: active
+                            ? "中央主图正在显示该股 K 线。再次点击其它股票可切换。"
+                            : "点击该行，中央主图会切换为该股的日 K 线。",
+                        })
+                      }
+                      onMouseLeave={() => setHover(null)}
+                      onClick={() => openKline(item.symbol, item.name)}
+                      title={`点击查看 ${item.name}（${item.symbol}）日K`}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        fontSize: 12.5,
+                        padding: "6px 0 6px 8px",
+                        marginLeft: "-8px",
+                        borderBottom: "0.5px solid rgba(22,78,99,.55)",
+                        borderLeft: active ? "2px solid var(--accent)" : "2px solid transparent",
+                        background: active ? "var(--bs-accent-bg-active)" : undefined,
+                      }}
+                    >
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "38%" }}>{item.name}</span>
+                      <span style={{ fontFamily: "var(--font-mono)", color: MUTED, fontSize: 10, maxWidth: "24%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.symbol}</span>
+                      <span style={{ fontFamily: "var(--font-mono)", width: 62, textAlign: "right", color: quote ? (quote.changePercent >= 0 ? UP : DOWN) : MUTED }}>
+                        {quote ? pct(quote.changePercent) : "—"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </section>
 
           <section className="fade-up" style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0, animationDelay: "270ms" }}>
