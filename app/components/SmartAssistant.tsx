@@ -93,12 +93,15 @@ export function buildAnalysisContext(
   position: Position | null,
   portfolioInsights: PortfolioInsights,
 ) {
+  const matchedInsight = position
+    ? portfolioInsights.positions.find((item) => item.symbol === position.symbol)
+    : undefined;
   const positionContext = position ? {
     quantity: position.quantity,
     averageCost: position.averageCostTenThousandths / 10_000,
     // 盈亏统一用后端 calculatePortfolio 的 returnPercent（基于最近收盘价），避免前端实时价重算与后端口径不一致。
-    returnPercent: position.returnPercent ?? null,
-    stockPositionPercent: portfolioInsights.positions.find((item) => item.symbol === position.symbol)?.allocationPercent ?? null,
+    returnPercent: matchedInsight ? matchedInsight.returnPercent : null,
+    stockPositionPercent: matchedInsight?.allocationPercent ?? null,
   } : null;
   return {
     stock: {
@@ -196,12 +199,19 @@ function buildLinkedContext(
   const mk = linked.keyLevels;
 
   // 把大屏 K 线的全部关键价位/均线/双底结构化进 summary，让 AI 能基于这些指标做联动解读。
+  // 同时显式给出「支撑/阻力相对现价的位置」与「距离百分比」，避免模型自行推算导致前后矛盾。
+  const priceNum = hasPrice ? (linked.price as number) : NaN;
+  const relPos = (lv: number): string => {
+    if (!Number.isFinite(priceNum) || !Number.isFinite(lv)) return "未知";
+    if (priceNum < lv) return `现价下方、现价距其约${(((lv - priceNum) / priceNum) * 100).toFixed(1)}%`;
+    return `现价上方、现价距其约${(((priceNum - lv) / priceNum) * 100).toFixed(1)}%`;
+  };
   const levelsText = mk
     ? [
         `泡沫顶(泡沫价)${mk.top.price.toFixed(2)}于${mk.top.date}${mk.top.isTrap ? "（上方为套牢陷阱）" : ""}`,
-        `突破确认位${mk.breakout.toFixed(2)}`,
+        `突破确认位${mk.breakout.toFixed(2)}（${relPos(mk.breakout)}）`,
         mk.retest ? `回踩位${mk.retest.price.toFixed(2)}于${mk.retest.date}` : "无回踩位",
-        `生死支撑${mk.support.toFixed(2)}`,
+        `生死支撑${mk.support.toFixed(2)}（${relPos(mk.support)}）`,
         `双底${mk.doubleBottom ? `支撑${mk.doubleBottom.support.toFixed(2)}/颈线${mk.doubleBottom.neck.toFixed(2)}（${mk.doubleBottom.dates[0]}~${mk.doubleBottom.dates[1]}）` : "无"}`,
         `均线 MA5/10/20/60/120=${[mk.ma5, mk.ma10, mk.ma20, mk.ma60, mk.ma120].map((v) => v.toFixed(2)).join("/")}`,
         `20MA扣抵位置：${mk.maPos}`,
