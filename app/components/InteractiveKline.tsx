@@ -202,7 +202,7 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
   const [reloadKey, setReloadKey] = useState(0);
   const [hoveredMarker, setHoveredMarker] = useState<MarkerKey | null>(null);
   const [legendPos, setLegendPos] = useState<{ left: number; top: number } | null>(null);
-  const [legendExpanded, setLegendExpanded] = useState(false);
+  const [legendExpanded, setLegendExpanded] = useState(true);
   // 当 fillParent=true 时，图表高度跟随父容器；否则使用传入的 height prop。
   const [chartHeight, setChartHeight] = useState(fillParent ? 0 : height);
   const [dragging, setDragging] = useState(false);
@@ -592,11 +592,11 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
       if (deductPrice != null) {
         deductLineRef.current = candle.createPriceLine({
           price: deductPrice,
-          color: "rgba(232,121,249,.55)",
+          color: "rgba(236,72,153,.9)",
           lineWidth: 1 as LineWidth,
           lineStyle: 2, // 虚线
           axisLabelVisible: true,
-          axisLabelColor: "rgba(232,121,249,.95)",
+          axisLabelColor: "rgba(236,72,153,.95)",
           title: "扣抵",
         });
       }
@@ -672,8 +672,8 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
       2,
     );
 
-    // 突破确认位（灰色虚线）
-    pushLine("breakout", "突破确认位", mk.breakout, "rgba(156,163,175,.85)", 1, 2);
+    // 突破确认位（青绿虚线，区别于灰色回踩点）
+    pushLine("breakout", "突破确认位", mk.breakout, "#06b6d4", 1, 2);
 
     // 现价（蓝色实线，最粗，单独一档便于一眼定位）
     pushLine(
@@ -685,9 +685,9 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
       0,
     );
 
-    // 回踩点（灰色虚线，如有）
+    // 回踩点（紫色虚线，如有）
     if (mk.retest) {
-      pushLine("retest", "回踩点", mk.retest.price, "rgba(156,163,175,.85)", 1, 2);
+      pushLine("retest", "回踩点", mk.retest.price, "#a855f7", 1, 2);
     }
 
     // 双底生死线（橙色虚线）
@@ -820,7 +820,7 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
         )}
         <div ref={containerRef} style={{ width: "100%", height: "100%", opacity: loading || error ? 0 : 1 }} />
 
-        {/* Marker 图例：默认折叠为右上角小按钮，点击展开后显示参考线标签+价格。
+        {/* Marker 图例：默认展开显示参考线标签+价格（legendExpanded 初始 true）。
             展开状态可拖动、双击复位；关闭按钮可收起，彻底解决默认遮挡 K 线的问题。 */}
         {!loading && !error && legendItems.length > 0 && (
           <>
@@ -1039,8 +1039,8 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
                     >
                       <span
                         style={{
-                          width: 10,
-                          height: 2,
+                          width: 14,
+                          height: 3,
                           background: item.color,
                           borderRadius: 1,
                           flexShrink: 0,
@@ -1072,9 +1072,9 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
                     >
                       <span
                         style={{
-                          width: 10,
+                          width: 14,
                           height: 0,
-                          borderTop: "2px dashed rgba(232,121,249,.85)",
+                          borderTop: "2px dashed rgba(236,72,153,.95)",
                           borderRadius: 1,
                           flexShrink: 0,
                           display: "inline-block",

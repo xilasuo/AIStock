@@ -28,6 +28,12 @@ import { searchLocalStocks } from "../../lib/domain/stocks";
 import { recordQuota, useMairuiQuota } from "../../lib/market/mairui-quota";
 import { resolveSectorKlineCode } from "../../lib/market/sectors";
 import SmartAssistant from "../components/SmartAssistant";
+import { TRADE_MODE_LABELS, resolveTradeMode } from "../../lib/utils/trade-mode";
+
+/** 风险偏好档位中文标签（值为 保守|平衡|激进，容错回退平衡） */
+function riskProfileLabel(value: unknown): string {
+  return value === "保守" || value === "激进" ? (value as string) : "平衡";
+}
 
 type Quote = { price: number; changePercent: number; fetchedAt: string };
 type MarketIndex = { code: string; name: string; price: number; changePercent: number; change: number };
@@ -416,8 +422,8 @@ export function BigScreenView() {
   // 隐身模式（老板键）：与 Dashboard 共用偏好，亮屏/暗屏一键切换
   const [stealth, setStealth] = useState(false);
   const prefsRef = useRef<Record<string, unknown> | null>(null);
-  // 交易偏好（含 maxLossPercent/maxConcentrationPercent 等），用于风险预警按用户设置判断。
-  const [prefs, setPrefs] = useState<{ maxLossPercent?: number; maxConcentrationPercent?: number; maxPositionPercent?: number; enforceStopLoss?: boolean; stealthMode?: boolean } | null>(null);
+  // 交易偏好（含 riskProfile/tradeMode/maxLossPercent 等），用于风险预警按用户设置判断与档位展示。
+  const [prefs, setPrefs] = useState<{ riskProfile?: string; tradeMode?: string; maxLossPercent?: number; maxConcentrationPercent?: number; maxPositionPercent?: number; enforceStopLoss?: boolean; stealthMode?: boolean } | null>(null);
 
   // 客户端挂载门控：BigScreenView 含实时时钟/行情/持仓等大量随渲染时刻变化的文本，
   // SSR 阶段（服务器时刻）与客户端水合（浏览器时刻）极易产生文本不一致，
@@ -654,6 +660,8 @@ export function BigScreenView() {
         if (cancelled) return;
         prefsRef.current = prefs;
         setPrefs({
+          riskProfile: typeof prefs.riskProfile === "string" ? prefs.riskProfile : undefined,
+          tradeMode: typeof prefs.tradeMode === "string" ? prefs.tradeMode : undefined,
           maxLossPercent: typeof prefs.maxLossPercent === "number" ? prefs.maxLossPercent : undefined,
           maxConcentrationPercent: typeof prefs.maxConcentrationPercent === "number" ? prefs.maxConcentrationPercent : undefined,
           maxPositionPercent: typeof prefs.maxPositionPercent === "number" ? prefs.maxPositionPercent : undefined,
@@ -1036,10 +1044,12 @@ export function BigScreenView() {
       blocks.push({ heading: "持仓要点", lines });
     }
 
+    const riskTierLabel = prefs?.riskProfile ?? "平衡";
+    const riskBasis = `（依据：${riskTierLabel}档，止损线 ${prefs?.maxLossPercent ?? 3}%${(prefs?.enforceStopLoss ?? true) ? "，强制止损" : ""}）`;
     if (riskAlerts.length) {
-      blocks.push({ heading: "风险提示", lines: riskAlerts.map((a) => `${a.label}：${a.detail}`) });
+      blocks.push({ heading: "风险提示", lines: [...riskAlerts.map((a) => `${a.label}：${a.detail}`), riskBasis] });
     } else {
-      blocks.push({ heading: "风险提示", lines: ["当前无显著风险信号，持仓结构可控。"] });
+      blocks.push({ heading: "风险提示", lines: ["当前无显著风险信号，持仓结构可控。", riskBasis] });
     }
 
     if (scan?.marketState?.state) {
@@ -1063,7 +1073,7 @@ export function BigScreenView() {
       });
     }
     return blocks;
-  }, [insights, todayPnl, positions, quotes, riskAlerts, scan, scanPicks, marketStateKey, marketStateLabel]);
+  }, [insights, todayPnl, positions, quotes, riskAlerts, scan, scanPicks, marketStateKey, marketStateLabel, prefs?.riskProfile, prefs?.maxLossPercent, prefs?.enforceStopLoss]);
 
   if (!mounted) {
     return <div className="boot-loading">正在加载大屏…</div>;
@@ -1808,6 +1818,25 @@ export function BigScreenView() {
               )}
             </div>
             <div style={{ background: CARD, border: `0.5px solid ${BORDER}`, borderRadius: 14, padding: 0, flex: 6, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+              {/* AI 助手生效档位条：明示当前风险偏好 + 操作模式，确认 AI 按用户设置约束作答 */}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderBottom: `0.5px solid ${BORDER}`, fontSize: 12, color: MUTED, flexShrink: 0 }}>
+                <span style={{ color: TEXT, fontWeight: 600 }}>AI 助手约束</span>
+                {prefs ? (
+                  <>
+                    <span style={{ padding: "1px 8px", borderRadius: 999, background: "rgba(59,130,246,.15)", color: "#60a5fa", border: "0.5px solid rgba(59,130,246,.35)" }}>
+                      {riskProfileLabel(prefs.riskProfile)}档
+                    </span>
+                    <span style={{ padding: "1px 8px", borderRadius: 999, background: "rgba(168,85,247,.15)", color: "#c084fc", border: "0.5px solid rgba(168,85,247,.35)" }}>
+                      {TRADE_MODE_LABELS[resolveTradeMode(prefs.tradeMode)]}模式
+                    </span>
+                    <span style={{ marginLeft: "auto", color: MUTED }}>
+                      止损 {prefs.maxLossPercent ?? 3}%{(prefs.enforceStopLoss ?? true) ? " · 强制止损" : ""}
+                    </span>
+                  </>
+                ) : (
+                  <span style={{ marginLeft: "auto", color: MUTED }}>读取设置中…</span>
+                )}
+              </div>
               <SmartAssistant
                 analysis={null}
                 position={null}
