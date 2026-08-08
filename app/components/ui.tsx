@@ -5,7 +5,8 @@
  * （区块标题、状态标签、统计块）收敛到单一实现，避免“风格各异”。
  * 所有视觉令牌均来自 globals.css 的 :root 变量，不在组件内硬编码颜色。
  */
-import { forwardRef, useState, type InputHTMLAttributes, type TextareaHTMLAttributes, type SelectHTMLAttributes, type ReactNode } from "react";
+import { forwardRef, useEffect, useState, type InputHTMLAttributes, type TextareaHTMLAttributes, type SelectHTMLAttributes, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Search } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -450,7 +451,10 @@ export function Modal({
   closeLabel = "关闭",
   className,
 }: ModalProps) {
-  return (
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  const modal = (
     <div className="modal-backdrop" onClick={onClose}>
       <div
         className={["modal", `modal--${size}`, className].filter(Boolean).join(" ")}
@@ -476,6 +480,10 @@ export function Modal({
       </div>
     </div>
   );
+
+  return mounted && typeof document !== "undefined"
+    ? createPortal(modal, document.body)
+    : modal;
 }
 
 /* ------------------------------------------------------------------ */
