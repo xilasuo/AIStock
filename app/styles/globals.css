@@ -112,12 +112,14 @@ html[data-theme="dark"] { color-scheme: dark; }
 /* 全局应用外壳脚手架 */
 .app-root {
   min-height: 100vh;
-  /* 首次绘制轻微上浮淡入，弱化「白屏→内容」的突兀感 */
+  /* 首次绘制淡入，弱化「白屏→内容」的突兀感。
+     注意：不能用 transform 动画，否则会为后代 position:fixed 元素创建 containing block，
+     导致弹窗居中偏差。仅使用 opacity。 */
   animation: appBootIn .42s var(--ease-standard, ease) both;
 }
 @keyframes appBootIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
   .app-root { animation: none; }
