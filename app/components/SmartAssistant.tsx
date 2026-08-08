@@ -367,6 +367,7 @@ export default function SmartAssistant(
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [primed, setPrimed] = useState(false);
+  const [promptsHidden, setPromptsHidden] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
@@ -670,7 +671,8 @@ export default function SmartAssistant(
   const prompts = customPrompts && customPrompts.length > 0 ? customPrompts : defaultPrompts;
 
   // 只要组件就绪就展示快捷提问（贴底在输入框上方，不干扰阅读消息）
-  const showPrompts = primed;
+  // 用户可手动关闭
+  const showPrompts = primed && !promptsHidden;
 
   return (
     <section className={`sa${floating ? " sa--floating" : ""}${page ? " sa--page" : ""}${compact ? " sa--compact" : ""}`}>
@@ -789,6 +791,17 @@ export default function SmartAssistant(
       {/* 快捷提问固定在输入框上方并贴底，开场白保留在消息流顶部 */}
       {showPrompts && prompts.length > 0 && (
         <div className={`sa-anchored${compact ? "" : " sa-anchored--relaxed"}`}>
+          <div style={{ display: "flex", justifyContent: "flex-end", width: "100%" }}>
+            <button
+              type="button"
+              className="sa-iconbtn sa-iconbtn--close"
+              onClick={() => setPromptsHidden(true)}
+              aria-label="关闭快捷提问"
+              title="关闭"
+            >
+              <X size={16} />
+            </button>
+          </div>
           <div className="sa-prompts" role="group" aria-label="推荐提问">
             {prompts.map((prompt) => (
               <button
