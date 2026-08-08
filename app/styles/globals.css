@@ -5475,12 +5475,10 @@ svg { display: block; }
 
 .modal-backdrop {
   background: rgba(7, 10, 13, .7);
-  display: grid;
-  inset: 0;
+  inset: 0 !important;
   padding: 20px;
-  place-items: center;
-  position: fixed;
-  z-index: 100;
+  position: fixed !important;
+  z-index: 9999 !important;
 }
 
 .modal {
@@ -5490,11 +5488,14 @@ svg { display: block; }
   box-shadow: var(--shadow-raised);
   display: flex;
   flex-direction: column;
-  margin: auto;
+  left: 50% !important;
+  margin: 0 !important;
   max-height: min(640px, calc(100dvh - 48px));
   max-width: 680px;
   overflow: auto;
-  position: relative;
+  position: fixed !important;
+  top: 50% !important;
+  transform: translate(-50%, -50%) !important;
   width: 100%;
 }
 
@@ -6102,7 +6103,11 @@ svg { display: block; }
   }
   .mobile-nav button svg { width: 18px; height: 18px; }
   .modal-backdrop { padding: 8px; }
-  .modal { border-radius: var(--radius-card) var(--radius-card) 8px 8px; max-height: calc(100dvh - 16px); }
+  .modal {
+    border-radius: var(--radius-card) var(--radius-card) 8px 8px;
+    margin: 0 !important;
+    max-height: calc(100dvh - 16px);
+  }
   .login-page { padding: 14px; }
   .login-card { grid-template-columns: 1fr; max-width: 520px; }
   .login-aside {
@@ -7230,19 +7235,26 @@ html.stealth .btn-primary:hover { background: var(--surface-2); color: var(--tex
   .card__header { flex-direction: column; }
 }
 @media (max-width: 560px) {
-  .modal-backdrop { padding: 0; place-items: end center; }
+  .modal-backdrop { padding: 0; }
   .modal {
     border-radius: 18px 18px 0 0;
-    margin: 0;
+    bottom: 0 !important;
+    left: 0 !important;
+    margin: 0 !important;
     max-height: 92dvh;
     max-width: 100% !important;
+    top: auto !important;
+    transform: none !important;
   }
   .modal--confirm {
     border-radius: var(--radius-card);
-    margin: 0 14px;
+    bottom: auto !important;
+    left: 50% !important;
+    margin: 0 14px !important;
     max-height: min(420px, calc(100dvh - 28px));
     max-width: 420px;
-    place-self: center;
+    top: 50% !important;
+    transform: translate(-50%, -50%) !important;
   }
   .modal--confirm .modal__body,
   .modal--confirm .modal__footer { padding-left: 22px; padding-right: 22px; }
