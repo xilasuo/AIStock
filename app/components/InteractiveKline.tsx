@@ -89,6 +89,22 @@ type Props = {
   compact?: boolean;
   /** 是否撑满父容器高度（大屏场景推荐）。若为 true，height 参数失效。 */
   fillParent?: boolean;
+  /** 受控周期（日K/周K/月K…）。传入后由父组件控制，组件不再自管 period。 */
+  period?: KPeriod | KIntradayPeriod;
+  /** 周期切换回调，便于父组件感知当前查看的周期。 */
+  onPeriodChange?: (period: KPeriod | KIntradayPeriod) => void;
+  /** 受控可见范围（最近 N 根；0 表示全部）。传入后由父组件控制。 */
+  range?: number;
+  /** 范围切换回调。 */
+  onRangeChange?: (range: number) => void;
+  /** 关键联动元数据回调：把当前 code/周期/markers/最新K线/范围上报父组件（用于 AI 联动解读）。 */
+  onKlineMeta?: (meta: {
+    code: string;
+    period: KPeriod | KIntradayPeriod;
+    markers: Markers | null;
+    lastBar: { date: string; open: number; close: number; high: number; low: number } | null;
+    range: number;
+  }) => void;
 };
 
 function cssVar(name: string, fallback: string): string {
@@ -131,7 +147,7 @@ function bumpWidth(width: LineWidth): LineWidth {
   return next as LineWidth;
 }
 
-export function InteractiveKline({ code, name, initialBars, height = 480, compact = false, fillParent = false }: Props) {
+export function InteractiveKline({ code, name, initialBars, height = 480, compact = false, fillParent = false, period: controlledPeriod, onPeriodChange, range: controlledRange, onRangeChange, onKlineMeta }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 容器尺寸缓存（避免在 render 期间访问 ref 触发 react-hooks/refs 告警）；由 fill-parent 同步逻辑更新。
   const [containerSize, setContainerSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
@@ -148,7 +164,18 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
   // 与 lineSpecsRef 镜像的 state：仅在 render 中消费图例数据时使用，避免在渲染期读取 ref。
   const [lineSpecs, setLineSpecs] = useState<PriceLineEntry[]>([]);
   const [period, setPeriod] = useState<KPeriod | KIntradayPeriod>("day");
+  // 受控模式下（大屏联动 AI）优先使用父组件下发的 period，否则用内部 state。
+  const activePeriod = controlledPeriod ?? period;
+  const handlePeriodChange = (next: KPeriod | KIntradayPeriod) => {
+    if (controlledPeriod === undefined) setPeriod(next);
+    onPeriodChange?.(next);
+  };
   const [range, setRange] = useState<number>(120);
+  const activeRange = controlledRange ?? range;
+  const handleRangeChange = (next: number) => {
+    if (controlledRange === undefined) setRange(next);
+    onRangeChange?.(next);
+  };
   const [bars, setBars] = useState<KlineBar[]>(initialBars ?? []);
   // 20MA 扣抵价（bar[bars.length-20] 的收盘），用于图例显示与状态判断。
   // 用 useMemo 推导而非 effect 内 setState，避免同步 setState 触发级联渲染与 lint 报错。
@@ -157,6 +184,19 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
     return didx >= 0 ? bars[didx].close : null;
   }, [bars]);
   const [markers, setMarkers] = useState<Markers | null>(null);
+
+  // 关键联动元数据上报：当前 code/周期/markers/最新K线/可见范围变化时，通知父组件供 AI 联动解读。
+  useEffect(() => {
+    onKlineMeta?.({
+      code,
+      period: activePeriod,
+      markers,
+      lastBar: bars.length
+        ? { date: bars[bars.length - 1].date, open: bars[bars.length - 1].open, close: bars[bars.length - 1].close, high: bars[bars.length - 1].high, low: bars[bars.length - 1].low }
+        : null,
+      range: activeRange,
+    });
+  }, [code, activePeriod, markers, bars, activeRange, onKlineMeta]);
   const [loading, setLoading] = useState(!initialBars);
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
@@ -230,19 +270,19 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
-    const intraday = isIntraday(period);
+    const intraday = isIntraday(activePeriod);
     chart.applyOptions({
       timeScale: {
         timeVisible: intraday,
         secondsVisible: false,
       },
     });
-  }, [period]);
+  }, [activePeriod]);
 
   // 拉取指定周期 K 线数据 + markers（reloadKey 变化也会重新拉取，用于重试）
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/kline/${code}.json?period=${period}&t=${reloadKey}`, { headers: { "content-type": "application/json" } })
+    fetch(`/api/kline/${code}.json?period=${activePeriod}&t=${reloadKey}`, { headers: { "content-type": "application/json" } })
       .then(async (res) => {
         // 进入异步回调后再标记加载态，避免在 effect 体内同步 setState 触发级联渲染
         setLoading(true);
@@ -265,7 +305,7 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
     return () => {
       cancelled = true;
     };
-  }, [code, period, reloadKey]);
+  }, [code, activePeriod, reloadKey]);
 
   // fillParent=true 时：监听父容器高度变化并同步到图表。
   useEffect(() => {
@@ -504,7 +544,7 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
 
     // 应用可见窗口：range>0 显示最近 N 根，否则显示全部。
     // 若 setVisibleLogicalRange 失败（跨周期时间轴未就绪），回退 fitContent 保证图表可见。
-    const visible = range > 0 ? Math.min(range, bars.length) : bars.length;
+    const visible = activeRange > 0 ? Math.min(activeRange, bars.length) : bars.length;
     try {
       chart.timeScale().setVisibleLogicalRange({ from: bars.length - visible, to: bars.length - 1 });
     } catch {
@@ -563,7 +603,7 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
     } catch {
       /* 扣抵线异常时降级，不阻断图表 */
     }
-  }, [bars, range, deductPrice]);
+  }, [bars, activeRange, deductPrice]);
 
   /**
    * markers 变化时重建 5 条参考价格线（仅画水平线本体）。
@@ -712,10 +752,10 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
               <button
                 key={p.key}
                 type="button"
-                onClick={() => setPeriod(p.key)}
+                onClick={() => handlePeriodChange(p.key)}
                 style={{
-                  background: period === p.key ? "var(--accent)" : "transparent",
-                  color: period === p.key ? "#04121a" : "var(--muted)",
+                  background: activePeriod === p.key ? "var(--accent)" : "transparent",
+                  color: activePeriod === p.key ? "#04121a" : "var(--muted)",
                   border: "none",
                   borderRadius: 6,
                   padding: "2px 10px",
@@ -733,10 +773,10 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
               <button
                 key={r.label}
                 type="button"
-                onClick={() => setRange(r.bars)}
+                onClick={() => handleRangeChange(r.bars)}
                 style={{
-                  background: range === r.bars ? "var(--accent)" : "transparent",
-                  color: range === r.bars ? "#04121a" : "var(--muted)",
+                  background: activeRange === r.bars ? "var(--accent)" : "transparent",
+                  color: activeRange === r.bars ? "#04121a" : "var(--muted)",
                   border: "none",
                   borderRadius: 6,
                   padding: "2px 8px",
@@ -854,7 +894,7 @@ export function InteractiveKline({ code, name, initialBars, height = 480, compac
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 11, color: "var(--text)" }}>
                   <span>{crosshair.bar.date}</span>
                   <span style={{ color: "var(--accent, #6ea8fe)", fontWeight: 600 }}>
-                    {PERIODS.find((p) => p.key === period)?.label ?? period}
+                    {PERIODS.find((p) => p.key === activePeriod)?.label ?? activePeriod}
                   </span>
                 </div>
                 {crosshair.prevClose != null && (() => {

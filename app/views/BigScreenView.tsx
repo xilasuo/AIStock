@@ -21,6 +21,7 @@ import type { CapitalFlow, Trade } from "../../lib/domain/domain";
 import { formatDateTimeShanghai, shanghaiDate } from "../../lib/utils/time";
 import { TickNum } from "../components/TickNum";
 import { InteractiveKline } from "../components/InteractiveKline";
+import type { KPeriod, KIntradayPeriod } from "../../lib/kline";
 import { StockSearch } from "../components/ui";
 import { StrategyModal } from "../components/StrategyModal";
 import { searchLocalStocks } from "../../lib/domain/stocks";
@@ -428,6 +429,16 @@ export function BigScreenView() {
   // 大屏中央主图：交互式 K 线选中股票（前端拉取本地渲染，支持缩放/平移/周期切换）
   // 默认进入大屏直接展示上证指数（000001）K 线，而非资产收益曲线。
   const [klinePick, setKlinePick] = useState<{ code: string; name: string }>({ code: "000001", name: "上证指数" });
+  // 大屏 K 线联动 AI 的受控状态：周期、可见范围、关键联动元数据（markers/最新K线）。
+  const [klinePeriod, setKlinePeriod] = useState<KPeriod | KIntradayPeriod>("day");
+  const [klineRange, setKlineRange] = useState<number>(120);
+  const [klineMeta, setKlineMeta] = useState<{
+    code: string;
+    period: string;
+    markers: import("../../lib/kline").Markers | null;
+    lastBar: { date: string; open: number; close: number; high: number; low: number } | null;
+    range: number;
+  } | null>(null);
   // 是否临时切换显示资产收益曲线（默认 false：显示 K 线主图）。
   const [showAssetCurve, setShowAssetCurve] = useState(false);
   const openKline = (code: string, name: string) => {
@@ -1501,7 +1512,16 @@ export function BigScreenView() {
               ) : (
                 <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", width: "100%" }}>
                   {/* 交互式 K 线：滚轮缩放 + 拖拽平移 + 日/周/月周期切换 + 仅最近 N 根 */}
-                  <InteractiveKline code={klinePick.code} name={klinePick.name} fillParent />
+                  <InteractiveKline
+                    code={klinePick.code}
+                    name={klinePick.name}
+                    fillParent
+                    period={klinePeriod}
+                    onPeriodChange={setKlinePeriod}
+                    range={klineRange}
+                    onRangeChange={setKlineRange}
+                    onKlineMeta={setKlineMeta}
+                  />
                 </div>
               )}
               {chart && (
@@ -1792,6 +1812,17 @@ export function BigScreenView() {
                 position={null}
                 portfolioInsights={insights}
                 compact
+                linkedStock={klinePick ? {
+                  code: klinePick.code,
+                  name: klinePick.name,
+                  price: quotes[klinePick.code]?.price,
+                  changePercent: quotes[klinePick.code]?.changePercent,
+                  period: klinePeriod,
+                  range: klineRange,
+                  keyLevels: klineMeta?.markers ?? null,
+                  lastBar: klineMeta?.lastBar ?? null,
+                } : null}
+                onFocusStock={openKline}
               />
             </div>
           </section>

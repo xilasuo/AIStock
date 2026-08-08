@@ -171,6 +171,66 @@ function buildPlaceholderContext(
   };
 }
 
+// 大屏联动模式：仅拿到轻量个股数据（代码/名称/最新价/涨跌幅），
+// 用它们构造一个最小合法 context，让 AI 围绕「当前 K 线正在看的这只票」作答。
+function buildLinkedContext(
+  linked: {
+    code: string;
+    name: string;
+    price?: number;
+    changePercent?: number;
+    period?: string;
+    range?: number;
+    keyLevels?: import("../../lib/kline").Markers | null;
+    lastBar?: { date: string; open: number; close: number; high: number; low: number } | null;
+  },
+  portfolioInsights: PortfolioInsights,
+): AssistantContext {
+  const hasPrice = Number.isFinite(linked.price);
+  const changePercent = Number.isFinite(linked.changePercent) ? (linked.changePercent as number) : 0;
+  const periodLabel =
+    linked.period === "week" ? "周K" : linked.period === "month" ? "月K" : linked.period === "day" ? "日K" : "K线";
+  const mk = linked.keyLevels;
+
+  // 把大屏 K 线的全部关键价位/均线/双底结构化进 summary，让 AI 能基于这些指标做联动解读。
+  const levelsText = mk
+    ? [
+        `泡沫顶(泡沫价)${mk.top.price.toFixed(2)}于${mk.top.date}${mk.top.isTrap ? "（上方为套牢陷阱）" : ""}`,
+        `突破确认位${mk.breakout.toFixed(2)}`,
+        mk.retest ? `回踩位${mk.retest.price.toFixed(2)}于${mk.retest.date}` : "无回踩位",
+        `生死支撑${mk.support.toFixed(2)}`,
+        `双底${mk.doubleBottom ? `支撑${mk.doubleBottom.support.toFixed(2)}/颈线${mk.doubleBottom.neck.toFixed(2)}（${mk.doubleBottom.dates[0]}~${mk.doubleBottom.dates[1]}）` : "无"}`,
+        `均线 MA5/10/20/60/120=${[mk.ma5, mk.ma10, mk.ma20, mk.ma60, mk.ma120].map((v) => v.toFixed(2)).join("/")}`,
+        `20MA扣抵位置：${mk.maPos}`,
+      ].join("；")
+    : "无关键价位数据";
+
+  const lastBarText = linked.lastBar
+    ? `最近一根(${linked.lastBar.date}) OHLC：开${linked.lastBar.open.toFixed(2)} 收${linked.lastBar.close.toFixed(2)} 高${linked.lastBar.high.toFixed(2)} 低${linked.lastBar.low.toFixed(2)}`
+    : "无最新K线";
+
+  const rangeText = linked.range && linked.range > 0 ? `最近${linked.range}根` : "全部";
+
+  return {
+    stock: { code: linked.code, name: linked.name, industry: "大屏联动", instrumentType: "stock" },
+    quote: hasPrice
+      ? { price: linked.price as number, changePercent, ma20: mk?.ma20 ?? 0, support: mk?.support ?? 0, resistance: mk?.breakout ?? 0, volatility: 0, marketTime: null }
+      : { price: 0, changePercent: 0, ma20: mk?.ma20 ?? 0, support: mk?.support ?? 0, resistance: mk?.breakout ?? 0, volatility: 0, marketTime: null },
+    financials: { revenueGrowth: null, profitGrowth: null, debtRatio: null, pe: null, pb: null, roe: null },
+    summary: `大屏正在以${periodLabel}（${rangeText}）展示 ${linked.name}（${linked.code}），当日最新价 ${hasPrice ? (linked.price as number) : "未知"}，涨跌幅 ${changePercent.toFixed(2)}%。${lastBarText}。关键价位：${levelsText}。仅依据大屏 K 线联动数据作答，无完整财务/持仓分析。`,
+    risks: [],
+    missingInformation: ["大屏联动模式无完整财务/持仓数据，结论仅供参考；关键价位来自大屏 K 线 markers 自动识别"],
+    source: { name: `大屏 K 线联动（${periodLabel}）`, fetchedAt: shanghaiIso() },
+    position: null,
+    portfolio: {
+      totalAssets: portfolioInsights.totalAssetsCents === null ? null : portfolioInsights.totalAssetsCents / 100,
+      cash: portfolioInsights.cashCents === null ? null : portfolioInsights.cashCents / 100,
+      totalPositionPercent: portfolioInsights.totalPositionPercent,
+      totalProfitPercent: portfolioInsights.totalProfitPercent,
+    },
+  };
+}
+
 const SECTION_LABELS: Record<string, string> = {
   conclusion: "结论",
   basis: "依据",
@@ -260,6 +320,8 @@ export default function SmartAssistant(
     headerSlot,
     userId,
     onFetchStock,
+    linkedStock,
+    onFocusStock,
   }: {
     analysis: Analysis | null;
     position: Position | null;
@@ -276,6 +338,19 @@ export default function SmartAssistant(
     userId?: string | number;
     /** 全局模式下若用户问某持仓股，前端先静默拉取数据再发问 */
     onFetchStock?: (code: string) => Promise<{ analysis: Analysis; position: Position | null } | null>;
+    /** 大屏联动：当前 K 线主图正在展示的股票（轻量数据，AI 据此解读但不持有完整分析） */
+    linkedStock?: {
+      code: string;
+      name: string;
+      price?: number;
+      changePercent?: number;
+      period?: string;
+      range?: number;
+      keyLevels?: import("../../lib/kline").Markers | null;
+      lastBar?: { date: string; open: number; close: number; high: number; low: number } | null;
+    } | null;
+    /** 大屏联动：让 K 线主图跳到指定股票（AI 回答或用户点选时触发） */
+    onFocusStock?: (code: string, name: string) => void;
   },
 ) {
   const [question, setQuestion] = useState("");
@@ -286,7 +361,7 @@ export default function SmartAssistant(
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
-  const stockCode = analysis?.stock.code ?? "";
+  const stockCode = analysis?.stock.code ?? linkedStock?.code ?? "";
 
   const scrollToBottom = useCallback((smooth = true) => {
     const el = messagesRef.current;
@@ -320,7 +395,9 @@ export default function SmartAssistant(
         kind: "primer",
         content: analysis
           ? `${analysis.stock.name}的当前数据已整理好。先记一笔持仓我能说得更准；想买、卖、加减仓随时问。`
-          : "还没选中股票。可以先按账户和持仓说话；要谈某只票，先去「个股分析」跑一遍。",
+          : linkedStock
+            ? `当前大屏正在以${linkedStock.period === "week" ? "周K" : linkedStock.period === "month" ? "月K" : linkedStock.period === "day" ? "日K" : "K线"}展示 ${linkedStock.name}（${linkedStock.code}）。我已知晓它的关键价位（泡沫顶/突破位/生死支撑/双底/均线扣抵）与最新K线，可以直接问盘面解读、买卖参考或加减仓，想切到别的票或别的周期说一声我就让大屏跳过去。`
+            : "还没选中股票。可以先按账户和持仓说话；要谈某只票，先去「个股分析」跑一遍。",
         id: nextId(),
       }]);
       setPrimed(true);
@@ -366,6 +443,7 @@ export default function SmartAssistant(
   }, []);
 
   function buildContext() {
+    if (!analysis && linkedStock) return buildLinkedContext(linkedStock, portfolioInsights);
     if (!analysis) return buildPlaceholderContext(portfolioInsights);
     const context = buildAnalysisContext(analysis, position, portfolioInsights);
     // 行情增量：用页面最新报价（每分钟轻量刷新）覆盖快照里的价格/涨跌幅/行情时间，
@@ -408,14 +486,18 @@ export default function SmartAssistant(
     try {
       // 全局模式：若用户问某只持仓股，先静默拉取行情数据再发问，避免 AI 因缺数据只能回"数据缺失"
       let context = buildContext();
-      if (analysis === null && onFetchStock && portfolioInsights.positions.length > 0) {
+      if (analysis === null && portfolioInsights.positions.length > 0) {
         const matched = portfolioInsights.positions.find((p) =>
           clean.includes(p.name) || clean.includes(p.symbol)
         );
         if (matched) {
-          const fetched = await onFetchStock(matched.symbol);
-          if (fetched) {
-            context = buildAnalysisContext(fetched.analysis, fetched.position, portfolioInsights);
+          // 大屏联动：让 K 线主图跳到用户提到的这只票
+          if (onFocusStock) onFocusStock(matched.symbol, matched.name);
+          if (onFetchStock) {
+            const fetched = await onFetchStock(matched.symbol);
+            if (fetched) {
+              context = buildAnalysisContext(fetched.analysis, fetched.position, portfolioInsights);
+            }
           }
         }
       }
