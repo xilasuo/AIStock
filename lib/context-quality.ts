@@ -33,14 +33,12 @@ export function evaluateContextQuality(ctx: AssistantContext): ContextQuality {
   ];
 
   const weights = WEIGHTS;
-  const totalWeight = dims.reduce((s, _, i) => s + (dimScore(i) > 0 ? weights[i] : 0), 0);
-  const overall = totalWeight > 0
-    ? Math.round(dims.reduce((s, d, i) => s + d.score * weights[i], 0) / totalWeight)
-    : 0;
+  // 标准加权平均：各维度已是 0-100（缺失领域用 0 分表达，会自然拉低总分），
+  // 直接按固定权重求和，不再剔除 score=0 的维度——否则会压缩分母、虚高总分。
+  const totalWeight = weights.reduce((s, w) => s + w, 0);
+  const overall = Math.round(dims.reduce((s, d, i) => s + d.score * weights[i], 0) / totalWeight);
 
   return { overall, dimensions: dims, weights };
-
-  function dimScore(idx: number) { return dims[idx].score; }
 }
 
 /** 1. 行情时效性：市场时间距今越短分越高 */

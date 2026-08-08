@@ -139,7 +139,13 @@ function summarizeContext(ctx: AssistantContext, serverHoldingsText?: string): s
   ];
   if (ctx.position) {
     const p = ctx.position;
-    lines.push(`我的持仓：${p.quantity}股，成本=${p.averageCost.toFixed(3)}元，当前回报=${p.returnPercent.toFixed(2)}%，占账户仓位=${p.stockPositionPercent ?? "数据缺失"}%`);
+    const returnText = p.returnPercent !== null && Number.isFinite(p.returnPercent)
+      ? `${p.returnPercent.toFixed(2)}%`
+      : "数据缺失";
+    const avgCostText = p.averageCost > 0 && Number.isFinite(p.averageCost)
+      ? `${p.averageCost.toFixed(3)}元`
+      : "数据缺失";
+    lines.push(`我的持仓：${p.quantity}股，成本=${avgCostText}，当前回报=${returnText}，占账户仓位=${p.stockPositionPercent ?? "数据缺失"}%`);
   } else if (serverHoldingsText) {
     lines.push(`我的持仓：${serverHoldingsText}（以上为服务端按账户记录计算，回报按实时价由你估算）`);
   } else if (ctx.holdingsSummary) {
@@ -152,6 +158,10 @@ function summarizeContext(ctx: AssistantContext, serverHoldingsText?: string): s
     ? (pf.profitPercentNote ?? "数据缺失（收益率无法计算）")
     : `${pf.totalProfitPercent.toFixed(2)}%`;
   lines.push(`账户：总资产=${pf.totalAssets === null ? "数据缺失" : `¥${pf.totalAssets.toFixed(2)}`}，现金=${pf.cash === null ? "数据缺失" : `¥${pf.cash.toFixed(2)}`}，总仓位=${pf.totalPositionPercent ?? "数据缺失"}%，账户总收益=${profitText}`);
+  // 防幻觉：收益率失真/不可计算时，明确禁止 AI 自行根据总资产/现金推算收益率
+  if (pf.totalProfitPercent === null) {
+    lines.push("注意：账户收益率无法有效计算，请勿根据总资产或现金自行推算收益率数字，只能引用上方给出的说明文字。");
+  }
   if (ctx.volume) {
     const divergenceNote =
       ctx.volume.divergence === "顶背离"

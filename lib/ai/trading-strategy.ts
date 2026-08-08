@@ -602,6 +602,7 @@ export async function generateStrategy(
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${ai.apiKey}` },
       body: JSON.stringify({ model: ai.model, messages }),
+      signal: AbortSignal.timeout(20000),
     });
     if (!response.ok) throw new Error(`AI error ${response.status}`);
     const data = (await response.json()) as DeepSeekResponse;

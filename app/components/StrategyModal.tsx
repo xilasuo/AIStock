@@ -88,7 +88,10 @@ function buildContextFromAnalysis(
     ? {
         quantity: position.quantity,
         averageCost: position.averageCostTenThousandths / 10000,
-        returnPercent: ((analysis.quote.price * 10000) / position.averageCostTenThousandths - 1) * 100,
+        returnPercent:
+          position.averageCostTenThousandths > 0 && Number.isFinite(position.averageCostTenThousandths)
+            ? ((analysis.quote.price * 10000) / position.averageCostTenThousandths - 1) * 100
+            : null,
         stockPositionPercent: allocationPercent,
       }
     : null;
