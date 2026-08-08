@@ -85,6 +85,17 @@
   /* 统一动效节奏令牌（供全局 transition 使用，避免散落的 --ease/--dur 歧义名） */
   --ease-standard: cubic-bezier(.22, .61, .36, 1);
   --dur-fast: 160ms;
+  /* 补全被组件引用但此前缺失的令牌，避免 var() 解析失败导致样式失效 */
+  --bg-soft: #0e1a2b;
+  --radius-md: 10px;
+  --shadow-lg: 0 2px 8px rgba(0, 0, 0, .55), 0 24px 56px -20px rgba(0, 0, 0, .75);
+  --surface-hover: rgba(0, 229, 255, .08);
+  --on-up: #fff;
+  --border-soft: rgba(0, 229, 255, .16);
+  --info: var(--accent);
+  --warning: #f59e0b;
+  --accent-ink-contrast: #04161d;
+  --keyboard-inset: 0px;
 
 }
 
