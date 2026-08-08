@@ -26,7 +26,7 @@ function sseFrame(obj: unknown): string {
 }
 
 /** 把多个帧拼成一个 SSE Response */
-function sseResponse(frames: Array<{ type: string; content?: string; mode?: string }>): Response {
+function sseResponse(frames: Array<{ type: string; content?: string; mode?: "ai" | "fallback" }>): Response {
   const body = frames.map((f) => sseFrame(f)).join("");
   return new Response(body, {
     headers: {
