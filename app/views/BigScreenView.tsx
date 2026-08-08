@@ -1829,9 +1829,6 @@ export function BigScreenView() {
                     <span style={{ padding: "1px 8px", borderRadius: 999, background: "rgba(168,85,247,.15)", color: "#c084fc", border: "0.5px solid rgba(168,85,247,.35)" }}>
                       {TRADE_MODE_LABELS[resolveTradeMode(prefs.tradeMode)]}模式
                     </span>
-                    <span style={{ marginLeft: "auto", color: MUTED }}>
-                      止损 {prefs.maxLossPercent ?? 3}%{(prefs.enforceStopLoss ?? true) ? " · 强制止损" : ""}
-                    </span>
                   </>
                 ) : (
                   <span style={{ marginLeft: "auto", color: MUTED }}>读取设置中…</span>
